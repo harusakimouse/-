@@ -41,7 +41,7 @@ Public Sub ApplyFuturesFilter()
            "    End If" & vbCrLf & _
            "    ' Futures filter: KanriSheet D6 = RssIndexMarket(N225.FUT01.OS, prev day %)" & vbCrLf & _
            "    Dim futuresPct As Double" & vbCrLf & _
-           "    futuresPct = SafeNum(mws.Cells(6, 4).Value, 0)" & vbCrLf & _
+           "    futuresPct = SafeNum(mws.Cells(5, 8).Value, 0)" & vbCrLf & _
            "    If futuresPct < -1.5 Then" & vbCrLf & _
            "        topixMode = ""LARGE""" & vbCrLf & _
            "    ElseIf futuresPct < -0.5 Then" & vbCrLf & _
@@ -75,7 +75,7 @@ Public Sub ApplyFuturesFilter()
            "    End If" & vbCrLf & _
            "    ' Futures filter for SELL: block short entry when futures surge" & vbCrLf & _
            "    Dim futuresPct As Double" & vbCrLf & _
-           "    futuresPct = S_SafeNum(mws.Cells(6, 4).Value, 0)" & vbCrLf & _
+           "    futuresPct = S_SafeNum(mws.Cells(5, 8).Value, 0)" & vbCrLf & _
            "    If futuresPct > 1.5 Then" & vbCrLf & _
            "        topixMode = ""LARGE""" & vbCrLf & _
            "    ElseIf futuresPct > 0.5 Then" & vbCrLf & _

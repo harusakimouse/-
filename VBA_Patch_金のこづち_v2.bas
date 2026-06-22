@@ -16,7 +16,7 @@ Attribute VB_Name = "Mod_Patch_KaneKozuchi_V2"
 '   4. 完了メッセージを確認後、このモジュールを削除してOK
 '=============================================================
 
-Public Sub 金のこづちパッチ適用()
+Public Sub ApplyKaneKozuchiPatch()
     Dim vbProj As Object
     Dim modBuy  As Object
     Dim modSell As Object

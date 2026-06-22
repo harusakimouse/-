@@ -21,7 +21,7 @@ Attribute VB_Name = "Mod_Patch_FuturesFilter_V1"
 '   5. 完了後このモジュールを削除
 '=============================================================
 
-Public Sub 先物フィルター適用()
+Public Sub ApplyFuturesFilter()
     Dim vbProj As Object
     Dim modBuy  As Object
     Dim modSell As Object

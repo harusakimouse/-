@@ -8,22 +8,28 @@ Public Sub CleanupFuturesFilter()
     On Error GoTo ErrHandler
     Set vbProj = ThisWorkbook.VBProject
 
+    ' Find modules by partial ASCII name match (avoids Japanese encoding issues)
     Dim comp As Object
     For Each comp In vbProj.VBComponents
-        If comp.name = "Mod_買抽出v13" Then Set modBuy = comp.CodeModule
-        If comp.name = "Mod_SellExtrac" Then Set modSell = comp.CodeModule
+        ' Buy module contains "v13" and not "Sell"
+        If InStr(comp.name, "v13") > 0 And InStr(comp.name, "Sell") = 0 Then
+            Set modBuy = comp.CodeModule
+        End If
+        ' Sell module is ASCII-only name
+        If comp.name = "Mod_SellExtrac" Then
+            Set modSell = comp.CodeModule
+        End If
     Next comp
 
-    If modBuy Is Nothing Then MsgBox "Mod_買抽出v13 not found", vbCritical: Exit Sub
+    If modBuy Is Nothing Then MsgBox "Buy module (v13) not found", vbCritical: Exit Sub
     If modSell Is Nothing Then MsgBox "Mod_SellExtrac not found", vbCritical: Exit Sub
 
     Dim log As String: log = ""
 
-    ' --- BUY: remove duplicate futures block (Cells(6,4)) and keep correct one (Cells(5,8)) ---
-    ' Step1: replace double-block with single correct block
+    ' --- BUY: remove duplicate futures block and update to Cells(5,8) ---
     Dim oldB As String, newB As String
 
-    ' Pattern: two futures blocks back to back
+    ' Try to remove duplicate (two blocks back to back)
     oldB = "    ' Futures filter: KanriSheet D6 = RssIndexMarket(N225.FUT01.OS, prev day %)" & vbCrLf & _
            "    Dim futuresPct As Double" & vbCrLf & _
            "    futuresPct = SafeNum(mws.Cells(6, 4).Value, 0)" & vbCrLf & _
@@ -50,32 +56,31 @@ Public Sub CleanupFuturesFilter()
            "    End If"
 
     If ReplaceInModule(modBuy, oldB, newB) Then
-        log = log & "OK: Buy duplicate removed, cell updated to H5" & vbCrLf
+        log = log & "OK: Buy - duplicate removed, cell -> H5" & vbCrLf
     Else
-        ' Try single block fix (Cells(6,4) -> Cells(5,8))
+        ' Single block: just fix cell reference
         Dim oldB2 As String, newB2 As String
         oldB2 = "    futuresPct = SafeNum(mws.Cells(6, 4).Value, 0)"
         newB2 = "    futuresPct = SafeNum(mws.Cells(5, 8).Value, 0)"
         If ReplaceInModule(modBuy, oldB2, newB2) Then
-            log = log & "OK: Buy cell reference fixed to H5" & vbCrLf
+            log = log & "OK: Buy - cell fixed to H5" & vbCrLf
         Else
-            log = log & "SKIP: Buy - pattern not found" & vbCrLf
+            log = log & "SKIP: Buy - no change needed" & vbCrLf
         End If
     End If
 
-    ' --- SELL: same fix ---
+    ' --- SELL: fix cell reference ---
     Dim oldS As String, newS As String
     oldS = "    futuresPct = S_SafeNum(mws.Cells(6, 4).Value, 0)"
     newS = "    futuresPct = S_SafeNum(mws.Cells(5, 8).Value, 0)"
     If ReplaceInModule(modSell, oldS, newS) Then
-        log = log & "OK: Sell cell reference fixed to H5" & vbCrLf
+        log = log & "OK: Sell - cell fixed to H5" & vbCrLf
     Else
-        log = log & "SKIP: Sell - pattern not found (may be correct already)" & vbCrLf
+        log = log & "SKIP: Sell - no change needed" & vbCrLf
     End If
 
     MsgBox "Cleanup Result:" & vbCrLf & vbCrLf & log & vbCrLf & _
-           "Delete this module after applying.", _
-           vbInformation, "Cleanup v1"
+           "Done. Delete this module.", vbInformation, "Cleanup v1"
     Exit Sub
 
 ErrHandler:

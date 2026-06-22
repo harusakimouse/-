@@ -1,4 +1,4 @@
-Attribute VB_Name = "Mod_Patch_先物フィルターV1"
+Attribute VB_Name = "Mod_Patch_FuturesFilter_V1"
 '=============================================================
 ' 日経225先物フィルター パッチ v1
 '

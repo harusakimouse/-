@@ -1,4 +1,4 @@
-Attribute VB_Name = "Mod_Patch_金のこづちV2"
+Attribute VB_Name = "Mod_Patch_KaneKozuchi_V2"
 '=============================================================
 ' 金のこづち 0622 総合改善パッチ v2
 '

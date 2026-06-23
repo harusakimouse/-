@@ -35,7 +35,7 @@ Private Const COL_WHITE As Long = 16777215
 Private Const COL_BLACK As Long = 2105376
 Private Const EXT_DATA_ROW As Long = 4
 Private Const EXT_LAST_COL As Long = 18
-Public Const BUY_REQUIRE_OSIME As Boolean = False
+Public Const BUY_REQUIRE_OSIME As Boolean = True
 Public Const FAKE_BREAKOUT_VOL_RATIO As Double = 1.5
 
 '=============================================================================

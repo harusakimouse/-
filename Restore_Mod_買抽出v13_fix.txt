@@ -346,9 +346,9 @@ Private Sub 抽出実行(ByVal minScore As Long, _
         If totalScore >= minScore Then
             Select Case topixMode
                 Case "LARGE"
-                    If emaTrend = "パーフェクト▲" Then canExtract = True
+                    If totalScore >= minScore + 3 Then canExtract = True
                 Case "MID"
-                    If emaTrend <> "下降トレンド▼" Then canExtract = True
+                    If totalScore >= minScore + 1 Then canExtract = True
                 Case Else
                     canExtract = True
             End Select

@@ -145,6 +145,14 @@ Private Sub S_抽出実行(ByVal minScore As Long, _
     Else
         topixMode = "OK"
     End If
+    ' Futures filter for SELL: block short when futures surge
+    Dim futuresPct As Double
+    futuresPct = S_SafeNum(mws.Cells(5, 8).Value, 0)
+    If futuresPct > 1.5 Then
+        topixMode = "LARGE"
+    ElseIf futuresPct > 0.5 Then
+        If topixMode = "OK" Then topixMode = "MID"
+    End If
 
     ' 銘柄名辞書
     Dim nameDic As Object: Set nameDic = CreateObject("Scripting.Dictionary")
@@ -553,6 +561,14 @@ Private Sub S_抽出実行_RSS(ByVal minScore As Long, _
         topixMode = "MID"
     Else
         topixMode = "OK"
+    End If
+    ' Futures filter for SELL: block short when futures surge
+    Dim futuresPct As Double
+    futuresPct = S_SafeNum(mws.Cells(5, 8).Value, 0)
+    If futuresPct > 1.5 Then
+        topixMode = "LARGE"
+    ElseIf futuresPct > 0.5 Then
+        If topixMode = "OK" Then topixMode = "MID"
     End If
 
     ' 銘柄名辞書

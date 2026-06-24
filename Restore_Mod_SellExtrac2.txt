@@ -391,6 +391,7 @@ Private Sub S_抽出実行(ByVal minScore As Long, _
         End If
         If canExtract And rsiVal < 15 Then canExtract = False
         If canExtract And rsiVal >= 80 Then canExtract = False
+        If canExtract And stockPct >= topixPct Then canExtract = False
         If doMark And canExtract Then
             If momCount < 2 Then canExtract = False
             If S_REQUIRE_DOWNTREND And Not ok_PD Then canExtract = False
@@ -792,6 +793,7 @@ Private Sub S_抽出実行_RSS(ByVal minScore As Long, _
         End If
         If canExtract And rsiVal < 15 Then canExtract = False
         If canExtract And rsiVal >= 80 Then canExtract = False
+        If canExtract And stockPct >= topixPct Then canExtract = False
         If doMark And canExtract Then
             If momCount < 2 Then canExtract = False
             If S_REQUIRE_DOWNTREND And Not ok_PD Then canExtract = False

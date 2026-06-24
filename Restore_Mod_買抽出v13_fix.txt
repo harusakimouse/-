@@ -376,6 +376,7 @@ Private Sub 抽出実行(ByVal minScore As Long, _
             End If
         End If
         If rsiVal >= 70 Then canExtract = False
+        If canExtract And Not ok_RS Then canExtract = False
         If canExtract Then
             Dim meiName As String
             If nameDic.Exists(code) Then

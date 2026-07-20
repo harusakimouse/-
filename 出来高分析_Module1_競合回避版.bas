@@ -1,0 +1,290 @@
+Attribute VB_Name = "Module1"
+' ==================================================================
+' ★ 400番ブック / Module1  ＜他Excelブックとの時間競合 回避版＞
+'   ↑このモジュールを Ctrl+A で全選択→Delete→この内容を貼り付け
+' ==================================================================
+'
+'  【この版での変更点（他ブックとの Application.OnTime 競合回避）】
+'   ・OnTime に渡すマクロ名を「'ブック名'!マクロ名」の形に修飾しました。
+'     → 予約したタイマーが必ず“このブック自身”の「時刻チェック」を呼び、
+'       他ブック（100番や親ブック）がアクティブでも競合／誤爆しません。
+'   ・予約した「次回の発火時刻」を覚えておき、記録停止／再設定のときは
+'     その正確な時刻で取り消すようにしました（従来は時刻がズレて
+'     取り消しに失敗することがありました）。
+'   ・これ以外の記録ロジック・シート構成・記録時刻は一切変えていません。
+' ==================================================================
+
+'====================================================================
+' 出来高分析マクロ　（VBAエディタの標準モジュールに、この内容を丸ごと貼り付けてください）
+' 使い方は「使い方」シートを参照してください。
+'====================================================================
+
+Option Explicit
+
+' ---- 設定（変更したいときはここだけ直せばOK） ----
+Const RSS_SHEET As String = "RSS取得"
+Const LOG_SHEET As String = "本日ログ"
+Const LATEST_SHEET As String = "最新"
+Const HIST_SHEET As String = "履歴10日"
+Const STOCK_COUNT As Long = 400   ' 銘柄数（RSS取得シートの2行目?401行目）
+Const KEEP_DAYS As Integer = 10   ' 履歴として残す日数
+
+' 記録する時刻（この時刻になったら記録する）
+Dim TargetTimes As Variant
+
+' 銘柄ごとの「ひとつ前の累積出来高」を覚えておく配列（当日だけ使う）
+Dim PrevVolume(1 To STOCK_COUNT) As Double
+Dim LastLoggedLabel As String
+
+' ★競合回避用：次にタイマーが発火する正確な時刻と、稼働中かどうか
+Dim NextRunTime As Date
+Dim TimerActive As Boolean
+
+'--------------------------------------------------------------------
+' ★競合回避の要：OnTime に渡すマクロ名を「'このブック名'!マクロ名」に修飾する
+'   これにより、他ブックがアクティブでも必ずこのブックのマクロが呼ばれる。
+'--------------------------------------------------------------------
+Private Function MyProc(ByVal procName As String) As String
+    MyProc = "'" & ThisWorkbook.Name & "'!" & procName
+End Function
+
+'====================================================================
+' 1) 記録開始　（朝、取引が始まる前に1回実行してください）
+'====================================================================
+Sub 記録開始()
+    Dim i As Long
+
+    TargetTimes = Array("09:00", "09:10", "09:20", "09:30", "09:45", _
+                         "10:00", "10:15", "10:30", "11:00", "11:30", _
+                         "12:30", "13:00", "13:30", "14:30", "15:30")
+
+    For i = 1 To STOCK_COUNT
+        PrevVolume(i) = 0
+    Next i
+    LastLoggedLabel = ""
+
+    Call スケジュール設定
+    UI_Msg "記録を開始しました。" & vbCrLf & _
+           "このままExcelを閉じずに、15:30の記録が終わるまでお待ちください。"
+End Sub
+
+'====================================================================
+' 2) 1分ごとに時刻をチェックする（自分で自分を1分後に予約し直す）
+'====================================================================
+Sub 時刻チェック()
+    Dim nowLabel As String
+    nowLabel = Format(Now, "hh:mm")
+
+    If IsTargetTime(nowLabel) And nowLabel <> LastLoggedLabel Then
+        Call スナップショット記録(nowLabel)
+        LastLoggedLabel = nowLabel
+    End If
+
+    If nowLabel >= "15:31" Then
+        TimerActive = False          ' ★タイマー稼働終了を記録
+        gUnattended = True
+        On Error Resume Next
+        Call 記録終了_履歴保存
+        On Error GoTo 0
+        gUnattended = False
+        Exit Sub
+    End If
+
+    Call スケジュール設定
+End Sub
+
+Private Sub スケジュール設定()
+    ' ★次回発火時刻を覚えておき、ブック名で修飾したマクロ名を予約する
+    NextRunTime = Now + timeValue("00:01:00")
+    Application.OnTime NextRunTime, MyProc("時刻チェック")
+    TimerActive = True
+End Sub
+
+Private Function IsTargetTime(t As String) As Boolean
+    Dim v As Variant
+    For Each v In TargetTimes
+        If v = t Then
+            IsTargetTime = True
+            Exit Function
+        End If
+    Next v
+    IsTargetTime = False
+End Function
+
+'====================================================================
+' 3) スナップショットを記録する本体
+'    ・「本日ログ」に1行ずつ追記（当日の全履歴）
+'    ・「最新」は銘柄ごとに1行だけ上書き（比較シートが参照する軽いデータ）
+'====================================================================
+Sub スナップショット記録(timeLabel As String)
+    Dim wsRss As Worksheet, wsLog As Worksheet, wsLatest As Worksheet
+    Dim i As Long, outRow As Long
+    Dim code As String, stockName As String
+    Dim cur As Double, opn As Double, prevClose As Double, cumVol As Double
+    Dim intervalVol As Double
+    Dim openRatio As Variant, prevRatio As Variant
+    Dim snapTime As Date
+
+    Set wsRss = ThisWorkbook.Sheets(RSS_SHEET)
+    Set wsLog = ThisWorkbook.Sheets(LOG_SHEET)
+    Set wsLatest = ThisWorkbook.Sheets(LATEST_SHEET)
+    snapTime = timeValue(timeLabel)
+
+    outRow = wsLog.Cells(wsLog.Rows.Count, "A").End(xlUp).Row + 1
+    If outRow < 2 Then outRow = 2
+
+    Application.ScreenUpdating = False
+
+    For i = 1 To STOCK_COUNT
+        code = Trim(wsRss.Cells(i + 1, "A").Value)
+        If code <> "" Then
+            stockName = wsRss.Cells(i + 1, "B").Value
+            cur = Val0(wsRss.Cells(i + 1, "C").Value)
+            opn = Val0(wsRss.Cells(i + 1, "D").Value)
+            prevClose = Val0(wsRss.Cells(i + 1, "E").Value)
+            cumVol = Val0(wsRss.Cells(i + 1, "F").Value)
+
+            intervalVol = cumVol - PrevVolume(i)
+            If intervalVol < 0 Then intervalVol = cumVol   ' 万一マイナスになった場合の保険
+
+            If opn > 0 Then openRatio = cur / opn Else openRatio = ""
+            If prevClose > 0 Then prevRatio = cur / prevClose Else prevRatio = ""
+
+            ' ---- 本日ログに追記 ----
+            wsLog.Cells(outRow, "A").Value = snapTime
+            wsLog.Cells(outRow, "A").NumberFormat = "hh:mm"
+            wsLog.Cells(outRow, "B").Value = code
+            wsLog.Cells(outRow, "C").Value = stockName
+            wsLog.Cells(outRow, "D").Value = cumVol
+            wsLog.Cells(outRow, "E").Value = intervalVol
+            wsLog.Cells(outRow, "F").Value = cur
+            wsLog.Cells(outRow, "G").Value = openRatio
+            wsLog.Cells(outRow, "H").Value = prevRatio
+            outRow = outRow + 1
+
+            ' ---- 最新シートは銘柄ごとに1行だけ上書き ----
+            wsLatest.Cells(i + 1, "A").Value = code
+            wsLatest.Cells(i + 1, "B").Value = stockName
+            wsLatest.Cells(i + 1, "C").Value = snapTime
+            wsLatest.Cells(i + 1, "C").NumberFormat = "hh:mm"
+            wsLatest.Cells(i + 1, "D").Value = cumVol
+            wsLatest.Cells(i + 1, "E").Value = intervalVol
+            wsLatest.Cells(i + 1, "F").Value = cur
+            wsLatest.Cells(i + 1, "G").Value = openRatio
+            wsLatest.Cells(i + 1, "H").Value = prevRatio
+
+            PrevVolume(i) = cumVol
+        End If
+    Next i
+
+    Application.ScreenUpdating = True
+End Sub
+
+Private Function Val0(v As Variant) As Double
+    If IsNumeric(v) Then
+        Val0 = CDbl(v)
+    Else
+        Val0 = 0
+    End If
+End Function
+
+'====================================================================
+' 4) 取引終了後：本日分を「履歴10日」に保存し、10日を超えたら一番古い日を消す
+'====================================================================
+Sub 記録終了_履歴保存()
+    Dim wsLog As Worksheet, wsHist As Worksheet
+    Dim lastLogRow As Long, histRow As Long, i As Long
+    Dim todayDate As Date
+
+    Set wsLog = ThisWorkbook.Sheets(LOG_SHEET)
+    Set wsHist = ThisWorkbook.Sheets(HIST_SHEET)
+    todayDate = Date
+
+    lastLogRow = wsLog.Cells(wsLog.Rows.Count, "A").End(xlUp).Row
+    histRow = wsHist.Cells(wsHist.Rows.Count, "A").End(xlUp).Row + 1
+
+    Application.ScreenUpdating = False
+
+    For i = 2 To lastLogRow
+        wsHist.Cells(histRow, "A").Value = todayDate
+        wsHist.Cells(histRow, "A").NumberFormat = "yyyy/mm/dd"
+        wsHist.Cells(histRow, "B").Value = wsLog.Cells(i, "A").Value
+        wsHist.Cells(histRow, "B").NumberFormat = "hh:mm"
+        wsHist.Cells(histRow, "C").Value = wsLog.Cells(i, "B").Value
+        wsHist.Cells(histRow, "D").Value = wsLog.Cells(i, "C").Value
+        wsHist.Cells(histRow, "E").Value = wsLog.Cells(i, "D").Value
+        wsHist.Cells(histRow, "F").Value = wsLog.Cells(i, "E").Value
+        histRow = histRow + 1
+    Next i
+
+    Call 古い日を削除
+
+    ' 本日ログは見出し行だけ残してクリア（翌日また1行目から記録する）
+    If lastLogRow >= 2 Then
+        wsLog.Rows("2:" & lastLogRow).Delete
+    End If
+
+    Application.ScreenUpdating = True
+    UI_Msg "本日分を「履歴10日」に保存しました。おつかれさまでした。"
+End Sub
+
+Private Sub 古い日を削除()
+    Dim wsHist As Worksheet, lastRow As Long, i As Long, r As Long
+    Dim dateDict As Object
+    Dim keys() As Variant, n As Long, removeCount As Long
+
+    Set wsHist = ThisWorkbook.Sheets(HIST_SHEET)
+    lastRow = wsHist.Cells(wsHist.Rows.Count, "A").End(xlUp).Row
+    If lastRow < 2 Then Exit Sub
+
+    Set dateDict = CreateObject("Scripting.Dictionary")
+    For i = 2 To lastRow
+        If Not dateDict.exists(CLng(wsHist.Cells(i, "A").Value)) Then
+            dateDict.Add CLng(wsHist.Cells(i, "A").Value), 1
+        End If
+    Next i
+
+    If dateDict.Count <= KEEP_DAYS Then Exit Sub
+
+    keys = dateDict.keys
+    Call 昇順に並べる(keys)
+    removeCount = dateDict.Count - KEEP_DAYS
+
+    For n = 0 To removeCount - 1
+        For r = wsHist.Cells(wsHist.Rows.Count, "A").End(xlUp).Row To 2 Step -1
+            If CLng(wsHist.Cells(r, "A").Value) = keys(n) Then
+                wsHist.Rows(r).Delete
+            End If
+        Next r
+    Next n
+End Sub
+
+Private Sub 昇順に並べる(arr As Variant)
+    Dim i As Long, j As Long, tmp As Variant
+    For i = LBound(arr) To UBound(arr) - 1
+        For j = i + 1 To UBound(arr)
+            If arr(j) < arr(i) Then
+                tmp = arr(i): arr(i) = arr(j): arr(j) = tmp
+            End If
+        Next j
+    Next i
+End Sub
+
+'====================================================================
+' 5) 途中で止めたいとき（任意）
+'====================================================================
+Sub 記録停止()
+    On Error Resume Next
+    ' ★覚えておいた正確な発火時刻と、ブック名で修飾したマクロ名で取り消す
+    If TimerActive Then
+        Application.OnTime NextRunTime, MyProc("時刻チェック"), , False
+        TimerActive = False
+    End If
+    On Error GoTo 0
+    UI_Msg "記録を停止しました。"
+End Sub
+
+
+Sub テスト実行()
+Call スナップショット記録("09:00")
+End Sub

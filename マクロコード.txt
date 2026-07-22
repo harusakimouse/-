@@ -172,6 +172,7 @@ Sub スナップショット記録(timeLabel As String)
             ' ---- 本日ログに追記 ----
             wsLog.Cells(outRow, "A").Value = snapTime
             wsLog.Cells(outRow, "A").NumberFormat = "hh:mm"
+            wsLog.Cells(outRow, "B").NumberFormat = "@"   ' ★コードは文字列で保存
             wsLog.Cells(outRow, "B").Value = code
             wsLog.Cells(outRow, "C").Value = stockName
             wsLog.Cells(outRow, "D").Value = cumVol
@@ -182,6 +183,7 @@ Sub スナップショット記録(timeLabel As String)
             outRow = outRow + 1
 
             ' ---- 最新シートは銘柄ごとに1行だけ上書き ----
+            wsLatest.Cells(i + 1, "A").NumberFormat = "@"  ' ★コードは文字列で保存
             wsLatest.Cells(i + 1, "A").Value = code
             wsLatest.Cells(i + 1, "B").Value = stockName
             wsLatest.Cells(i + 1, "C").Value = snapTime
@@ -229,7 +231,8 @@ Sub 記録終了_履歴保存()
         wsHist.Cells(histRow, "A").NumberFormat = "yyyy/mm/dd"
         wsHist.Cells(histRow, "B").Value = wsLog.Cells(i, "A").Value
         wsHist.Cells(histRow, "B").NumberFormat = "hh:mm"
-        wsHist.Cells(histRow, "C").Value = wsLog.Cells(i, "B").Value
+        wsHist.Cells(histRow, "C").NumberFormat = "@"       ' ★コードは文字列で保存
+        wsHist.Cells(histRow, "C").Value = CStr(wsLog.Cells(i, "B").Value)
         wsHist.Cells(histRow, "D").Value = wsLog.Cells(i, "C").Value
         wsHist.Cells(histRow, "E").Value = wsLog.Cells(i, "D").Value
         wsHist.Cells(histRow, "F").Value = wsLog.Cells(i, "E").Value

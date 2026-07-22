@@ -40,6 +40,10 @@ Const HIST_SHEET As String = "履歴10日"
 Const STOCK_COUNT As Long = 400   ' 銘柄数（RSS取得シートの2行目?401行目）
 Const KEEP_DAYS As Integer = 10   ' 履歴として残す日数
 
+' ★タイマー予約時刻の保存先（VBAリセット後でも予約を取り消せるように、セルに退避する）
+Const STATE_SHEET As String = "使い方"   ' 予約時刻を書いておくシート
+Const STATE_CELL As String = "Z1"        ' 予約時刻を書いておくセル（普段は見えない位置）
+
 ' 記録する時刻（この時刻になったら記録する）
 Dim TargetTimes As Variant
 
@@ -76,6 +80,8 @@ End Function
 Sub 記録開始()
     Dim i As Long
 
+    Call 予約を解除   ' ★二重起動・前回の孤児タイマーを先に片付ける
+
     TargetTimes = Array("09:00", "09:10", "09:20", "09:30", "09:45", _
                          "10:00", "10:15", "10:30", "11:00", "11:30", _
                          "12:30", "13:00", "13:30", "14:30", "15:30")
@@ -110,6 +116,7 @@ Sub 時刻チェック()
 
     If nowLabel >= "15:31" Then
         TimerActive = False          ' ★タイマー稼働終了を記録
+        Call 予約時刻をクリア        ' ★保存した予約も消す（もう次は張らない）
         gUnattended = True
         On Error Resume Next
         Call 記録終了_履歴保存
@@ -125,7 +132,47 @@ Private Sub スケジュール設定()
     ' ★次回発火時刻を覚えておき、ブック名で修飾したマクロ名を予約する
     NextRunTime = Now + timeValue("00:01:00")
     Application.OnTime NextRunTime, MyProc("時刻チェック")
+    Call 予約時刻を保存(NextRunTime)   ' ★セルにも退避（リセット対策）
     TimerActive = True
+End Sub
+
+'--------------------------------------------------------------------
+' ★予約時刻をセルに保存／読み出し（VBAの変数が消えても取り消せるようにする）
+'--------------------------------------------------------------------
+Private Sub 予約時刻を保存(ByVal t As Date)
+    On Error Resume Next
+    With ThisWorkbook.Sheets(STATE_SHEET).Range(STATE_CELL)
+        .NumberFormat = "yyyy/mm/dd hh:mm:ss"
+        .Value = CDbl(t)
+    End With
+    On Error GoTo 0
+End Sub
+
+Private Sub 予約時刻をクリア()
+    On Error Resume Next
+    ThisWorkbook.Sheets(STATE_SHEET).Range(STATE_CELL).ClearContents
+    On Error GoTo 0
+End Sub
+
+'--------------------------------------------------------------------
+' ★予約を確実に取り消す（メモリ上とセル保存の両方から。二重起動・孤児タイマー対策）
+'--------------------------------------------------------------------
+Private Sub 予約を解除()
+    Dim v As Variant
+    On Error Resume Next
+    ' メモリ上の予約
+    If TimerActive And NextRunTime > 0 Then
+        Application.OnTime NextRunTime, MyProc("時刻チェック"), , False
+    End If
+    ' セルに退避した予約（VBAがリセットされた後でも取り消せる）
+    v = ThisWorkbook.Sheets(STATE_SHEET).Range(STATE_CELL).Value
+    If IsNumeric(v) Then
+        If CDbl(v) > 0 Then Application.OnTime CDate(CDbl(v)), MyProc("時刻チェック"), , False
+    End If
+    Call 予約時刻をクリア
+    TimerActive = False
+    NextRunTime = 0
+    On Error GoTo 0
 End Sub
 
 Private Function IsTargetTime(t As String) As Boolean
@@ -305,13 +352,7 @@ End Sub
 ' 5) 途中で止めたいとき（任意）
 '====================================================================
 Sub 記録停止()
-    On Error Resume Next
-    ' ★覚えておいた正確な発火時刻と、ブック名で修飾したマクロ名で取り消す
-    If TimerActive Then
-        Application.OnTime NextRunTime, MyProc("時刻チェック"), , False
-        TimerActive = False
-    End If
-    On Error GoTo 0
+    Call 予約を解除   ' ★メモリ上・セル保存の両方から確実に取り消す
     UI_Msg "記録を停止しました。"
 End Sub
 

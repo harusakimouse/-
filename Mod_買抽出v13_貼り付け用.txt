@@ -1,22 +1,22 @@
-' ==================================================================
-' š 100”ÔƒuƒbƒN / Mod_”ƒ’Šov13  i2026/07/29 i‚è‚İ‹­‰»”Åj
-'   •ÏX“_F‡@MAX_EXTRACT_COUNT’Ç‰Á ‡A•K{ƒtƒBƒ‹ƒ^3‚ÂON
-'           ‡B‚¸“x‚µ‚«‚¢’l12¨16 ‡Cƒ\[ƒgŒã‚ÉãˆÊNŒ‚¾‚¯c‚·
+ï»¿' ==================================================================
+' â˜… 100ç•ªãƒ–ãƒƒã‚¯ / Mod_è²·æŠ½å‡ºv13  ï¼ˆ2026/07/29 çµã‚Šè¾¼ã¿å¼·åŒ–ç‰ˆï¼‰
+'   å¤‰æ›´ç‚¹ï¼šâ‘ MAX_EXTRACT_COUNTè¿½åŠ  â‘¡å¿…é ˆãƒ•ã‚£ãƒ«ã‚¿3ã¤ON
+'           â‘¢é«˜ç²¾åº¦ã—ãã„å€¤12â†’16 â‘£ã‚½ãƒ¼ãƒˆå¾Œã«ä¸Šä½Nä»¶ã ã‘æ®‹ã™
 ' ==================================================================
 
 Option Explicit
 '=============================================================================
-' ‘Å‚¿o‚Ì–³ŒÀ‚±‚Ã‚¿@Œó•â’Šoƒ‚ƒWƒ…[ƒ‹@v13 (2026/06/17) ¨ v13.1 i‚è‚İ‹­‰»
+' æ‰“ã¡å‡ºã®ç„¡é™ã“ã¥ã¡ã€€å€™è£œæŠ½å‡ºãƒ¢ã‚¸ãƒ¥ãƒ¼ãƒ«ã€€v13 (2026/06/17) â†’ v13.1 çµã‚Šè¾¼ã¿å¼·åŒ–
 '=============================================================================
 Public Const MAX_STOCKS       As Long = 500
 Public Const ANA_DATA_START   As Long = 3
 Public Const STOCK_DATA_START As Long = 6
 Public Const MEI_DATA_START   As Long = 5
 
-'š‡@’Ç‰ÁF1“ú‚ÌÅ‘å’ŠoŒ”i1‚É‚·‚ê‚Î1–Á•¿‚¾‚¯j
-Public Const MAX_EXTRACT_COUNT As Long = 2   '‚¸“x’Šo‚ÌãŒÀiTOP‚©‚çNŒj
-Public Const MAX_EXTRACT_BUY   As Long = 5   '”ƒ‚¢’Šo‚ÌãŒÀiTOP‚©‚çNŒj
-Public Const MAX_EXTRACT_EASE  As Long = 10  'ŠÉ˜a’Šo‚ÌãŒÀiTOP‚©‚çNŒj
+'â˜…â‘ è¿½åŠ ï¼š1æ—¥ã®æœ€å¤§æŠ½å‡ºä»¶æ•°ï¼ˆ1ã«ã™ã‚Œã°1éŠ˜æŸ„ã ã‘ï¼‰
+Public Const MAX_EXTRACT_COUNT As Long = 2   'é«˜ç²¾åº¦æŠ½å‡ºã®ä¸Šé™ï¼ˆTOPã‹ã‚‰Nä»¶ï¼‰
+Public Const MAX_EXTRACT_BUY   As Long = 5   'è²·ã„æŠ½å‡ºã®ä¸Šé™ï¼ˆTOPã‹ã‚‰Nä»¶ï¼‰
+Public Const MAX_EXTRACT_EASE  As Long = 10  'ç·©å’ŒæŠ½å‡ºã®ä¸Šé™ï¼ˆTOPã‹ã‚‰Nä»¶ï¼‰
 
 Public Const TOPIX_SMALL_DROP_PCT As Double = -0.5
 Public Const TOPIX_LARGE_DROP_PCT As Double = -1.5
@@ -24,12 +24,12 @@ Public Const BUY_REQUIRE_MOMENTUM_COUNT As Long = 2
 Public Const MOMENTUM_FULL_BONUS    As Long = 2
 Public Const MOMENTUM_PARTIAL_BONUS As Long = 1
 
-'š‡A‚±‚±‚ğ•ÏXF•K{ƒtƒBƒ‹ƒ^‚ğ3‚ÂON
+'â˜…â‘¡ã“ã“ã‚’å¤‰æ›´ï¼šå¿…é ˆãƒ•ã‚£ãƒ«ã‚¿ã‚’3ã¤ON
 Public Const BUY_REQUIRE_GOLDEN_CROSS  As Boolean = False
-Public Const BUY_REQUIRE_PERFECT_ORDER As Boolean = True   'False¨True
-Public Const BUY_REQUIRE_VOL_BURST     As Boolean = True   'False¨True
+Public Const BUY_REQUIRE_PERFECT_ORDER As Boolean = True   'Falseâ†’True
+Public Const BUY_REQUIRE_VOL_BURST     As Boolean = True   'Falseâ†’True
 Public Const BUY_REQUIRE_ADX           As Boolean = False
-Public Const BUY_REQUIRE_HIST_EXPAND   As Boolean = True   'False¨True
+Public Const BUY_REQUIRE_HIST_EXPAND   As Boolean = True   'Falseâ†’True
 Public Const BUY_REQUIRE_RS_VS_TOPIX   As Boolean = False
 
 Public Const GOLDEN_CROSS_LOOKBACK As Long = 3
@@ -54,11 +54,11 @@ Public Const BUY_REQUIRE_OSIME As Boolean = True
 Public Const FAKE_BREAKOUT_VOL_RATIO As Double = 1.5
 
 '=============================================================================
-' ƒ{ƒ^ƒ“İ’uƒ}ƒNƒ
-Public Sub ”ƒ’Šov13ƒ{ƒ^ƒ“İ’u()
-    Dim ws As Worksheet: Set ws = GetWs("”ƒ’Šov13")
+' ãƒœã‚¿ãƒ³è¨­ç½®ãƒã‚¯ãƒ­
+Public Sub è²·æŠ½å‡ºv13ãƒœã‚¿ãƒ³è¨­ç½®()
+    Dim ws As Worksheet: Set ws = GetWs("è²·æŠ½å‡ºv13")
     If ws Is Nothing Then
-        UI_Msg "u”ƒ’Šov13vƒV[ƒg‚ªŒ©‚Â‚©‚è‚Ü‚¹‚ñB", vbExclamation
+        UI_Msg "ã€Œè²·æŠ½å‡ºv13ã€ã‚·ãƒ¼ãƒˆãŒè¦‹ã¤ã‹ã‚Šã¾ã›ã‚“ã€‚", vbExclamation
         Exit Sub
     End If
     Dim shp As Shape
@@ -68,80 +68,91 @@ Public Sub ”ƒ’Šov13ƒ{ƒ^ƒ“İ’u()
     Dim btn1 As Shape
     Set btn1 = ws.Shapes.AddFormControl(xlButtonControl, 10, 5, 180, 35)
     With btn1
-        .Name = "btn‚¸“x’Šo"
-        .TextFrame.Characters.Text = "š‚¸“x’Šo(16ˆÈã/ãˆÊ" & MAX_EXTRACT_COUNT & "Œ)"
+        .Name = "btné«˜ç²¾åº¦æŠ½å‡º"
+        .TextFrame.Characters.Text = "â˜…é«˜ç²¾åº¦æŠ½å‡º(16ä»¥ä¸Š/ä¸Šä½" & MAX_EXTRACT_COUNT & "ä»¶)"
         .TextFrame.Characters.Font.Size = 14
         .TextFrame.Characters.Font.Bold = True
-        .OnAction = "Mod_”ƒ’Šov13.Š”‰¿’Šo"
+        .OnAction = "Mod_è²·æŠ½å‡ºv13.æ ªä¾¡æŠ½å‡º"
     End With
     Dim btn2 As Shape
     Set btn2 = ws.Shapes.AddFormControl(xlButtonControl, 200, 5, 180, 35)
     With btn2
-        .Name = "btn’Êí’Šo"
-        .TextFrame.Characters.Text = "”ƒ‚¢’Šo(11ˆÈã)"
+        .Name = "btné€šå¸¸æŠ½å‡º"
+        .TextFrame.Characters.Text = "è²·ã„æŠ½å‡º(11ä»¥ä¸Š)"
         .TextFrame.Characters.Font.Size = 16
         .TextFrame.Characters.Font.Bold = True
-        .OnAction = "Mod_”ƒ’Šov13.”ƒ‚¢’Šo_ƒXƒRƒA4"
+        .OnAction = "Mod_è²·æŠ½å‡ºv13.è²·ã„æŠ½å‡º_ã‚¹ã‚³ã‚¢4"
     End With
     Dim btn3 As Shape
     Set btn3 = ws.Shapes.AddFormControl(xlButtonControl, 390, 5, 180, 35)
     With btn3
-        .Name = "btnŠÉ˜a’Šo"
-        .TextFrame.Characters.Text = "ŠÉ˜a’Šo(11ˆÈãEŠÉ˜a)"
+        .Name = "btnç·©å’ŒæŠ½å‡º"
+        .TextFrame.Characters.Text = "ç·©å’ŒæŠ½å‡º(11ä»¥ä¸Šãƒ»ç·©å’Œ)"
         .TextFrame.Characters.Font.Size = 16
         .TextFrame.Characters.Font.Bold = True
-        .OnAction = "Mod_”ƒ’Šov13.”ƒ‚¢’Šo_ƒXƒRƒA4_ŠÉ˜a"
+        .OnAction = "Mod_è²·æŠ½å‡ºv13.è²·ã„æŠ½å‡º_ã‚¹ã‚³ã‚¢4_ç·©å’Œ"
     End With
-    UI_Msg "ƒ{ƒ^ƒ“‚ğÄİ’u‚µ‚Ü‚µ‚½I", vbInformation, "Š®—¹"
+    UI_Msg "ãƒœã‚¿ãƒ³ã‚’å†è¨­ç½®ã—ã¾ã—ãŸï¼", vbInformation, "å®Œäº†"
 End Sub
 
 '=============================================================================
-' ’ŠoƒƒCƒ“
+' æŠ½å‡ºãƒ¡ã‚¤ãƒ³
 '=============================================================================
-Public Sub Š”‰¿’Šo()
+Public Sub æ ªä¾¡æŠ½å‡º()
     Dim P As Boolean: P = gUnattended
     gUnattended = True
     On Error GoTo done
     Dim h As Integer: h = Hour(Now)
     Dim m As Integer: m = Minute(Now)
     If (h >= 9 And h < 15) Or (h = 15 And m <= 30) Then
-        'š‡B‚µ‚«‚¢’l 12¨16
-        Call ’ŠoÀs_RSS(16, True, "‚¸“x’Šo[RSSŒ»İ’l](ƒXƒRƒA16ˆÈãEãˆÊ" & MAX_EXTRACT_COUNT & "Œ)")
+        'â˜…â‘¢ã—ãã„å€¤ 12â†’16
+        Call æŠ½å‡ºå®Ÿè¡Œ_RSS(16, True, "é«˜ç²¾åº¦æŠ½å‡º[RSSç¾åœ¨å€¤](ã‚¹ã‚³ã‚¢16ä»¥ä¸Šãƒ»ä¸Šä½" & MAX_EXTRACT_COUNT & "ä»¶)")
     Else
-        Call ’ŠoÀs(16, True, "‚¸“x’Šo(ƒXƒRƒA16ˆÈãE‘SƒtƒBƒ‹ƒ^[•K{EãˆÊ" & MAX_EXTRACT_COUNT & "Œ)")
+        Call æŠ½å‡ºå®Ÿè¡Œ(16, True, "é«˜ç²¾åº¦æŠ½å‡º(ã‚¹ã‚³ã‚¢16ä»¥ä¸Šãƒ»å…¨ãƒ•ã‚£ãƒ«ã‚¿ãƒ¼å¿…é ˆãƒ»ä¸Šä½" & MAX_EXTRACT_COUNT & "ä»¶)")
     End If
 done:
     gUnattended = P
 End Sub
 
-Public Sub ”ƒ‚¢’Šo_ƒXƒRƒA4()
-    ’ŠoÀs 11, True, "”ƒ‚¢’Šo(ƒXƒRƒA11ˆÈãE’†’ö“xEãˆÊ5Œ)", False, MAX_EXTRACT_BUY
+Public Sub é«˜ç²¾åº¦æŠ½å‡º_æ‰‹å‹•()
+    'â˜…ãƒœã‚¿ãƒ³ç”¨ã®é«˜ç²¾åº¦æŠ½å‡ºï¼ˆç„¡äººãƒ¢ãƒ¼ãƒ‰ã«ã—ãªã„ã®ã§ãƒãƒƒãƒ—ã‚¢ãƒƒãƒ—ãŒå‡ºã‚‹ã€‚ä¸­èº«ã¯æ ªä¾¡æŠ½å‡ºã¨åŒã˜ãƒ»ä¸Šé™2ä»¶ï¼‰
+    Dim h As Integer: h = Hour(Now)
+    Dim m As Integer: m = Minute(Now)
+    If (h >= 9 And h < 15) Or (h = 15 And m <= 30) Then
+        æŠ½å‡ºå®Ÿè¡Œ_RSS 16, True, "é«˜ç²¾åº¦æŠ½å‡º[RSSç¾åœ¨å€¤](ã‚¹ã‚³ã‚¢16ä»¥ä¸Šãƒ»ä¸Šä½" & MAX_EXTRACT_COUNT & "ä»¶)", MAX_EXTRACT_COUNT
+    Else
+        æŠ½å‡ºå®Ÿè¡Œ 16, True, "é«˜ç²¾åº¦æŠ½å‡º(ã‚¹ã‚³ã‚¢16ä»¥ä¸Šãƒ»å…¨ãƒ•ã‚£ãƒ«ã‚¿ãƒ¼å¿…é ˆãƒ»ä¸Šä½" & MAX_EXTRACT_COUNT & "ä»¶)", False, MAX_EXTRACT_COUNT
+    End If
 End Sub
 
-Public Sub ”ƒ‚¢’Šo_ƒXƒRƒA4_ŠÉ˜a()
-    ’ŠoÀs 11, False, "”ƒ‚¢’Šo(ƒXƒRƒA11ˆÈãEŠÉ˜aEãˆÊ10Œ)", False, MAX_EXTRACT_EASE
+Public Sub è²·ã„æŠ½å‡º_ã‚¹ã‚³ã‚¢4()
+    æŠ½å‡ºå®Ÿè¡Œ 11, True, "è²·ã„æŠ½å‡º(ã‚¹ã‚³ã‚¢11ä»¥ä¸Šãƒ»ä¸­ç¨‹åº¦ãƒ»ä¸Šä½5ä»¶)", False, MAX_EXTRACT_BUY
 End Sub
 
-Private Sub ’ŠoÀs(ByVal minScore As Long, _
+Public Sub è²·ã„æŠ½å‡º_ã‚¹ã‚³ã‚¢4_ç·©å’Œ()
+    æŠ½å‡ºå®Ÿè¡Œ 11, False, "è²·ã„æŠ½å‡º(ã‚¹ã‚³ã‚¢11ä»¥ä¸Šãƒ»ç·©å’Œãƒ»ä¸Šä½10ä»¶)", False, MAX_EXTRACT_EASE
+End Sub
+
+Private Sub æŠ½å‡ºå®Ÿè¡Œ(ByVal minScore As Long, _
                      ByVal doMark As Boolean, _
                      ByVal titleText As String, _
                      Optional ByVal useRSS As Boolean = False, _
                      Optional ByVal maxCount As Long = 0)
     If maxCount <= 0 Then maxCount = MAX_EXTRACT_COUNT
-    Dim closeWs As Worksheet: Set closeWs = GetWs("I’l")
-    Dim openWs  As Worksheet: Set openWs = GetWs("n’l")
-    Dim highWs  As Worksheet: Set highWs = GetWs("‚’l")
-    Dim lowWs   As Worksheet: Set lowWs = GetWs("ˆÀ’l")
-    Dim volWs   As Worksheet: Set volWs = GetWs("o—ˆ‚")
-    Dim extWs   As Worksheet: Set extWs = GetWs("”ƒ’Šov13")
-    Dim mws     As Worksheet: Set mws = GetWs("–Á•¿ŠÇ—")
-    Dim anaWs   As Worksheet: Set anaWs = GetWs("•ªÍ")
+    Dim closeWs As Worksheet: Set closeWs = GetWs("çµ‚å€¤")
+    Dim openWs  As Worksheet: Set openWs = GetWs("å§‹å€¤")
+    Dim highWs  As Worksheet: Set highWs = GetWs("é«˜å€¤")
+    Dim lowWs   As Worksheet: Set lowWs = GetWs("å®‰å€¤")
+    Dim volWs   As Worksheet: Set volWs = GetWs("å‡ºæ¥é«˜")
+    Dim extWs   As Worksheet: Set extWs = GetWs("è²·æŠ½å‡ºv13")
+    Dim mws     As Worksheet: Set mws = GetWs("éŠ˜æŸ„ç®¡ç†")
+    Dim anaWs   As Worksheet: Set anaWs = GetWs("åˆ†æ")
     If closeWs Is Nothing Or extWs Is Nothing Then
-        UI_Msg "uI’lv‚Ü‚½‚Íu”ƒ’Šov13vƒV[ƒg‚ªŒ©‚Â‚©‚è‚Ü‚¹‚ñB", vbExclamation
+        UI_Msg "ã€Œçµ‚å€¤ã€ã¾ãŸã¯ã€Œè²·æŠ½å‡ºv13ã€ã‚·ãƒ¼ãƒˆãŒè¦‹ã¤ã‹ã‚Šã¾ã›ã‚“ã€‚", vbExclamation
         Exit Sub
     End If
     If mws Is Nothing Then
-        UI_Msg "u–Á•¿ŠÇ—vƒV[ƒg‚ªŒ©‚Â‚©‚è‚Ü‚¹‚ñB", vbExclamation
+        UI_Msg "ã€ŒéŠ˜æŸ„ç®¡ç†ã€ã‚·ãƒ¼ãƒˆãŒè¦‹ã¤ã‹ã‚Šã¾ã›ã‚“ã€‚", vbExclamation
         Exit Sub
     End If
     On Error Resume Next
@@ -226,14 +237,14 @@ Private Sub ’ŠoÀs(ByVal minScore As Long, _
         code = Trim$(CStr(closeWs.Cells(i, 1).Value))
         If code = "" Or code = "0" Or code = "TOPX" Then GoTo NextStock
         scannedCount = scannedCount + 1
-        Application.StatusBar = titleText & " : " & scannedCount & " Œ–Ú (" & code & ")"
+        Application.StatusBar = titleText & " : " & scannedCount & " ä»¶ç›® (" & code & ")"
         totalScore = 0: signals = ""
         Dim closePrice As Double
         Dim highVal As Double: highVal = 0
         Dim lowVal  As Double: lowVal = 0
         Dim closes As Variant, opens As Variant, highs As Variant, lows As Variant, vols As Variant
         If useRSS Then
-            'š RSSŒ»İ’l(C—ñ)‚ğæ“ª‚É‚µ‚½”z—ñ
+            'â˜… RSSç¾åœ¨å€¤(Cåˆ—)ã‚’å…ˆé ­ã«ã—ãŸé…åˆ—
             Dim rssClose As Double: rssClose = val(closeWs.Cells(i, 3).Value)
             closePrice = IIf(rssClose > 0, rssClose, val(closeWs.Cells(i, 5).Value))
             If Not highWs Is Nothing Then
@@ -265,27 +276,27 @@ Private Sub ’ŠoÀs(ByVal minScore As Long, _
         Dim rsiVal As Double: rsiVal = 50
         If anaRow > 0 Then rsiVal = SafeNum(anaWs.Cells(anaRow, 23).Value, 50)
         If rsiVal <= 30 Then
-            totalScore = totalScore + 2: signals = signals & "RSI”„‚ç‚ê‰ß‚¬ "
+            totalScore = totalScore + 2: signals = signals & "RSIå£²ã‚‰ã‚Œéã "
         ElseIf rsiVal <= 40 Then
-            totalScore = totalScore + 1: signals = signals & "RSIˆÀ "
+            totalScore = totalScore + 1: signals = signals & "RSIå®‰ "
         ElseIf rsiVal >= 70 Then
-            totalScore = totalScore - 1: signals = signals & "RSI‰ß”M "
+            totalScore = totalScore - 1: signals = signals & "RSIéç†± "
         End If
         Dim emaTrend As String: emaTrend = ""
         If anaRow > 0 Then emaTrend = SafeStr(anaWs.Cells(anaRow, 30).Value)
-        If emaTrend = "ƒp[ƒtƒFƒNƒg£" Then
-            totalScore = totalScore + 2: signals = signals & "ƒp[ƒtƒFƒNƒg£ "
-        ElseIf emaTrend = "ã¸ƒgƒŒƒ“ƒh£" Then
-            totalScore = totalScore + 1: signals = signals & "ã¸£ "
-        ElseIf emaTrend = "‰º~ƒgƒŒƒ“ƒh¥" Then
+        If emaTrend = "ãƒ‘ãƒ¼ãƒ•ã‚§ã‚¯ãƒˆâ–²" Then
+            totalScore = totalScore + 2: signals = signals & "ãƒ‘ãƒ¼ãƒ•ã‚§ã‚¯ãƒˆâ–² "
+        ElseIf emaTrend = "ä¸Šæ˜‡ãƒˆãƒ¬ãƒ³ãƒ‰â–²" Then
+            totalScore = totalScore + 1: signals = signals & "ä¸Šæ˜‡â–² "
+        ElseIf emaTrend = "ä¸‹é™ãƒˆãƒ¬ãƒ³ãƒ‰â–¼" Then
             totalScore = totalScore - 1
         End If
         Dim osime As String: osime = ""
         If anaRow > 0 Then osime = SafeStr(anaWs.Cells(anaRow, 31).Value)
-        If osime = "25“ú‰Ÿ‚µ–Úš" Then
-            totalScore = totalScore + 2: signals = signals & "25“ú‰Ÿ‚µ–Úœ "
-        ElseIf osime = "5“ú‰Ÿ‚µ–Ú›" Then
-            totalScore = totalScore + 1: signals = signals & "5“ú‰Ÿ‚µ–Ú› "
+        If osime = "25æ—¥æŠ¼ã—ç›®â˜…" Then
+            totalScore = totalScore + 2: signals = signals & "25æ—¥æŠ¼ã—ç›®â— "
+        ElseIf osime = "5æ—¥æŠ¼ã—ç›®â—‹" Then
+            totalScore = totalScore + 1: signals = signals & "5æ—¥æŠ¼ã—ç›®â—‹ "
         End If
         Dim volToday As Double: volToday = 0
         Dim vol5avg  As Double: vol5avg = 0
@@ -297,10 +308,10 @@ Private Sub ’ŠoÀs(ByVal minScore As Long, _
                 volRatio = volToday / vol5avg
                 If volRatio >= 2# Then
                     totalScore = totalScore + 3
-                    signals = signals & "o—ˆ‚‹}‘(" & Format(volRatio, "0.0") & "”{) "
+                    signals = signals & "å‡ºæ¥é«˜æ€¥å¢—(" & Format(volRatio, "0.0") & "å€) "
                 ElseIf volRatio >= 1.5 Then
                     totalScore = totalScore + 2
-                    signals = signals & "o—ˆ‚‘(" & Format(volRatio, "0.0") & "”{) "
+                    signals = signals & "å‡ºæ¥é«˜å¢—(" & Format(volRatio, "0.0") & "å€) "
                 End If
             End If
         End If
@@ -314,14 +325,14 @@ Private Sub ’ŠoÀs(ByVal minScore As Long, _
         Dim highUpdate As String: highUpdate = ""
         If anaRow > 0 Then highUpdate = SafeStr(anaWs.Cells(anaRow, 22).Value)
         Dim isFakeBreakout As Boolean: isFakeBreakout = False
-        If highUpdate = "”N‰—ˆ‚’lXVœ" Then
+        If highUpdate = "å¹´åˆæ¥é«˜å€¤æ›´æ–°â—" Then
             If (volRatio > 0 And volRatio < FAKE_BREAKOUT_VOL_RATIO) Or _
                (highVal > 0 And closePrice < highVal * 0.95) Then
                 isFakeBreakout = True
-                signals = signals & "‚’lXVƒ_ƒ}ƒVŒx‰ú "
+                signals = signals & "é«˜å€¤æ›´æ–°ãƒ€ãƒã‚·è­¦æˆ’ "
             Else
                 totalScore = totalScore + 2
-                signals = signals & "”N‰—ˆ‚’lXVœ "
+                signals = signals & "å¹´åˆæ¥é«˜å€¤æ›´æ–°â— "
             End If
         End If
         Dim ema12V As Double, ema26V As Double, macdNow As Double, signalNow As Double
@@ -336,10 +347,10 @@ Private Sub ’ŠoÀs(ByVal minScore As Long, _
         If rsiUp Then momCount = momCount + 1: signals = signals & "RSI>50 "
         If momCount = 3 Then
             totalScore = totalScore + MOMENTUM_FULL_BONUS
-            signals = signals & "[ƒ‚ƒƒ“ƒ^ƒ€Š®‘S] "
+            signals = signals & "[â—ãƒ¢ãƒ¡ãƒ³ã‚¿ãƒ å®Œå…¨] "
         ElseIf momCount = 2 Then
             totalScore = totalScore + MOMENTUM_PARTIAL_BONUS
-            signals = signals & "[›ƒ‚ƒƒ“ƒ^ƒ€•”•ª] "
+            signals = signals & "[â—‹ãƒ¢ãƒ¡ãƒ³ã‚¿ãƒ éƒ¨åˆ†] "
         End If
         Dim ok_GC As Boolean, ok_PO As Boolean, ok_VB As Boolean
         Dim ok_ADX As Boolean, ok_HE As Boolean, ok_RS As Boolean
@@ -347,7 +358,7 @@ Private Sub ’ŠoÀs(ByVal minScore As Long, _
         ok_GC = IsGoldenCrossRecent(closes, GOLDEN_CROSS_LOOKBACK)
         If ok_GC Then
             totalScore = totalScore + GC_BONUS
-            signals = signals & "[GC’¼‹ß" & GOLDEN_CROSS_LOOKBACK & "“ú] "
+            signals = signals & "[GCç›´è¿‘" & GOLDEN_CROSS_LOOKBACK & "æ—¥] "
             cntGC = cntGC + 1
         End If
         ok_PO = IsPerfectOrder(closes)
@@ -360,7 +371,7 @@ Private Sub ’ŠoÀs(ByVal minScore As Long, _
             ok_VB = IsVolumeBurstBullish(vols, closes, opens, VOLUME_BURST_RATIO)
             If ok_VB Then
                 totalScore = totalScore + VOL_BONUS
-                signals = signals & "[Vol‹}‘—zü] "
+                signals = signals & "[Volæ€¥å¢—é™½ç·š] "
                 cntVB = cntVB + 1
             End If
         End If
@@ -376,7 +387,7 @@ Private Sub ’ŠoÀs(ByVal minScore As Long, _
         ok_HE = (histNow > histPrev) And (histNow > 0)
         If ok_HE Then
             totalScore = totalScore + HIST_BONUS
-            signals = signals & "[HistŠg‘å] "
+            signals = signals & "[Histæ‹¡å¤§] "
             cntHE = cntHE + 1
         End If
         Dim stockPctChg As Double: stockPctChg = 0
@@ -389,7 +400,7 @@ Private Sub ’ŠoÀs(ByVal minScore As Long, _
         ok_RS = (stockPctChg > topixPct)
         If ok_RS Then
             totalScore = totalScore + RS_BONUS
-            signals = signals & "[‘ÎTOPIXŸ +" & Format(stockPctChg - topixPct, "0.00") & "%] "
+            signals = signals & "[å¯¾TOPIXå‹ +" & Format(stockPctChg - topixPct, "0.00") & "%] "
             cntRS = cntRS + 1
         End If
         totalScore = totalScore + CandleScoreBuy(opens, highs, lows, closes, signals)
@@ -415,7 +426,7 @@ Private Sub ’ŠoÀs(ByVal minScore As Long, _
             If BUY_REQUIRE_RS_VS_TOPIX And Not ok_RS Then canExtract = False
         End If
         If doMark And canExtract And BUY_REQUIRE_OSIME Then
-            If osime <> "25“ú‰Ÿ‚µ–Úš" And osime <> "5“ú‰Ÿ‚µ–Ú›" Then
+            If osime <> "25æ—¥æŠ¼ã—ç›®â˜…" And osime <> "5æ—¥æŠ¼ã—ç›®â—‹" Then
                 canExtract = False
             End If
         End If
@@ -459,7 +470,7 @@ NextStock:
         DoEvents
     Next i
 
-    'š‡C ƒ\[ƒgiƒXƒRƒA~‡¨o—ˆ‚”{—¦~‡j‚µ‚Ä‚©‚çãˆÊNŒ‚¾‚¯c‚·
+    'â˜…â‘£ ã‚½ãƒ¼ãƒˆï¼ˆã‚¹ã‚³ã‚¢é™é †â†’å‡ºæ¥é«˜å€ç‡é™é †ï¼‰ã—ã¦ã‹ã‚‰ä¸Šä½Nä»¶ã ã‘æ®‹ã™
     If outRow > EXT_DATA_ROW + 1 Then
         extWs.Range(extWs.Cells(EXT_DATA_ROW, 1), _
                     extWs.Cells(outRow - 1, EXT_LAST_COL)).Sort _
@@ -477,8 +488,8 @@ NextStock:
         outRow = EXT_DATA_ROW + maxCount
     End If
 
-    'š‡ˆÊ—ñi1,2,3cj‚ğ B—ñ(2) ‚Éo—Í
-    extWs.Cells(3, 2).Value = "‡ˆÊ"
+    'â˜…é †ä½åˆ—ï¼ˆ1,2,3â€¦ï¼‰ã‚’ Båˆ—(2) ã«å‡ºåŠ›
+    extWs.Cells(3, 2).Value = "é †ä½"
     Dim rkRow As Long
     For rkRow = EXT_DATA_ROW To outRow - 1
         extWs.Cells(rkRow, 2).Value = rkRow - EXT_DATA_ROW + 1
@@ -492,13 +503,13 @@ NextStock:
     extWs.Range("A2:R2").Merge
     Dim modeDesc As String
     Select Case topixMode
-        Case "LARGE": modeDesc = "yŒµŠiz"
-        Case "MID":   modeDesc = "y’†’ö“xz"
-        Case Else:    modeDesc = "y’Êíz"
+        Case "LARGE": modeDesc = "ã€å³æ ¼ã€‘"
+        Case "MID":   modeDesc = "ã€ä¸­ç¨‹åº¦ã€‘"
+        Case Else:    modeDesc = "ã€é€šå¸¸ã€‘"
     End Select
     extWs.Cells(2, 1).Value = "TOPIX: " & topixTrend & _
         " (" & Format(topixPct, "+0.00;-0.00;0.00") & "%) " & modeDesc & _
-        "@@ÅIXV: " & Format(Now(), "yyyy/mm/dd hh:mm") & "@@" & titleText
+        "ã€€ã€€æœ€çµ‚æ›´æ–°: " & Format(Now(), "yyyy/mm/dd hh:mm") & "ã€€ã€€" & titleText
     Application.StatusBar = False
     Application.Calculation = xlCalculationAutomatic
     Application.ScreenUpdating = True
@@ -508,40 +519,40 @@ NextStock:
         If IsNumeric(extWs.Cells(chkRow, 17).Value) Then extracted = extracted + 1
     Next chkRow
     Dim msg As String
-    msg = "y‘Å‚¿o‚Ì–³ŒÀ‚±‚Ã‚¿ v13.1 i‚è‚İ‹­‰»z" & vbCrLf & _
+    msg = "ã€æ‰“ã¡å‡ºã®ç„¡é™ã“ã¥ã¡ v13.1 çµã‚Šè¾¼ã¿å¼·åŒ–ã€‘" & vbCrLf & _
           "TOPIX: " & Format(topixPct, "+0.00;-0.00;0.00") & "% " & modeDesc & vbCrLf & _
-          titleText & " Š®—¹I" & vbCrLf & vbCrLf & _
-          "ƒXƒLƒƒƒ“Œ”: " & scannedCount & " –Á•¿" & vbCrLf & _
-          "’ŠoŒ”:    " & extracted & " Œ" & vbCrLf & _
-          "(’ŠoŠî€: ƒXƒRƒA " & minScore & " “_ˆÈã / Å‘å " & maxCount & " Œ)" & vbCrLf & vbCrLf & _
-          "--- v13.1•ÏX“_ ---" & vbCrLf & _
-          "Œ”ãŒÀ:   " & maxCount & " ŒiƒXƒRƒA¨o—ˆ‚”{—¦‚Ì‡‚ÅãˆÊ‚Ì‚İÌ—pj" & vbCrLf & _
-          "‰Ÿ‚µ–Ú•K{: " & IIf(BUY_REQUIRE_OSIME, "ONi25“úor5“ú‰Ÿ‚µ–Ú‚Ì‚İj", "OFF") & vbCrLf & _
-          "PO•K{:     " & IIf(BUY_REQUIRE_PERFECT_ORDER, "ON", "OFF") & vbCrLf & _
-          "Vol‹}‘•K{:" & IIf(BUY_REQUIRE_VOL_BURST, "ON", "OFF") & vbCrLf & _
-          "HistŠg‘å•K{:" & IIf(BUY_REQUIRE_HIST_EXPAND, "ON", "OFF") & vbCrLf & _
-          "ƒ_ƒ}ƒVè‡’l: o—ˆ‚" & Format(FAKE_BREAKOUT_VOL_RATIO, "0.0") & "”{–¢–¨ƒ_ƒ}ƒVˆµ‚¢"
+          titleText & " å®Œäº†ï¼" & vbCrLf & vbCrLf & _
+          "ã‚¹ã‚­ãƒ£ãƒ³ä»¶æ•°: " & scannedCount & " éŠ˜æŸ„" & vbCrLf & _
+          "æŠ½å‡ºä»¶æ•°:    " & extracted & " ä»¶" & vbCrLf & _
+          "(æŠ½å‡ºåŸºæº–: ã‚¹ã‚³ã‚¢ " & minScore & " ç‚¹ä»¥ä¸Š / æœ€å¤§ " & maxCount & " ä»¶)" & vbCrLf & vbCrLf & _
+          "--- v13.1å¤‰æ›´ç‚¹ ---" & vbCrLf & _
+          "ä»¶æ•°ä¸Šé™:   " & maxCount & " ä»¶ï¼ˆã‚¹ã‚³ã‚¢â†’å‡ºæ¥é«˜å€ç‡ã®é †ã§ä¸Šä½ã®ã¿æ¡ç”¨ï¼‰" & vbCrLf & _
+          "æŠ¼ã—ç›®å¿…é ˆ: " & IIf(BUY_REQUIRE_OSIME, "ONï¼ˆ25æ—¥or5æ—¥æŠ¼ã—ç›®ã®ã¿ï¼‰", "OFF") & vbCrLf & _
+          "POå¿…é ˆ:     " & IIf(BUY_REQUIRE_PERFECT_ORDER, "ON", "OFF") & vbCrLf & _
+          "Volæ€¥å¢—å¿…é ˆ:" & IIf(BUY_REQUIRE_VOL_BURST, "ON", "OFF") & vbCrLf & _
+          "Histæ‹¡å¤§å¿…é ˆ:" & IIf(BUY_REQUIRE_HIST_EXPAND, "ON", "OFF") & vbCrLf & _
+          "ãƒ€ãƒã‚·é–¾å€¤: å‡ºæ¥é«˜" & Format(FAKE_BREAKOUT_VOL_RATIO, "0.0") & "å€æœªæº€â†’ãƒ€ãƒã‚·æ‰±ã„"
     If doMark Then
-        msg = msg & vbCrLf & vbCrLf & "--- ‚¸“xƒtƒBƒ‹ƒ^[’Ê‰ß” ---" & vbCrLf & _
-              "ƒS[ƒ‹ƒfƒ“ƒNƒƒX’¼‹ß: " & cntGC & vbCrLf & _
-              "ƒp[ƒtƒFƒNƒgƒI[ƒ_[: " & cntPO & vbCrLf & _
-              "o—ˆ‚‹}‘+—zü:    " & cntVB & vbCrLf & _
+        msg = msg & vbCrLf & vbCrLf & "--- é«˜ç²¾åº¦ãƒ•ã‚£ãƒ«ã‚¿ãƒ¼é€šéæ•° ---" & vbCrLf & _
+              "ã‚´ãƒ¼ãƒ«ãƒ‡ãƒ³ã‚¯ãƒ­ã‚¹ç›´è¿‘: " & cntGC & vbCrLf & _
+              "ãƒ‘ãƒ¼ãƒ•ã‚§ã‚¯ãƒˆã‚ªãƒ¼ãƒ€ãƒ¼: " & cntPO & vbCrLf & _
+              "å‡ºæ¥é«˜æ€¥å¢—+é™½ç·š:    " & cntVB & vbCrLf & _
               "ADX>" & Format(ADX_THRESHOLD, "0") & ":         " & cntADX & vbCrLf & _
-              "MACDƒqƒXƒgŠg‘å:     " & cntHE & vbCrLf & _
-              "‘ÎTOPIX‘Š‘Î‹­“x:    " & cntRS
+              "MACDãƒ’ã‚¹ãƒˆæ‹¡å¤§:     " & cntHE & vbCrLf & _
+              "å¯¾TOPIXç›¸å¯¾å¼·åº¦:    " & cntRS
     End If
-    UI_Msg msg, vbInformation, "’ŠoŠ®—¹ (v13.1)"
+    UI_Msg msg, vbInformation, "æŠ½å‡ºå®Œäº† (v13.1)"
 End Sub
 
-Private Sub ’ŠoÀs_RSS(ByVal minScore As Long, _
+Private Sub æŠ½å‡ºå®Ÿè¡Œ_RSS(ByVal minScore As Long, _
                           ByVal doMark As Boolean, _
                           ByVal titleText As String, _
                           Optional ByVal maxCount As Long = 0)
-    Call ’ŠoÀs(minScore, doMark, titleText & "[RSS]", True, maxCount)
+    Call æŠ½å‡ºå®Ÿè¡Œ(minScore, doMark, titleText & "[RSS]", True, maxCount)
 End Sub
 
 '=============================================================================
-' RSSŒ»İ’l‚ğæ“ª‚É‚µ‚½”z—ñì¬
+' RSSç¾åœ¨å€¤ã‚’å…ˆé ­ã«ã—ãŸé…åˆ—ä½œæˆ
 '=============================================================================
 Private Function RssMerge(ByVal ws As Worksheet, ByVal r As Long) As Variant
     Dim histLen As Long: histLen = 100
@@ -583,13 +594,13 @@ Private Function CandleScoreBuy(ByRef opens As Variant, ByRef highs As Variant, 
     Dim up As Double: up = h - Application.Max(o, c)
     Dim lo As Double: lo = Application.Min(o, c) - l
     If body > 0 And lo >= body * 2# And up <= body * 0.5 Then
-        CandleScoreBuy = CANDLE_LOWER_TAIL_YOSEN: sig = sig & "[‰ºƒqƒQ—züœ+2] "
+        CandleScoreBuy = CANDLE_LOWER_TAIL_YOSEN: sig = sig & "[ä¸‹ãƒ’ã‚²é™½ç·šâ—+2] "
     ElseIf c >= o And body >= rng * 0.7 Then
-        CandleScoreBuy = CANDLE_BIG_YOSEN: sig = sig & "[‘å—zü£+2] "
+        CandleScoreBuy = CANDLE_BIG_YOSEN: sig = sig & "[å¤§é™½ç·šâ–²+2] "
     ElseIf lo >= rng * 0.5 And up <= rng * 0.2 Then
-        CandleScoreBuy = CANDLE_LONG_LOWER_TAIL: sig = sig & "[’·‚¢‰ºƒqƒQ+1] "
+        CandleScoreBuy = CANDLE_LONG_LOWER_TAIL: sig = sig & "[é•·ã„ä¸‹ãƒ’ã‚²+1] "
     ElseIf body > 0 And up >= body * 2# And lo <= body * 0.5 Then
-        CandleScoreBuy = CANDLE_UPPER_TAIL_WARN: sig = sig & "[ãƒqƒQŒx‰ú¥-2] "
+        CandleScoreBuy = CANDLE_UPPER_TAIL_WARN: sig = sig & "[ä¸Šãƒ’ã‚²è­¦æˆ’â–¼-2] "
     End If
 ExitFunc:
 End Function
@@ -615,13 +626,13 @@ Private Function CandleScoreBuyPrev(ByRef opens As Variant, ByRef highs As Varia
     Dim up As Double: up = h - Application.Max(o, c)
     Dim lo As Double: lo = Application.Min(o, c) - l
     If body > 0 And lo >= body * 2# And up <= body * 0.5 Then
-        CandleScoreBuyPrev = CANDLE_LOWER_TAIL_YOSEN: sig = sig & "[‘O“ú:‰ºƒqƒQ—züœ+2] "
+        CandleScoreBuyPrev = CANDLE_LOWER_TAIL_YOSEN: sig = sig & "[å‰æ—¥:ä¸‹ãƒ’ã‚²é™½ç·šâ—+2] "
     ElseIf c >= o And body >= rng * 0.7 Then
-        CandleScoreBuyPrev = CANDLE_BIG_YOSEN: sig = sig & "[‘O“ú:‘å—zü£+2] "
+        CandleScoreBuyPrev = CANDLE_BIG_YOSEN: sig = sig & "[å‰æ—¥:å¤§é™½ç·šâ–²+2] "
     ElseIf lo >= rng * 0.5 And up <= rng * 0.2 Then
-        CandleScoreBuyPrev = CANDLE_LONG_LOWER_TAIL: sig = sig & "[‘O“ú:’·‚¢‰ºƒqƒQ+1] "
+        CandleScoreBuyPrev = CANDLE_LONG_LOWER_TAIL: sig = sig & "[å‰æ—¥:é•·ã„ä¸‹ãƒ’ã‚²+1] "
     ElseIf body > 0 And up >= body * 2# And lo <= body * 0.5 Then
-        CandleScoreBuyPrev = CANDLE_UPPER_TAIL_WARN: sig = sig & "[‘O“ú:ãƒqƒQŒx‰ú¥-2] "
+        CandleScoreBuyPrev = CANDLE_UPPER_TAIL_WARN: sig = sig & "[å‰æ—¥:ä¸Šãƒ’ã‚²è­¦æˆ’â–¼-2] "
     End If
 ExitFunc:
 End Function
@@ -905,7 +916,7 @@ Private Sub writeRow(ByVal ws As Worksheet, ByVal r As Long, _
                      ByVal isFake As Boolean, ByVal totalScore As Long, _
                      ByVal signals As String)
     With ws
-        .Cells(r, 1).Formula = "=HYPERLINK(""https://kabutan.jp/stock/?code=""&TEXT(C" & r & ",""0000""),""Š”’T"")"
+        .Cells(r, 1).Formula = "=HYPERLINK(""https://kabutan.jp/stock/?code=""&TEXT(C" & r & ",""0000""),""æ ªæ¢"")"
         .Cells(r, 1).Interior.Color = COL_NAVY
         .Cells(r, 1).Font.Color = COL_WHITE
         .Cells(r, 1).Font.Bold = True
@@ -930,14 +941,14 @@ Private Sub writeRow(ByVal ws As Worksheet, ByVal r As Long, _
         .Cells(r, 9).Value = Format(rsiVal, "0.0")
         .Cells(r, 10).Value = emaTrend
         Select Case emaTrend
-            Case "ƒp[ƒtƒFƒNƒg£"
+            Case "ãƒ‘ãƒ¼ãƒ•ã‚§ã‚¯ãƒˆâ–²"
                 .Cells(r, 10).Interior.Color = RGB(0, 176, 80)
                 .Cells(r, 10).Font.Color = COL_WHITE
                 .Cells(r, 10).Font.Bold = True
-            Case "ã¸ƒgƒŒƒ“ƒh£"
+            Case "ä¸Šæ˜‡ãƒˆãƒ¬ãƒ³ãƒ‰â–²"
                 .Cells(r, 10).Interior.Color = RGB(146, 208, 80)
                 .Cells(r, 10).Font.Color = COL_BLACK
-            Case "‰º~ƒgƒŒƒ“ƒh¥"
+            Case "ä¸‹é™ãƒˆãƒ¬ãƒ³ãƒ‰â–¼"
                 .Cells(r, 10).Interior.Color = RGB(255, 0, 0)
                 .Cells(r, 10).Font.Color = COL_WHITE
         End Select

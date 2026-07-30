@@ -115,6 +115,17 @@ done:
     gUnattended = P
 End Sub
 
+Public Sub 高精度抽出_手動()
+    '★ボタン用の高精度抽出（無人モードにしないのでポップアップが出る。中身は株価抽出と同じ・上限2件）
+    Dim h As Integer: h = Hour(Now)
+    Dim m As Integer: m = Minute(Now)
+    If (h >= 9 And h < 15) Or (h = 15 And m <= 30) Then
+        抽出実行_RSS 16, True, "高精度抽出[RSS現在値](スコア16以上・上位" & MAX_EXTRACT_COUNT & "件)", MAX_EXTRACT_COUNT
+    Else
+        抽出実行 16, True, "高精度抽出(スコア16以上・全フィルター必須・上位" & MAX_EXTRACT_COUNT & "件)", False, MAX_EXTRACT_COUNT
+    End If
+End Sub
+
 Public Sub 買い抽出_スコア4()
     抽出実行 11, True, "買い抽出(スコア11以上・中程度・上位5件)", False, MAX_EXTRACT_BUY
 End Sub
@@ -478,7 +489,7 @@ NextStock:
         outRow = EXT_DATA_ROW + maxCount
     End If
 
-    '順位列（1,2,3…）を B列(2) に出力
+    '★順位列（1,2,3…）を B列(2) に出力
     extWs.Cells(3, 2).Value = "順位"
     Dim rkRow As Long
     For rkRow = EXT_DATA_ROW To outRow - 1

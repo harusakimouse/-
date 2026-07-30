@@ -1,10 +1,15 @@
 Attribute VB_Name = "Module1"
 Option Explicit
 ' =============================================
-' Module1: 楽天RSS データ自動取得（完成版 v4）
+' Module1: 楽天RSS データ自動取得（完成版 v5）
 ' =============================================
 ' Sheet1にRSS数式が常駐（触らない）
 ' VBAはSheet1の値を読み取り→ターゲットシートに蓄積
+'
+' v5の修正点（v4からの差分）＝データ品質の根治
+'  ★ TOPIX/日経先物 前日比率を常に小数比率(例 -0.0054)で保存し、
+'     表示は "0.00%" 形式に固定（単位ゆれの再発防止）
+'  ★ 変換後の指標が異常値なら「実行ログ」に警告を残す（単位ズレの早期検知）
 '
 ' v4の修正点（v3からの差分）
 '  ★ HasToday を IsDate ベースに修正（日付書式セルでも本日分を正しく判定）
@@ -252,8 +257,15 @@ Private Sub CaptureStockData(ByVal sheetName As String)
     Dim topixRate As Variant: topixRate = wsFunc.Range("C1").Value
     Dim nkVal As Variant: nkVal = wsFunc.Range("D1").Value
     Dim nkRate As Variant: nkRate = wsFunc.Range("E1").Value
-    If IsNumeric(topixRate) Then topixRate = topixRate / 100
+    If IsNumeric(topixRate) Then topixRate = topixRate / 100   ' 関数!C1は%数値(-0.54)→小数比率(-0.0054)へ
     If IsNumeric(nkRate) Then nkRate = nkRate / 100
+    ' ★ v5: 変換後の妥当性チェック（|日次変化|が極端なら単位ズレの疑い→ログに残す）
+    If IsNumeric(topixRate) Then
+        If Abs(topixRate) > 0.15 Then LogWrite "指標異常?", "TOPIX率=" & topixRate & " 単位を確認"
+    End If
+    If IsNumeric(nkRate) Then
+        If Abs(nkRate) > 0.2 Then LogWrite "指標異常?", "日経率=" & nkRate & " 単位を確認"
+    End If
 
     ' --- 書き込み開始行 ---
     Dim startRow As Long
@@ -288,8 +300,10 @@ Private Sub CaptureStockData(ByVal sheetName As String)
             .Cells(r, 1).NumberFormat = "m/d/yyyy"
             .Cells(r, 2).Value = topixVal
             .Cells(r, 3).Value = topixRate
+            .Cells(r, 3).NumberFormat = "0.00%"          ' ★ v5: %表示で固定
             .Cells(r, 4).Value = nkVal
             .Cells(r, 5).Value = nkRate
+            .Cells(r, 5).NumberFormat = "0.00%"          ' ★ v5: %表示で固定
             .Cells(r, 6).Value = wsWork.Cells(srcRow, 1).Value  ' F: コード
         End With
 

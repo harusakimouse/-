@@ -589,6 +589,61 @@ Sub MS2_Auto_All()
 End Sub
 
 '============================================================
+' DATA_MS2 の見出し(2行目)・タイトル帯(1行目)を修復
+'   3行目以降のデータ・数式には触れません
+'============================================================
+Sub MS2_Fix_DATA_Header()
+
+    Dim ws As Worksheet
+    Dim headers As Variant
+    Dim c As Long, nCol As Long
+
+    Set ws = Sheets("DATA_MS2")
+    headers = Array("銘柄コード（株探）", "現在値", "高値", "安値", "終値", "出来高", _
+        "前日高値", "前日安値", "前日終値", "寄り方向", "ATR(14・5分足)", "ゾーン", _
+        "STOP-BUY", "STOP-SELL", "売買種別", "Entry", "SL", "TP1", "TP2", "TP3", _
+        "2回目戻し", "時間帯", "ボラフィルタ", "ダマシ除去", "トレンド方向")
+    nCol = UBound(headers) - LBound(headers) + 1        ' 25
+
+    ' タイトル帯（1行目）を整える
+    On Error Resume Next
+    ws.Range(ws.Cells(1, 1), ws.Cells(1, nCol)).UnMerge
+    On Error GoTo 0
+    ws.Range(ws.Cells(1, 1), ws.Cells(1, nCol)).Merge
+    ws.Range(ws.Cells(1, 1), ws.Cells(1, nCol)).Interior.Color = RGB(189, 215, 238)
+    ws.Rows(1).RowHeight = 44
+
+    ' 見出し（2行目）を書き直す
+    For c = 1 To nCol
+        With ws.Cells(2, c)
+            .Value = headers(c - 1)
+            .Font.Name = "Meiryo"
+            .Font.Size = 18
+            .Font.Bold = True
+            .Font.Color = RGB(255, 255, 255)
+            .Interior.Color = RGB(31, 78, 120)
+            .HorizontalAlignment = xlCenter
+            .VerticalAlignment = xlCenter
+            .WrapText = True
+            .Borders.LineStyle = xlContinuous
+            .Borders.Color = RGB(191, 191, 191)
+        End With
+    Next c
+    ws.Rows(2).RowHeight = 46
+
+    ' 固定ウィンドウ（1～2行目＋A列）を再設定
+    On Error Resume Next
+    ws.Activate
+    ActiveWindow.FreezePanes = False
+    ws.Range("B3").Select
+    ActiveWindow.FreezePanes = True
+    On Error GoTo 0
+
+    MsgBox "DATA_MS2 の見出し（2行目）を修復しました。", vbInformation, "MS2"
+
+End Sub
+
+'============================================================
 ' 操作ボタンを専用シート「操作パネル_MS2」にまとめる
 '============================================================
 Sub MS2_Build_Menu()
@@ -623,6 +678,7 @@ Sub MS2_Build_Menu()
         "結果判定_MS2", "MS2_Eval_Trades", _
         "ランキング_MS2", "MS2_Update_Ranking", _
         "ATR履歴リセット_MS2", "MS2_Reset_ATR_History", _
+        "ヘッダー修復_MS2", "MS2_Fix_DATA_Header", _
         "ログ_MS2", "MS2_Show_Log", _
         "全自動_MS2", "MS2_Auto_All")
 

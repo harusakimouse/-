@@ -2,37 +2,37 @@ Attribute VB_Name = "MS2_Core"
 Option Explicit
 
 '============================================================
-' MS2 ã‚³ã‚¢ãƒã‚¯ãƒ­ï¼ˆæ–°ãƒ¬ã‚¤ã‚¢ã‚¦ãƒˆå¯¾å¿œç‰ˆï¼‰
-'   DATA_MS2 : 1è¡Œç›®=ã‚¿ã‚¤ãƒˆãƒ«å¸¯ / 2è¡Œç›®=è¦‹å‡ºã— / 3è¡Œç›®ã€œ=ãƒ‡ãƒ¼ã‚¿
-'   ãƒ»è¡Œã‚ºãƒ¬ä¿®æ­£ï¼šDATA_MS2 ã®ãƒ«ãƒ¼ãƒ—ã¯ 3è¡Œç›®é–‹å§‹ï¼ˆDATA_FIRSTï¼‰
-'   ãƒ»ATR      ï¼šéŠ˜æŸ„ã”ã¨ã«æ­£ã—ã„14æœŸé–“ATRï¼ˆWilderå¹³æ»‘ï¼‰ã‚’
-'                éš ã—ã‚·ãƒ¼ãƒˆ ATRHIST_MS2 ã«è“„ç©ã—ã¦è¨ˆç®—
+' MS2 ƒRƒAƒ}ƒNƒiVƒŒƒCƒAƒEƒg‘Î‰”Åj
+'   DATA_MS2 : 1s–Ú=ƒ^ƒCƒgƒ‹‘Ñ / 2s–Ú=Œ©o‚µ / 3s–Ú`=ƒf[ƒ^
+'   EsƒYƒŒC³FDATA_MS2 ‚Ìƒ‹[ƒv‚Í 3s–ÚŠJniDATA_FIRSTj
+'   EATR      F–Á•¿‚²‚Æ‚É³‚µ‚¢14ŠúŠÔATRiWilder•½ŠŠj‚ğ
+'                ‰B‚µƒV[ƒg ATRHIST_MS2 ‚É’~Ï‚µ‚ÄŒvZ
 '
-' ã€å°å…¥æ‰‹é †ã€‘
-'   1) VBEã§ æ—§ Module1 ã¨ é‡è¤‡ Module2 ã‚’å‰Šé™¤
-'   2) æœ¬ãƒ•ã‚¡ã‚¤ãƒ«(MS2_Core.bas)ã‚’ã‚¤ãƒ³ãƒãƒ¼ãƒˆ
-'   3) ãƒœã‚¿ãƒ³ã¯ MS2_Menu.bas ã® MS2_Build_Menu ã§ä½œæˆ
+' y“±“üè‡z
+'   1) VBE‚Å ‹Œ Module1 ‚Æ d•¡ Module2 ‚ğíœ
+'   2) –{ƒtƒ@ƒCƒ‹(MS2_Core.bas)‚ğƒCƒ“ƒ|[ƒg
+'   3) ƒ}ƒNƒˆê——‚Ì MS2_Build_Menu ‚ğÀs ¨ ƒV[ƒgu‘€ìƒpƒlƒ‹_MS2v‚Éƒ{ƒ^ƒ“ì¬
 '
-' ã€ATRã®è€ƒãˆæ–¹ï¼ˆé‡è¦ï¼‰ã€‘
-'   1è¡Œï¼1éŠ˜æŸ„ã®ã‚¹ãƒŠãƒƒãƒ—ã‚·ãƒ§ãƒƒãƒˆè¡¨ã«ã¯14æœ¬ã¶ã‚“ã®æ™‚ç³»åˆ—ãŒã‚ã‚Šã¾ã›ã‚“ã€‚
-'   ãã“ã§ ATRHIST_MS2 ã«éŠ˜æŸ„åˆ¥ã§ TR ã‚’è“„ç©ã—ã€æ›´æ–°ã®ãŸã³ã«
-'     ãƒ»æœ€åˆã®14å›ï¼šTRã®å˜ç´”å¹³å‡ï¼ˆã‚·ãƒ¼ãƒ‰ï¼‰
-'     ãƒ»15å›ç›®ä»¥é™ï¼šWilderå¹³æ»‘  ATR = (å‰ATR*13 + TR) / 14
-'   ã¨ã—ã¦æ­£ã—ã„14æœŸé–“ATRã¸åæŸã•ã›ã¾ã™ã€‚
-'   â€»ATRæ›´æ–°ã¯ã€Œ5åˆ†è¶³ãŒç¢ºå®šã™ã‚‹ã‚¿ã‚¤ãƒŸãƒ³ã‚°ã§1å›ã€ã‚’ç›®å®‰ã«å®Ÿè¡Œã—ã¦ãã ã•ã„
-'     ï¼ˆçŸ­æ™‚é–“ã«ä½•åº¦ã‚‚å›ã™ã¨1æœ¬ã‚’å¤šé‡ã‚«ã‚¦ãƒ³ãƒˆã—ã¾ã™ï¼‰ã€‚
-'   â€»TRã¯ RSS ã® é«˜å€¤/å®‰å€¤/å‰æ—¥çµ‚å€¤ ãƒ™ãƒ¼ã‚¹ã§ã™ã€‚å³å¯†ãª5åˆ†è¶³OHLCã‚’ä½¿ã†
-'     å ´åˆã¯5åˆ†è¶³ãƒ‡ãƒ¼ã‚¿ã®å–å¾—å…ƒãŒåˆ¥é€”å¿…è¦ã«ãªã‚Šã¾ã™ã€‚
+' yATR‚Ìl‚¦•ûid—vjz
+'   1s1–Á•¿‚ÌƒXƒiƒbƒvƒVƒ‡ƒbƒg•\‚É‚Í14–{‚Ô‚ñ‚ÌŒn—ñ‚ª‚ ‚è‚Ü‚¹‚ñB
+'   ‚»‚±‚Å ATRHIST_MS2 ‚É–Á•¿•Ê‚Å TR ‚ğ’~Ï‚µAXV‚Ì‚½‚Ñ‚É
+'     EÅ‰‚Ì14‰ñFTR‚Ì’Pƒ•½‹ÏiƒV[ƒhj
+'     E15‰ñ–ÚˆÈ~FWilder•½ŠŠ  ATR = (‘OATR*13 + TR) / 14
+'   ‚Æ‚µ‚Ä³‚µ‚¢14ŠúŠÔATR‚Öû‘©‚³‚¹‚Ü‚·B
+'   ¦ATRXV‚Íu5•ª‘«‚ªŠm’è‚·‚éƒ^ƒCƒ~ƒ“ƒO‚Å1‰ñv‚ğ–ÚˆÀ‚ÉÀs‚µ‚Ä‚­‚¾‚³‚¢
+'     i’ZŠÔ‚É‰½“x‚à‰ñ‚·‚Æ1–{‚ğ‘½dƒJƒEƒ“ƒg‚µ‚Ü‚·jB
+'   ¦TR‚Í RSS ‚Ì ‚’l/ˆÀ’l/‘O“úI’l ƒx[ƒX‚Å‚·BŒµ–§‚È5•ª‘«OHLC‚ğg‚¤
+'     ê‡‚Í5•ª‘«ƒf[ƒ^‚Ìæ“¾Œ³‚ª•Ê“r•K—v‚É‚È‚è‚Ü‚·B
 '============================================================
 
-Private Const DATA_FIRST As Long = 3        ' ãƒ‡ãƒ¼ã‚¿é–‹å§‹è¡Œï¼ˆè¦‹å‡ºã—ãŒ2è¡Œç›®ï¼‰
-Private Const STOCK_MAX As Long = 350       ' ç›£è¦–éŠ˜æŸ„æ•°ã®ä¸Šé™
+Private Const DATA_FIRST As Long = 3        ' ƒf[ƒ^ŠJnsiŒ©o‚µ‚ª2s–Új
+Private Const STOCK_MAX As Long = 350       ' ŠÄ‹–Á•¿”‚ÌãŒÀ
 Private Const HIST As String = "ATRHIST_MS2"
-Private Const ATR_N As Long = 14            ' ATRæœŸé–“
+Private Const ATR_N As Long = 14            ' ATRŠúŠÔ
 
 '============================================================
-' StockList â†’ DATA_MS2 ã®Aåˆ—ã‚’ã€Œæ ªæ¢ãƒªãƒ³ã‚¯ã€ã§å†è¨­å®šï¼ˆ350éŠ˜æŸ„ï¼‰
-'   â€»æ—§ãƒã‚¯ãƒ­ã®50éŠ˜æŸ„ä¸Šé™ã‚’æ’¤å»ƒã€‚Aåˆ—ã®ãƒªãƒ³ã‚¯ãŒæ¶ˆãˆãŸæ™‚ã®å¾©æ—§ã«ã‚‚ä½¿ç”¨ã€‚
+' StockList ¨ DATA_MS2 ‚ÌA—ñ‚ğuŠ”’TƒŠƒ“ƒNv‚ÅÄİ’èi350–Á•¿j
+'   ¦‹Œƒ}ƒNƒ‚Ì50–Á•¿ãŒÀ‚ğ“P”pBA—ñ‚ÌƒŠƒ“ƒN‚ªÁ‚¦‚½‚Ì•œ‹Œ‚É‚àg—pB
 '============================================================
 Sub MS2_Update_StockList_To_DATA()
 
@@ -41,10 +41,10 @@ Sub MS2_Update_StockList_To_DATA()
     Dim q As String, sref As String
 
     Set wsD = Sheets("DATA_MS2")
-    q = Chr(34)                                          ' ãƒ€ãƒ–ãƒ«ã‚¯ã‚©ãƒ¼ãƒˆ
+    q = Chr(34)                                          ' ƒ_ƒuƒ‹ƒNƒH[ƒg
 
-    For i = DATA_FIRST To DATA_FIRST + STOCK_MAX - 1     ' 3ã€œ352
-        s = i - 1                                        ' StockList è¡Œï¼ˆ2ã€œ351ï¼‰
+    For i = DATA_FIRST To DATA_FIRST + STOCK_MAX - 1     ' 3`352
+        s = i - 1                                        ' StockList si2`351j
         sref = "'StockList_MS2'!A" & s
         wsD.Cells(i, "A").Formula = _
             "=IF(" & sref & "=" & q & q & "," & q & q & "," & _
@@ -52,12 +52,12 @@ Sub MS2_Update_StockList_To_DATA()
             "," & sref & "))"
     Next i
 
-    MsgBox "Aåˆ—ã®æ ªæ¢ãƒªãƒ³ã‚¯ï¼ˆStockListé€£å‹•ãƒ»350éŠ˜æŸ„ï¼‰ã‚’å†è¨­å®šã—ã¾ã—ãŸã€‚", vbInformation, "MS2"
+    MsgBox "A—ñ‚ÌŠ”’TƒŠƒ“ƒNiStockList˜A“®E350–Á•¿j‚ğÄİ’è‚µ‚Ü‚µ‚½B", vbInformation, "MS2"
 
 End Sub
 
 '============================================================
-' RssMarket å¼ã‚’ Bã€œI ã«ã‚»ãƒƒãƒˆï¼ˆ3è¡Œç›®é–‹å§‹ï¼‰
+' RssMarket ®‚ğ B`I ‚ÉƒZƒbƒgi3s–ÚŠJnj
 '============================================================
 Sub MS2_Set_RssMarket_Formulas()
 
@@ -72,22 +72,22 @@ Sub MS2_Set_RssMarket_Formulas()
     For i = DATA_FIRST To lastRow
         code = Trim(CStr(ws.Cells(i, "A").Value))
         If code <> "" Then
-            ws.Cells(i, "B").Formula = "=RssMarket(""" & code & """,""ç¾åœ¨å€¤"")"
-            ws.Cells(i, "C").Formula = "=RssMarket(""" & code & """,""é«˜å€¤"")"
-            ws.Cells(i, "D").Formula = "=RssMarket(""" & code & """,""å®‰å€¤"")"
-            ws.Cells(i, "E").Formula = "=RssMarket(""" & code & """,""çµ‚å€¤"")"
-            ws.Cells(i, "F").Formula = "=RssMarket(""" & code & """,""å‡ºæ¥é«˜"")"
-            ws.Cells(i, "G").Formula = "=RssMarket(""" & code & """,""å‰æ—¥é«˜å€¤"")"
-            ws.Cells(i, "H").Formula = "=RssMarket(""" & code & """,""å‰æ—¥å®‰å€¤"")"
-            ws.Cells(i, "I").Formula = "=RssMarket(""" & code & """,""å‰æ—¥çµ‚å€¤"")"
+            ws.Cells(i, "B").Formula = "=RssMarket(""" & code & """,""Œ»İ’l"")"
+            ws.Cells(i, "C").Formula = "=RssMarket(""" & code & """,""‚’l"")"
+            ws.Cells(i, "D").Formula = "=RssMarket(""" & code & """,""ˆÀ’l"")"
+            ws.Cells(i, "E").Formula = "=RssMarket(""" & code & """,""I’l"")"
+            ws.Cells(i, "F").Formula = "=RssMarket(""" & code & """,""o—ˆ‚"")"
+            ws.Cells(i, "G").Formula = "=RssMarket(""" & code & """,""‘O“ú‚’l"")"
+            ws.Cells(i, "H").Formula = "=RssMarket(""" & code & """,""‘O“úˆÀ’l"")"
+            ws.Cells(i, "I").Formula = "=RssMarket(""" & code & """,""‘O“úI’l"")"
         End If
     Next i
 
 End Sub
 
 '============================================================
-' ATRå±¥æ­´ã‚·ãƒ¼ãƒˆã‚’ç”¨æ„ï¼ˆç„¡ã‘ã‚Œã°ä½œæˆãƒ»éè¡¨ç¤ºï¼‰
-'   A:éŠ˜æŸ„ã‚³ãƒ¼ãƒ‰  B:ã‚µãƒ³ãƒ—ãƒ«æ•°  C:TRç´¯è¨ˆ(ã‚·ãƒ¼ãƒ‰ç”¨)  D:ATR
+' ATR—š—ğƒV[ƒg‚ğ—pˆÓi–³‚¯‚ê‚Îì¬E”ñ•\¦j
+'   A:–Á•¿ƒR[ƒh  B:ƒTƒ“ƒvƒ‹”  C:TR—İŒv(ƒV[ƒh—p)  D:ATR
 '============================================================
 Private Function MS2_Get_History() As Worksheet
 
@@ -100,9 +100,9 @@ Private Function MS2_Get_History() As Worksheet
     If ws Is Nothing Then
         Set ws = Sheets.Add(After:=Sheets(Sheets.Count))
         ws.Name = HIST
-        ws.Range("A1").Value = "éŠ˜æŸ„ã‚³ãƒ¼ãƒ‰"
-        ws.Range("B1").Value = "ã‚µãƒ³ãƒ—ãƒ«æ•°"
-        ws.Range("C1").Value = "TRç´¯è¨ˆ"
+        ws.Range("A1").Value = "–Á•¿ƒR[ƒh"
+        ws.Range("B1").Value = "ƒTƒ“ƒvƒ‹”"
+        ws.Range("C1").Value = "TR—İŒv"
         ws.Range("D1").Value = "ATR"
         ws.Visible = xlSheetHidden
     End If
@@ -112,7 +112,7 @@ Private Function MS2_Get_History() As Worksheet
 End Function
 
 '============================================================
-' ATR(14) éŠ˜æŸ„åˆ¥ãƒ»æ­£ã—ã„è¨ˆç®—ï¼ˆWilderå¹³æ»‘ï¼‰
+' ATR(14) –Á•¿•ÊE³‚µ‚¢ŒvZiWilder•½ŠŠj
 '============================================================
 Sub MS2_Calc_ATR_5min_14()
 
@@ -126,7 +126,7 @@ Sub MS2_Calc_ATR_5min_14()
     Set ws = Sheets("DATA_MS2")
     Set wsH = MS2_Get_History()
 
-    ' å±¥æ­´ã‚·ãƒ¼ãƒˆã® éŠ˜æŸ„ã‚³ãƒ¼ãƒ‰ â†’ è¡Œ ã®è¾æ›¸ã‚’ä½œæˆ
+    ' —š—ğƒV[ƒg‚Ì –Á•¿ƒR[ƒh ¨ s ‚Ì«‘‚ğì¬
     Set dict = CreateObject("Scripting.Dictionary")
     hLast = wsH.Cells(wsH.Rows.Count, "A").End(xlUp).Row
     For hr = 2 To hLast
@@ -153,7 +153,7 @@ Sub MS2_Calc_ATR_5min_14()
         TR = Application.WorksheetFunction.Max( _
                 high - low, Abs(high - prevClose), Abs(low - prevClose))
 
-        ' å±¥æ­´è¡Œã‚’å–å¾—ï¼ˆç„¡ã‘ã‚Œã°æœ«å°¾ã¸è¿½åŠ ï¼‰
+        ' —š—ğs‚ğæ“¾i–³‚¯‚ê‚Î––”ö‚Ö’Ç‰Áj
         If dict.Exists(code) Then
             hr = dict(code)
         Else
@@ -169,14 +169,14 @@ Sub MS2_Calc_ATR_5min_14()
         cnt = CLng(Val(wsH.Cells(hr, "B").Value))
 
         If cnt < ATR_N Then
-            ' ã‚·ãƒ¼ãƒ‰æœŸé–“ï¼šTRã®å˜ç´”å¹³å‡ï¼ˆæœ€å¤§14æœ¬ï¼‰
+            ' ƒV[ƒhŠúŠÔFTR‚Ì’Pƒ•½‹ÏiÅ‘å14–{j
             cnt = cnt + 1
             sumTR = Val(wsH.Cells(hr, "C").Value) + TR
             atr = sumTR / cnt
             wsH.Cells(hr, "B").Value = cnt
             wsH.Cells(hr, "C").Value = sumTR
         Else
-            ' Wilderå¹³æ»‘ï¼šATR = (å‰ATR*(N-1) + TR) / N
+            ' Wilder•½ŠŠFATR = (‘OATR*(N-1) + TR) / N
             atr = (Val(wsH.Cells(hr, "D").Value) * (ATR_N - 1) + TR) / ATR_N
         End If
 
@@ -189,19 +189,19 @@ NextI:
 End Sub
 
 '============================================================
-' ATRå±¥æ­´ã®ãƒªã‚»ãƒƒãƒˆï¼ˆè“„ç©ã‚’ã‚„ã‚Šç›´ã—ãŸã„ã¨ãï¼‰
+' ATR—š—ğ‚ÌƒŠƒZƒbƒgi’~Ï‚ğ‚â‚è’¼‚µ‚½‚¢‚Æ‚«j
 '============================================================
 Sub MS2_Reset_ATR_History()
 
     Dim wsH As Worksheet
     Set wsH = MS2_Get_History()
     wsH.Range("A2:D1000000").ClearContents
-    MsgBox "ATRå±¥æ­´ã‚’ãƒªã‚»ãƒƒãƒˆã—ã¾ã—ãŸã€‚æ¬¡å›ã®ATRæ›´æ–°ã‹ã‚‰å†è“„ç©ã—ã¾ã™ã€‚", vbInformation, "MS2"
+    MsgBox "ATR—š—ğ‚ğƒŠƒZƒbƒg‚µ‚Ü‚µ‚½BŸ‰ñ‚ÌATRXV‚©‚çÄ’~Ï‚µ‚Ü‚·B", vbInformation, "MS2"
 
 End Sub
 
 '============================================================
-' å£²è²·ãƒ­ã‚¸ãƒƒã‚¯ï¼ˆ3è¡Œç›®é–‹å§‹ï¼‰
+' ”„”ƒƒƒWƒbƒNi3s–ÚŠJnj
 '============================================================
 Sub MS2_Stock_Logic_Run()
 
@@ -297,13 +297,13 @@ Sub MS2_Stock_Logic_Run()
         ws.Cells(i, "Y").Value = trendFlag
 
         If tmStr >= "09:00" And tmStr <= "09:30" Then
-            ws.Cells(i, "V").Value = "å¯„ã‚Šä»˜ã"
+            ws.Cells(i, "V").Value = "Šñ‚è•t‚«"
         ElseIf tmStr >= "12:30" And tmStr <= "14:30" Then
-            ws.Cells(i, "V").Value = "å¾Œå ´"
+            ws.Cells(i, "V").Value = "Œãê"
         ElseIf tmStr >= "14:30" And tmStr <= "15:00" Then
-            ws.Cells(i, "V").Value = "å¼•ã‘å‰"
+            ws.Cells(i, "V").Value = "ˆø‚¯‘O"
         Else
-            ws.Cells(i, "V").Value = "ãã®ä»–"
+            ws.Cells(i, "V").Value = "‚»‚Ì‘¼"
         End If
 
         If ws.Cells(i, "B").Value > ws.Cells(i, "E").Value And Abs(ws.Cells(i, "B").Value - ws.Cells(i, "E").Value) < atr * 0.5 Then
@@ -369,8 +369,8 @@ NextI:
 End Sub
 
 '============================================================
-' TRADEçµæœåˆ¤å®šï¼ˆç°¡æ˜“ï¼šSL/TP1/ENDï¼‰
-'   â€»ç¾çŠ¶ã¯ã‚¶ãƒ©å ´ã®é«˜å€¤/å®‰å€¤ã‚’å‚ç…§ã—ãªã„ç°¡æ˜“ç‰ˆã§ã™ã€‚
+' TRADEŒ‹‰Ê”»’èiŠÈˆÕFSL/TP1/ENDj
+'   ¦Œ»ó‚ÍƒUƒ‰ê‚Ì‚’l/ˆÀ’l‚ğQÆ‚µ‚È‚¢ŠÈˆÕ”Å‚Å‚·B
 '============================================================
 Sub MS2_Eval_Trades()
 
@@ -428,7 +428,7 @@ Sub MS2_Eval_Trades()
 End Sub
 
 '============================================================
-' RANKé›†è¨ˆï¼ˆå‹ç‡ãƒ»PFãƒ»RRãƒ»æœ€å¤§DDãƒ»å¹³å‡RRãƒ»é€£å‹é€£æ•—ãƒ»æœˆæ¬¡ï¼‰
+' RANKWŒviŸ—¦EPFERREÅ‘åDDE•½‹ÏRRE˜AŸ˜A”sEŒŸj
 '============================================================
 Sub MS2_Update_Ranking()
 
@@ -545,7 +545,7 @@ NextI:
 End Sub
 
 '============================================================
-' ãƒ­ã‚°è¡¨ç¤º
+' ƒƒO•\¦
 '============================================================
 Sub MS2_Show_Log()
 
@@ -555,12 +555,12 @@ Sub MS2_Show_Log()
     Set wsT = Sheets("TRADE_MS2")
     lastRow = wsT.Cells(wsT.Rows.Count, "A").End(xlUp).Row
 
-    MsgBox "TRADE_MS2 ã®ãƒˆãƒ¬ãƒ¼ãƒ‰æ•°: " & (lastRow - 1), vbInformation, "MS2_LOG"
+    MsgBox "TRADE_MS2 ‚ÌƒgƒŒ[ƒh”: " & (lastRow - 1), vbInformation, "MS2_LOG"
 
 End Sub
 
 '============================================================
-' å…¨è‡ªå‹•ï¼ˆAåˆ—ã¯æ•°å¼é€£å‹•ã®ãŸã‚ éŠ˜æŸ„åæ˜  ã¯ä¸è¦ï¼‰
+' ‘S©“®iA—ñ‚Í”®˜A“®‚Ì‚½‚ß –Á•¿”½‰f ‚Í•s—vj
 '============================================================
 Sub MS2_Auto_All()
 
@@ -573,9 +573,9 @@ Sub MS2_Auto_All()
 End Sub
 
 '============================================================
-' æ“ä½œãƒœã‚¿ãƒ³ã‚’å°‚ç”¨ã‚·ãƒ¼ãƒˆã€Œæ“ä½œãƒ‘ãƒãƒ«_MS2ã€ã«ã¾ã¨ã‚ã‚‹
-'   ãƒ»DATA_MS2 ãªã©ã®è¡¨ãƒ»æ•°å¼ã¯ä¸€åˆ‡å¤‰æ›´ã—ã¾ã›ã‚“
-'   ãƒ»å®Ÿè¡Œå¾Œã€ãã®ã‚·ãƒ¼ãƒˆã®ãƒœã‚¿ãƒ³ã‹ã‚‰å„å‡¦ç†ã‚’å‘¼ã³å‡ºã›ã¾ã™
+' ‘€ìƒ{ƒ^ƒ“‚ğê—pƒV[ƒgu‘€ìƒpƒlƒ‹_MS2v‚É‚Ü‚Æ‚ß‚é
+'   EDATA_MS2 ‚È‚Ç‚Ì•\E”®‚ÍˆêØ•ÏX‚µ‚Ü‚¹‚ñ
+'   EÀsŒãA‚»‚ÌƒV[ƒg‚Ìƒ{ƒ^ƒ“‚©‚çŠeˆ—‚ğŒÄ‚Ño‚¹‚Ü‚·
 '============================================================
 Sub MS2_Build_Menu()
 
@@ -586,32 +586,32 @@ Sub MS2_Build_Menu()
     Dim i As Long
 
     On Error Resume Next
-    Set ws = Sheets("æ“ä½œãƒ‘ãƒãƒ«_MS2")
+    Set ws = Sheets("‘€ìƒpƒlƒ‹_MS2")
     On Error GoTo 0
 
     If ws Is Nothing Then
         Set ws = Sheets.Add(Before:=Sheets(1))
-        ws.Name = "æ“ä½œãƒ‘ãƒãƒ«_MS2"
+        ws.Name = "‘€ìƒpƒlƒ‹_MS2"
     End If
 
     ws.Cells.Clear
     ws.Buttons.Delete
 
-    ws.Range("A1").Value = "â—† MS2 æ“ä½œãƒ‘ãƒãƒ«"
+    ws.Range("A1").Value = "Ÿ MS2 ‘€ìƒpƒlƒ‹"
     ws.Range("A1").Font.Bold = True
     ws.Range("A1").Font.Size = 14
 
-    ' Caption, å®Ÿè¡Œãƒã‚¯ãƒ­å ã®é †
+    ' Caption, Àsƒ}ƒNƒ–¼ ‚Ì‡
     items = Array( _
-        "éŠ˜æŸ„åæ˜ _MS2", "MS2_Update_StockList_To_DATA", _
-        "RSSå¼ã‚»ãƒƒãƒˆ_MS2", "MS2_Set_RssMarket_Formulas", _
-        "ATRæ›´æ–°_MS2", "MS2_Calc_ATR_5min_14", _
-        "å£²è²·æŠ½å‡º_MS2", "MS2_Stock_Logic_Run", _
-        "çµæœåˆ¤å®š_MS2", "MS2_Eval_Trades", _
-        "ãƒ©ãƒ³ã‚­ãƒ³ã‚°_MS2", "MS2_Update_Ranking", _
-        "ATRå±¥æ­´ãƒªã‚»ãƒƒãƒˆ_MS2", "MS2_Reset_ATR_History", _
-        "ãƒ­ã‚°_MS2", "MS2_Show_Log", _
-        "å…¨è‡ªå‹•_MS2", "MS2_Auto_All")
+        "–Á•¿”½‰f_MS2", "MS2_Update_StockList_To_DATA", _
+        "RSS®ƒZƒbƒg_MS2", "MS2_Set_RssMarket_Formulas", _
+        "ATRXV_MS2", "MS2_Calc_ATR_5min_14", _
+        "”„”ƒ’Šo_MS2", "MS2_Stock_Logic_Run", _
+        "Œ‹‰Ê”»’è_MS2", "MS2_Eval_Trades", _
+        "ƒ‰ƒ“ƒLƒ“ƒO_MS2", "MS2_Update_Ranking", _
+        "ATR—š—ğƒŠƒZƒbƒg_MS2", "MS2_Reset_ATR_History", _
+        "ƒƒO_MS2", "MS2_Show_Log", _
+        "‘S©“®_MS2", "MS2_Auto_All")
 
     y = 36
     For i = LBound(items) To UBound(items) Step 2
@@ -621,6 +621,6 @@ Sub MS2_Build_Menu()
         y = y + 36
     Next i
 
-    MsgBox "ã€Œæ“ä½œãƒ‘ãƒãƒ«_MS2ã€ã‚·ãƒ¼ãƒˆã«ãƒœã‚¿ãƒ³ã‚’ä½œæˆã—ã¾ã—ãŸã€‚", vbInformation, "MS2"
+    MsgBox "u‘€ìƒpƒlƒ‹_MS2vƒV[ƒg‚Éƒ{ƒ^ƒ“‚ğì¬‚µ‚Ü‚µ‚½B", vbInformation, "MS2"
 
 End Sub

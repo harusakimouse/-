@@ -2,27 +2,24 @@ Attribute VB_Name = "MS2_Core"
 Option Explicit
 
 '============================================================
-' MS2 コアマクロ（新レイアウト対応版）
+' MS2 コアマクロ（新レイアウト対応・堅牢化版）
 '   DATA_MS2 : 1行目=タイトル帯 / 2行目=見出し / 3行目～=データ
 '   ・行ズレ修正：DATA_MS2 のループは 3行目開始（DATA_FIRST）
 '   ・ATR      ：銘柄ごとに正しい14期間ATR（Wilder平滑）を
 '                隠しシート ATRHIST_MS2 に蓄積して計算
+'   ・堅牢化   ：空セル・エラー値（#N/A 等）は自動で 0 扱い。
+'                RSS未起動や空欄でも実行時エラーで止まりません。
 '
 ' 【導入手順】
-'   1) VBEで 旧 Module1 と 重複 Module2 を削除
-'   2) 本ファイル(MS2_Core.bas)をインポート
+'   1) VBE(Alt+F11) で 旧 Module1 と 重複 Module2、化けた古い MS2_Core を削除
+'   2) ファイル → ファイルのインポート → 本ファイル(MS2_Core.bas)
 '   3) マクロ一覧の MS2_Build_Menu を実行 → シート「操作パネル_MS2」にボタン作成
 '
-' 【ATRの考え方（重要）】
-'   1行＝1銘柄のスナップショット表には14本ぶんの時系列がありません。
-'   そこで ATRHIST_MS2 に銘柄別で TR を蓄積し、更新のたびに
+' 【ATRの考え方】
+'   隠しシート ATRHIST_MS2 に銘柄別で TR を蓄積し、更新のたびに
 '     ・最初の14回：TRの単純平均（シード）
 '     ・15回目以降：Wilder平滑  ATR = (前ATR*13 + TR) / 14
-'   として正しい14期間ATRへ収束させます。
-'   ※ATR更新は「5分足が確定するタイミングで1回」を目安に実行してください
-'     （短時間に何度も回すと1本を多重カウントします）。
-'   ※TRは RSS の 高値/安値/前日終値 ベースです。厳密な5分足OHLCを使う
-'     場合は5分足データの取得元が別途必要になります。
+'   として正しい14期間ATRへ収束させます。ATR更新は「5分足確定ごとに1回」を目安に。
 '============================================================
 
 Private Const DATA_FIRST As Long = 3        ' データ開始行（見出しが2行目）
@@ -31,8 +28,21 @@ Private Const HIST As String = "ATRHIST_MS2"
 Private Const ATR_N As Long = 14            ' ATR期間
 
 '============================================================
+' 数値安全読み取り：数値なら値、そうでなければ 0
+'   （空セル・文字列・#N/A などのエラー値でもエラーにしない）
+'============================================================
+Private Function NzD(ByVal v As Variant) As Double
+    On Error Resume Next
+    If IsNumeric(v) Then
+        NzD = CDbl(v)
+    Else
+        NzD = 0#
+    End If
+    On Error GoTo 0
+End Function
+
+'============================================================
 ' StockList → DATA_MS2 のA列を「株探リンク」で再設定（350銘柄）
-'   ※旧マクロの50銘柄上限を撤廃。A列のリンクが消えた時の復旧にも使用。
 '============================================================
 Sub MS2_Update_StockList_To_DATA()
 
@@ -141,9 +151,9 @@ Sub MS2_Calc_ATR_5min_14()
         code = Trim(CStr(ws.Cells(i, "A").Value))
         If code = "" Then GoTo NextI
 
-        high = 0#: If IsNumeric(ws.Cells(i, "C").Value) Then high = CDbl(ws.Cells(i, "C").Value)
-        low = 0#: If IsNumeric(ws.Cells(i, "D").Value) Then low = CDbl(ws.Cells(i, "D").Value)
-        prevClose = 0#: If IsNumeric(ws.Cells(i, "I").Value) Then prevClose = CDbl(ws.Cells(i, "I").Value)
+        high = NzD(ws.Cells(i, "C").Value)
+        low = NzD(ws.Cells(i, "D").Value)
+        prevClose = NzD(ws.Cells(i, "I").Value)
 
         If high = 0 And low = 0 And prevClose = 0 Then
             ws.Cells(i, "K").Value = 0
@@ -166,18 +176,18 @@ Sub MS2_Calc_ATR_5min_14()
             dict(code) = hr
         End If
 
-        cnt = CLng(Val(wsH.Cells(hr, "B").Value))
+        cnt = CLng(NzD(wsH.Cells(hr, "B").Value))
 
         If cnt < ATR_N Then
             ' シード期間：TRの単純平均（最大14本）
             cnt = cnt + 1
-            sumTR = Val(wsH.Cells(hr, "C").Value) + TR
+            sumTR = NzD(wsH.Cells(hr, "C").Value) + TR
             atr = sumTR / cnt
             wsH.Cells(hr, "B").Value = cnt
             wsH.Cells(hr, "C").Value = sumTR
         Else
             ' Wilder平滑：ATR = (前ATR*(N-1) + TR) / N
-            atr = (Val(wsH.Cells(hr, "D").Value) * (ATR_N - 1) + TR) / ATR_N
+            atr = (NzD(wsH.Cells(hr, "D").Value) * (ATR_N - 1) + TR) / ATR_N
         End If
 
         wsH.Cells(hr, "D").Value = atr
@@ -189,7 +199,7 @@ NextI:
 End Sub
 
 '============================================================
-' ATR履歴のリセット（蓄積をやり直したいとき）
+' ATR履歴のリセット
 '============================================================
 Sub MS2_Reset_ATR_History()
 
@@ -201,7 +211,7 @@ Sub MS2_Reset_ATR_History()
 End Sub
 
 '============================================================
-' 売買ロジック（3行目開始）
+' 売買ロジック（3行目開始・堅牢化：空/エラー値は0扱い）
 '============================================================
 Sub MS2_Stock_Logic_Run()
 
@@ -225,6 +235,8 @@ Sub MS2_Stock_Logic_Run()
     Dim fakeFlag As String
     Dim trendFlag As String
     Dim secondPull As String
+    Dim bCur As Double, cHigh As Double, dLow As Double, eClose As Double
+    Dim gPH As Double, hPL As Double, iPC As Double
 
     Set ws = Sheets("DATA_MS2")
     Set wsT = Sheets("TRADE_MS2")
@@ -242,14 +254,23 @@ Sub MS2_Stock_Logic_Run()
         code = Trim(CStr(ws.Cells(i, "A").Value))
         If code = "" Then GoTo NextI
 
-        If ws.Cells(i, "B").Value > ws.Cells(i, "I").Value Then
+        ' 数値は安全読み取り（空/エラーは0）
+        bCur = NzD(ws.Cells(i, "B").Value)
+        cHigh = NzD(ws.Cells(i, "C").Value)
+        dLow = NzD(ws.Cells(i, "D").Value)
+        eClose = NzD(ws.Cells(i, "E").Value)
+        vol = NzD(ws.Cells(i, "F").Value)
+        gPH = NzD(ws.Cells(i, "G").Value)
+        hPL = NzD(ws.Cells(i, "H").Value)
+        iPC = NzD(ws.Cells(i, "I").Value)
+
+        If bCur > iPC Then
             dir = "BUY-DAY"
         Else
             dir = "SELL-DAY"
         End If
         ws.Cells(i, "J").Value = dir
 
-        vol = ws.Cells(i, "F").Value
         If vol > 0 Then
             prevVol = vol / 3
             If vol > prevVol * 2.5 Then
@@ -262,13 +283,13 @@ Sub MS2_Stock_Logic_Run()
         End If
         ws.Cells(i, "L").Value = zone
 
-        If ws.Cells(i, "B").Value > ws.Cells(i, "G").Value Then
+        If bCur > gPH Then
             stopBuy = "ON"
         Else
             stopBuy = "OFF"
         End If
 
-        If ws.Cells(i, "B").Value < ws.Cells(i, "H").Value Then
+        If bCur < hPL Then
             stopSell = "ON"
         Else
             stopSell = "OFF"
@@ -277,19 +298,19 @@ Sub MS2_Stock_Logic_Run()
         ws.Cells(i, "M").Value = stopBuy
         ws.Cells(i, "N").Value = stopSell
 
-        atr = ws.Cells(i, "K").Value
+        atr = NzD(ws.Cells(i, "K").Value)
         If atr <= 0 Then GoTo NextI
 
-        If atr > ws.Cells(i, "B").Value * 0.05 Then
+        If atr > bCur * 0.05 Then
             volaFlag = "VOL-HIGH"
         Else
             volaFlag = "VOL-NORMAL"
         End If
         ws.Cells(i, "W").Value = volaFlag
 
-        If ws.Cells(i, "C").Value > ws.Cells(i, "G").Value And ws.Cells(i, "D").Value > ws.Cells(i, "H").Value Then
+        If cHigh > gPH And dLow > hPL Then
             trendFlag = "UP"
-        ElseIf ws.Cells(i, "C").Value < ws.Cells(i, "G").Value And ws.Cells(i, "D").Value < ws.Cells(i, "H").Value Then
+        ElseIf cHigh < gPH And dLow < hPL Then
             trendFlag = "DOWN"
         Else
             trendFlag = "FLAT"
@@ -306,7 +327,7 @@ Sub MS2_Stock_Logic_Run()
             ws.Cells(i, "V").Value = "その他"
         End If
 
-        If ws.Cells(i, "B").Value > ws.Cells(i, "E").Value And Abs(ws.Cells(i, "B").Value - ws.Cells(i, "E").Value) < atr * 0.5 Then
+        If bCur > eClose And Abs(bCur - eClose) < atr * 0.5 Then
             secondPull = "2ND"
         Else
             secondPull = "1ST"
@@ -331,7 +352,7 @@ Sub MS2_Stock_Logic_Run()
 
         If kind = "" Then GoTo NextI
 
-        entry = ws.Cells(i, "B").Value
+        entry = bCur
 
         If kind = "BUY" Then
             sl = entry - atr * 1.5
@@ -370,7 +391,6 @@ End Sub
 
 '============================================================
 ' TRADE結果判定（簡易：SL/TP1/END）
-'   ※現状はザラ場の高値/安値を参照しない簡易版です。
 '============================================================
 Sub MS2_Eval_Trades()
 
@@ -387,10 +407,10 @@ Sub MS2_Eval_Trades()
 
     For i = 2 To lastRow
 
-        kind = wsT.Cells(i, "C").Value
-        entry = wsT.Cells(i, "D").Value
-        sl = wsT.Cells(i, "E").Value
-        tp1 = wsT.Cells(i, "F").Value
+        kind = CStr(wsT.Cells(i, "C").Value)
+        entry = NzD(wsT.Cells(i, "D").Value)
+        sl = NzD(wsT.Cells(i, "E").Value)
+        tp1 = NzD(wsT.Cells(i, "F").Value)
 
         result = ""
         pl = 0
@@ -440,6 +460,7 @@ Sub MS2_Update_Ranking()
     Dim v As Variant
     Dim arr
     Dim r As Long
+    Dim pl As Double
     Dim winRate As Double, pf As Double, rr As Double
     Dim maxDD As Double, avgRR As Double
     Dim streakWin As Long, streakLose As Long
@@ -464,28 +485,27 @@ Sub MS2_Update_Ranking()
         End If
 
         arr = dict(v)
+        pl = NzD(wsT.Cells(i, "J").Value)
 
-        tradeCount = arr(9)
-        tradeCount = tradeCount + 1
-        arr(9) = tradeCount
+        arr(9) = arr(9) + 1
 
-        If wsT.Cells(i, "J").Value > 0 Then
+        If pl > 0 Then
             arr(0) = arr(0) + 1
-            arr(2) = arr(2) + wsT.Cells(i, "J").Value
+            arr(2) = arr(2) + pl
             arr(6) = arr(6) + 1
             arr(7) = 0
-        ElseIf wsT.Cells(i, "J").Value < 0 Then
+        ElseIf pl < 0 Then
             arr(1) = arr(1) + 1
-            arr(3) = arr(3) + Abs(wsT.Cells(i, "J").Value)
+            arr(3) = arr(3) + Abs(pl)
             arr(7) = arr(7) + 1
             arr(6) = 0
-            If arr(4) < Abs(wsT.Cells(i, "J").Value) Then
-                arr(4) = Abs(wsT.Cells(i, "J").Value)
-            End If
+            If arr(4) < Abs(pl) Then arr(4) = Abs(pl)
         End If
 
-        If Month(wsT.Cells(i, "K").Value) = Month(Date) Then
-            arr(8) = arr(8) + wsT.Cells(i, "J").Value
+        If IsDate(wsT.Cells(i, "K").Value) Then
+            If Month(wsT.Cells(i, "K").Value) = Month(Date) Then
+                arr(8) = arr(8) + pl
+            End If
         End If
 
         dict(v) = arr
@@ -517,11 +537,7 @@ NextI:
         End If
 
         maxDD = arr(4)
-        If arr(0) > 0 Then
-            avgRR = arr(2) / arr(0)
-        Else
-            avgRR = 0
-        End If
+        avgRR = rr
 
         streakWin = arr(6)
         streakLose = arr(7)
@@ -574,8 +590,6 @@ End Sub
 
 '============================================================
 ' 操作ボタンを専用シート「操作パネル_MS2」にまとめる
-'   ・DATA_MS2 などの表・数式は一切変更しません
-'   ・実行後、そのシートのボタンから各処理を呼び出せます
 '============================================================
 Sub MS2_Build_Menu()
 
@@ -601,7 +615,6 @@ Sub MS2_Build_Menu()
     ws.Range("A1").Font.Bold = True
     ws.Range("A1").Font.Size = 14
 
-    ' Caption, 実行マクロ名 の順
     items = Array( _
         "銘柄反映_MS2", "MS2_Update_StockList_To_DATA", _
         "RSS式セット_MS2", "MS2_Set_RssMarket_Formulas", _

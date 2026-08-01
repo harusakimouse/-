@@ -571,3 +571,56 @@ Sub MS2_Auto_All()
     MS2_Update_Ranking
 
 End Sub
+
+'============================================================
+' 操作ボタンを専用シート「操作パネル_MS2」にまとめる
+'   ・DATA_MS2 などの表・数式は一切変更しません
+'   ・実行後、そのシートのボタンから各処理を呼び出せます
+'============================================================
+Sub MS2_Build_Menu()
+
+    Dim ws As Worksheet
+    Dim btn As Object
+    Dim y As Single
+    Dim items As Variant
+    Dim i As Long
+
+    On Error Resume Next
+    Set ws = Sheets("操作パネル_MS2")
+    On Error GoTo 0
+
+    If ws Is Nothing Then
+        Set ws = Sheets.Add(Before:=Sheets(1))
+        ws.Name = "操作パネル_MS2"
+    End If
+
+    ws.Cells.Clear
+    ws.Buttons.Delete
+
+    ws.Range("A1").Value = "◆ MS2 操作パネル"
+    ws.Range("A1").Font.Bold = True
+    ws.Range("A1").Font.Size = 14
+
+    ' Caption, 実行マクロ名 の順
+    items = Array( _
+        "銘柄反映_MS2", "MS2_Update_StockList_To_DATA", _
+        "RSS式セット_MS2", "MS2_Set_RssMarket_Formulas", _
+        "ATR更新_MS2", "MS2_Calc_ATR_5min_14", _
+        "売買抽出_MS2", "MS2_Stock_Logic_Run", _
+        "結果判定_MS2", "MS2_Eval_Trades", _
+        "ランキング_MS2", "MS2_Update_Ranking", _
+        "ATR履歴リセット_MS2", "MS2_Reset_ATR_History", _
+        "ログ_MS2", "MS2_Show_Log", _
+        "全自動_MS2", "MS2_Auto_All")
+
+    y = 36
+    For i = LBound(items) To UBound(items) Step 2
+        Set btn = ws.Buttons.Add(20, y, 180, 28)
+        btn.Caption = items(i)
+        btn.OnAction = items(i + 1)
+        y = y + 36
+    Next i
+
+    MsgBox "「操作パネル_MS2」シートにボタンを作成しました。", vbInformation, "MS2"
+
+End Sub

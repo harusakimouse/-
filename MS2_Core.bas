@@ -452,43 +452,61 @@ End Sub
 '============================================================
 Sub MS2_Update_Ranking()
 
-    Dim wsT As Worksheet
-    Dim wsR As Worksheet
-    Dim dict As Object
-    Dim lastRow As Long
-    Dim i As Long
-    Dim v As Variant
-    Dim arr
-    Dim r As Long
-    Dim pl As Double
+    Dim wsT As Worksheet, wsR As Worksheet, wsL As Worksheet
+    Dim dict As Object, nameDict As Object
+    Dim lastRow As Long, lr As Long, k As Long, i As Long, c As Long, r As Long
+    Dim v As Variant, arr, pl As Double
     Dim winRate As Double, pf As Double, rr As Double
     Dim maxDD As Double, avgRR As Double
     Dim streakWin As Long, streakLose As Long
-    Dim monthPL As Double
-    Dim tradeCount As Long
+    Dim monthPL As Double, tradeCount As Long
+    Dim q As String, cc As String, nm As String, key As String
+    Dim hdr As Variant
 
     Set wsT = Sheets("TRADE_MS2")
     Set wsR = Sheets("RANK_MS2")
+    Set wsL = Sheets("StockList_MS2")
+    q = Chr(34)
 
-    wsR.Range("A2:J1000").ClearContents
+    ' 見出し（11列：A=株探 / D=銘柄名 を追加、RR以降は1列右へ）
+    hdr = Array("銘柄コード（株探）", "勝率", "PF", "銘柄名", "RR", "最大DD", _
+                "平均RR", "連勝", "連敗", "月次損益", "トレード数")
+    For c = 1 To 11
+        With wsR.Cells(1, c)
+            .Value = hdr(c - 1)
+            .Font.Name = "Meiryo"
+            .Font.Size = 18
+            .Font.Bold = True
+            .Font.Color = RGB(255, 255, 255)
+            .Interior.Color = RGB(31, 78, 120)
+            .HorizontalAlignment = xlCenter
+            .VerticalAlignment = xlCenter
+        End With
+    Next c
+    wsR.Rows(1).RowHeight = 46
+
+    wsR.Range("A2:K100000").ClearContents
+
+    ' 銘柄コード → 銘柄名 の辞書（StockList_MS2）
+    Set nameDict = CreateObject("Scripting.Dictionary")
+    lr = wsL.Cells(wsL.Rows.Count, "A").End(xlUp).Row
+    For k = 2 To lr
+        cc = Trim(CStr(wsL.Cells(k, "A").Value))
+        If cc <> "" And Not nameDict.Exists(cc) Then nameDict(cc) = CStr(wsL.Cells(k, "B").Value)
+    Next k
 
     Set dict = CreateObject("Scripting.Dictionary")
     lastRow = wsT.Cells(wsT.Rows.Count, "A").End(xlUp).Row
 
     For i = 2 To lastRow
-
-        v = Trim(CStr(wsT.Cells(i, "B").Value))
-        If v = "" Then GoTo NextI
-
-        If Not dict.Exists(v) Then
-            dict.Add v, Array(0, 0, 0#, 0#, 0#, 0#, 0&, 0&, 0#, 0&)
+        key = Trim(CStr(wsT.Cells(i, "B").Value))
+        If key = "" Then GoTo NextI
+        If Not dict.Exists(key) Then
+            dict.Add key, Array(0, 0, 0#, 0#, 0#, 0#, 0&, 0&, 0#, 0&)
         End If
-
-        arr = dict(v)
+        arr = dict(key)
         pl = NzD(wsT.Cells(i, "J").Value)
-
         arr(9) = arr(9) + 1
-
         If pl > 0 Then
             arr(0) = arr(0) + 1
             arr(2) = arr(2) + pl
@@ -501,60 +519,39 @@ Sub MS2_Update_Ranking()
             arr(6) = 0
             If arr(4) < Abs(pl) Then arr(4) = Abs(pl)
         End If
-
         If IsDate(wsT.Cells(i, "K").Value) Then
-            If Month(wsT.Cells(i, "K").Value) = Month(Date) Then
-                arr(8) = arr(8) + pl
-            End If
+            If Month(wsT.Cells(i, "K").Value) = Month(Date) Then arr(8) = arr(8) + pl
         End If
-
-        dict(v) = arr
-
+        dict(key) = arr
 NextI:
     Next i
 
     r = 2
     For Each v In dict.Keys
-
         arr = dict(v)
-
-        If arr(0) + arr(1) > 0 Then
-            winRate = arr(0) / (arr(0) + arr(1))
-        Else
-            winRate = 0
-        End If
-
-        If arr(3) <> 0 Then
-            pf = arr(2) / arr(3)
-        Else
-            pf = 0
-        End If
-
-        If arr(0) > 0 Then
-            rr = arr(2) / arr(0)
-        Else
-            rr = 0
-        End If
-
+        key = CStr(v)
+        If arr(0) + arr(1) > 0 Then winRate = arr(0) / (arr(0) + arr(1)) Else winRate = 0
+        If arr(3) <> 0 Then pf = arr(2) / arr(3) Else pf = 0
+        If arr(0) > 0 Then rr = arr(2) / arr(0) Else rr = 0
         maxDD = arr(4)
         avgRR = rr
-
         streakWin = arr(6)
         streakLose = arr(7)
         monthPL = arr(8)
         tradeCount = arr(9)
+        If nameDict.Exists(key) Then nm = nameDict(key) Else nm = ""
 
-        wsR.Cells(r, "A").Value = v
+        wsR.Cells(r, "A").Formula = "=HYPERLINK(" & q & "https://kabutan.jp/stock/?code=" & q & "&" & q & key & q & "," & q & key & q & ")"
         wsR.Cells(r, "B").Value = winRate
         wsR.Cells(r, "C").Value = pf
-        wsR.Cells(r, "D").Value = rr
-        wsR.Cells(r, "E").Value = maxDD
-        wsR.Cells(r, "F").Value = avgRR
-        wsR.Cells(r, "G").Value = streakWin
-        wsR.Cells(r, "H").Value = streakLose
-        wsR.Cells(r, "I").Value = monthPL
-        wsR.Cells(r, "J").Value = tradeCount
-
+        wsR.Cells(r, "D").Value = nm
+        wsR.Cells(r, "E").Value = rr
+        wsR.Cells(r, "F").Value = maxDD
+        wsR.Cells(r, "G").Value = avgRR
+        wsR.Cells(r, "H").Value = streakWin
+        wsR.Cells(r, "I").Value = streakLose
+        wsR.Cells(r, "J").Value = monthPL
+        wsR.Cells(r, "K").Value = tradeCount
         r = r + 1
     Next v
 

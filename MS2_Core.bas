@@ -2,15 +2,15 @@ Attribute VB_Name = "MS2_Core"
 Option Explicit
 
 '============================================================
-' MS2 コアマクロ（列順: No / 銘柄コード(株探) / 銘柄名 / 現在値～）
-'   DATA_MS2 レイアウト（1行目=帯 / 2行目=見出し / 3行目～=データ）
-'     A=No  B=銘柄コード(株探)  C=銘柄名
-'     D=現在値 E=高値 F=安値 G=終値 H=出来高 I=前日高値 J=前日安値 K=前日終値
-'     L=寄り方向 M=ATR N=ゾーン O=STOP-BUY P=STOP-SELL Q=売買種別
-'     R=Entry S=SL T=TP1 U=TP2 V=TP3 W=2回目戻し X=時間帯
-'     Y=ボラフィルタ Z=ダマシ除去 AA=トレンド方向
-'   ・入力列は D～K。数値の空/エラー値は自動で 0 扱い（NzD）。
-'   ・ATRは銘柄別の14期間ATR（Wilder平滑）を ATRHIST_MS2 に蓄積。
+' MS2 コアマクロ（列順: No / 株探リンク / 銘柄コード / 銘柄名 / 現在値～）
+'   DATA_MS2（1行目=帯 / 2行目=見出し / 3行目～=データ）
+'     A=No  B=株探リンク  C=銘柄コード  D=銘柄名
+'     E=現在値 F=高値 G=安値 H=終値 I=出来高 J=前日高値 K=前日安値 L=前日終値
+'     M=寄り方向 N=ATR O=ゾーン P=STOP-BUY Q=STOP-SELL R=売買種別
+'     S=Entry T=SL U=TP1 V=TP2 W=TP3 X=2回目戻し Y=時間帯
+'     Z=ボラフィルタ AA=ダマシ除去 AB=トレンド方向
+'   ・入力列は E～L。数値の空/エラー値は自動で 0 扱い（NzD）。
+'   ・ATRは銘柄別の14期間ATR（Wilder平滑）を ATRHIST_MS2 に蓄積（N列）。
 '
 ' 【導入手順】
 '   1) VBEで 旧 Module1 / 重複 Module2 / 古い MS2_Core を削除
@@ -33,7 +33,7 @@ Private Function NzD(ByVal v As Variant) As Double
 End Function
 
 '============================================================
-' A=No / B=銘柄コード(株探) / C=銘柄名 を再設定（350銘柄）
+' A=No / B=株探リンク / C=銘柄コード / D=銘柄名 を再設定（350銘柄）
 '============================================================
 Sub MS2_Update_StockList_To_DATA()
 
@@ -48,20 +48,21 @@ Sub MS2_Update_StockList_To_DATA()
         s = i - 1
         sref = "'StockList_MS2'!A" & s
         nref = "'StockList_MS2'!B" & s
-        wsD.Cells(i, "A").Formula = "=IF(B" & i & "=" & q & q & "," & q & q & ",ROW()-2)"
+        wsD.Cells(i, "A").Formula = "=IF(C" & i & "=" & q & q & "," & q & q & ",ROW()-2)"
         wsD.Cells(i, "B").Formula = _
             "=IF(" & sref & "=" & q & q & "," & q & q & "," & _
             "HYPERLINK(" & q & "https://kabutan.jp/stock/?code=" & q & "&" & sref & _
-            "," & sref & "))"
-        wsD.Cells(i, "C").Formula = "=IF(" & sref & "=" & q & q & "," & q & q & "," & nref & ")"
+            "," & q & "株探" & q & "))"
+        wsD.Cells(i, "C").Formula = "=IF(" & sref & "=" & q & q & "," & q & q & "," & sref & ")"
+        wsD.Cells(i, "D").Formula = "=IF(" & sref & "=" & q & q & "," & q & q & "," & nref & ")"
     Next i
 
-    MsgBox "A:No / B:銘柄コード(株探) / C:銘柄名 を再設定しました（350銘柄）。", vbInformation, "MS2"
+    MsgBox "A:No / B:株探 / C:銘柄コード / D:銘柄名 を再設定しました（350銘柄）。", vbInformation, "MS2"
 
 End Sub
 
 '============================================================
-' RssMarket 式を D～K にセット（3行目開始）
+' RssMarket 式を E～L にセット（3行目開始）
 '============================================================
 Sub MS2_Set_RssMarket_Formulas()
 
@@ -70,19 +71,19 @@ Sub MS2_Set_RssMarket_Formulas()
     Dim code As String
 
     Set ws = Sheets("DATA_MS2")
-    lastRow = ws.Cells(ws.Rows.Count, "B").End(xlUp).Row
+    lastRow = ws.Cells(ws.Rows.Count, "C").End(xlUp).Row
 
     For i = DATA_FIRST To lastRow
-        code = Trim(CStr(ws.Cells(i, "B").Value))
+        code = Trim(CStr(ws.Cells(i, "C").Value))
         If code <> "" Then
-            ws.Cells(i, "D").Formula = "=RssMarket(""" & code & """,""現在値"")"
-            ws.Cells(i, "E").Formula = "=RssMarket(""" & code & """,""高値"")"
-            ws.Cells(i, "F").Formula = "=RssMarket(""" & code & """,""安値"")"
-            ws.Cells(i, "G").Formula = "=RssMarket(""" & code & """,""終値"")"
-            ws.Cells(i, "H").Formula = "=RssMarket(""" & code & """,""出来高"")"
-            ws.Cells(i, "I").Formula = "=RssMarket(""" & code & """,""前日高値"")"
-            ws.Cells(i, "J").Formula = "=RssMarket(""" & code & """,""前日安値"")"
-            ws.Cells(i, "K").Formula = "=RssMarket(""" & code & """,""前日終値"")"
+            ws.Cells(i, "E").Formula = "=RssMarket(""" & code & """,""現在値"")"
+            ws.Cells(i, "F").Formula = "=RssMarket(""" & code & """,""高値"")"
+            ws.Cells(i, "G").Formula = "=RssMarket(""" & code & """,""安値"")"
+            ws.Cells(i, "H").Formula = "=RssMarket(""" & code & """,""終値"")"
+            ws.Cells(i, "I").Formula = "=RssMarket(""" & code & """,""出来高"")"
+            ws.Cells(i, "J").Formula = "=RssMarket(""" & code & """,""前日高値"")"
+            ws.Cells(i, "K").Formula = "=RssMarket(""" & code & """,""前日安値"")"
+            ws.Cells(i, "L").Formula = "=RssMarket(""" & code & """,""前日終値"")"
         End If
     Next i
 
@@ -111,7 +112,7 @@ Private Function MS2_Get_History() As Worksheet
 End Function
 
 '============================================================
-' ATR(14) 銘柄別（Wilder平滑）→ M列
+' ATR(14) 銘柄別（Wilder平滑）→ N列
 '============================================================
 Sub MS2_Calc_ATR_5min_14()
 
@@ -132,19 +133,19 @@ Sub MS2_Calc_ATR_5min_14()
         If code <> "" Then dict(code) = hr
     Next hr
 
-    lastRow = ws.Cells(ws.Rows.Count, "B").End(xlUp).Row
+    lastRow = ws.Cells(ws.Rows.Count, "C").End(xlUp).Row
 
     For i = DATA_FIRST To lastRow
 
-        code = Trim(CStr(ws.Cells(i, "B").Value))
+        code = Trim(CStr(ws.Cells(i, "C").Value))
         If code = "" Then GoTo NextI
 
-        high = NzD(ws.Cells(i, "E").Value)       ' 高値
-        low = NzD(ws.Cells(i, "F").Value)        ' 安値
-        prevClose = NzD(ws.Cells(i, "K").Value)  ' 前日終値
+        high = NzD(ws.Cells(i, "F").Value)       ' 高値
+        low = NzD(ws.Cells(i, "G").Value)        ' 安値
+        prevClose = NzD(ws.Cells(i, "L").Value)  ' 前日終値
 
         If high = 0 And low = 0 And prevClose = 0 Then
-            ws.Cells(i, "M").Value = 0
+            ws.Cells(i, "N").Value = 0
             GoTo NextI
         End If
 
@@ -176,7 +177,7 @@ Sub MS2_Calc_ATR_5min_14()
         End If
 
         wsH.Cells(hr, "D").Value = atr
-        ws.Cells(i, "M").Value = atr        ' ATR列
+        ws.Cells(i, "N").Value = atr        ' ATR列
 
 NextI:
     Next i
@@ -206,35 +207,35 @@ Sub MS2_Stock_Logic_Run()
     Dim vol As Double, prevVol As Double, atr As Double
     Dim entry As Double, sl As Double, tp1 As Double, tp2 As Double, tp3 As Double
     Dim code As String, tNow As Date, tmStr As String
-    Dim bCur As Double, cHigh As Double, dLow As Double, eClose As Double
-    Dim gPH As Double, hPL As Double, iPC As Double
+    Dim eCur As Double, fHigh As Double, gLow As Double, hClose As Double
+    Dim jPH As Double, kPL As Double, lPC As Double
 
     Set ws = Sheets("DATA_MS2")
     Set wsT = Sheets("TRADE_MS2")
 
     wsT.Range("A2:L1000").ClearContents
 
-    lastRow = ws.Cells(ws.Rows.Count, "B").End(xlUp).Row
+    lastRow = ws.Cells(ws.Rows.Count, "C").End(xlUp).Row
     tradeRow = 2
     tNow = Now
     tmStr = Format(tNow, "hh:mm")
 
     For i = DATA_FIRST To lastRow
 
-        code = Trim(CStr(ws.Cells(i, "B").Value))
+        code = Trim(CStr(ws.Cells(i, "C").Value))
         If code = "" Then GoTo NextI
 
-        bCur = NzD(ws.Cells(i, "D").Value)    ' 現在値
-        cHigh = NzD(ws.Cells(i, "E").Value)   ' 高値
-        dLow = NzD(ws.Cells(i, "F").Value)    ' 安値
-        eClose = NzD(ws.Cells(i, "G").Value)  ' 終値
-        vol = NzD(ws.Cells(i, "H").Value)     ' 出来高
-        gPH = NzD(ws.Cells(i, "I").Value)     ' 前日高値
-        hPL = NzD(ws.Cells(i, "J").Value)     ' 前日安値
-        iPC = NzD(ws.Cells(i, "K").Value)     ' 前日終値
+        eCur = NzD(ws.Cells(i, "E").Value)    ' 現在値
+        fHigh = NzD(ws.Cells(i, "F").Value)   ' 高値
+        gLow = NzD(ws.Cells(i, "G").Value)    ' 安値
+        hClose = NzD(ws.Cells(i, "H").Value)  ' 終値
+        vol = NzD(ws.Cells(i, "I").Value)     ' 出来高
+        jPH = NzD(ws.Cells(i, "J").Value)     ' 前日高値
+        kPL = NzD(ws.Cells(i, "K").Value)     ' 前日安値
+        lPC = NzD(ws.Cells(i, "L").Value)     ' 前日終値
 
-        If bCur > iPC Then dir = "BUY-DAY" Else dir = "SELL-DAY"
-        ws.Cells(i, "L").Value = dir
+        If eCur > lPC Then dir = "BUY-DAY" Else dir = "SELL-DAY"
+        ws.Cells(i, "M").Value = dir
 
         If vol > 0 Then
             prevVol = vol / 3
@@ -242,51 +243,51 @@ Sub MS2_Stock_Logic_Run()
         Else
             zone = "VOL-NG"
         End If
-        ws.Cells(i, "N").Value = zone
+        ws.Cells(i, "O").Value = zone
 
-        If bCur > gPH Then stopBuy = "ON" Else stopBuy = "OFF"
-        If bCur < hPL Then stopSell = "ON" Else stopSell = "OFF"
-        ws.Cells(i, "O").Value = stopBuy
-        ws.Cells(i, "P").Value = stopSell
+        If eCur > jPH Then stopBuy = "ON" Else stopBuy = "OFF"
+        If eCur < kPL Then stopSell = "ON" Else stopSell = "OFF"
+        ws.Cells(i, "P").Value = stopBuy
+        ws.Cells(i, "Q").Value = stopSell
 
-        atr = NzD(ws.Cells(i, "M").Value)
+        atr = NzD(ws.Cells(i, "N").Value)
         If atr <= 0 Then GoTo NextI
 
-        If atr > bCur * 0.05 Then volaFlag = "VOL-HIGH" Else volaFlag = "VOL-NORMAL"
-        ws.Cells(i, "Y").Value = volaFlag
+        If atr > eCur * 0.05 Then volaFlag = "VOL-HIGH" Else volaFlag = "VOL-NORMAL"
+        ws.Cells(i, "Z").Value = volaFlag
 
-        If cHigh > gPH And dLow > hPL Then
+        If fHigh > jPH And gLow > kPL Then
             trendFlag = "UP"
-        ElseIf cHigh < gPH And dLow < hPL Then
+        ElseIf fHigh < jPH And gLow < kPL Then
             trendFlag = "DOWN"
         Else
             trendFlag = "FLAT"
         End If
-        ws.Cells(i, "AA").Value = trendFlag
+        ws.Cells(i, "AB").Value = trendFlag
 
         If tmStr >= "09:00" And tmStr <= "09:30" Then
-            ws.Cells(i, "X").Value = "寄り付き"
+            ws.Cells(i, "Y").Value = "寄り付き"
         ElseIf tmStr >= "12:30" And tmStr <= "14:30" Then
-            ws.Cells(i, "X").Value = "後場"
+            ws.Cells(i, "Y").Value = "後場"
         ElseIf tmStr >= "14:30" And tmStr <= "15:00" Then
-            ws.Cells(i, "X").Value = "引け前"
+            ws.Cells(i, "Y").Value = "引け前"
         Else
-            ws.Cells(i, "X").Value = "その他"
+            ws.Cells(i, "Y").Value = "その他"
         End If
 
-        If bCur > eClose And Abs(bCur - eClose) < atr * 0.5 Then
+        If eCur > hClose And Abs(eCur - hClose) < atr * 0.5 Then
             secondPull = "2ND"
         Else
             secondPull = "1ST"
         End If
-        ws.Cells(i, "W").Value = secondPull
+        ws.Cells(i, "X").Value = secondPull
 
         If zone = "VOL-OK" And volaFlag = "VOL-NORMAL" And secondPull = "2ND" Then
             fakeFlag = "OK"
         Else
             fakeFlag = "NG"
         End If
-        ws.Cells(i, "Z").Value = fakeFlag
+        ws.Cells(i, "AA").Value = fakeFlag
 
         kind = ""
         If dir = "BUY-DAY" And zone = "VOL-OK" And stopSell = "ON" And fakeFlag = "OK" And trendFlag <> "DOWN" Then
@@ -294,11 +295,11 @@ Sub MS2_Stock_Logic_Run()
         ElseIf dir = "SELL-DAY" And zone = "VOL-OK" And stopBuy = "ON" And fakeFlag = "OK" And trendFlag <> "UP" Then
             kind = "SELL"
         End If
-        ws.Cells(i, "Q").Value = kind
+        ws.Cells(i, "R").Value = kind
 
         If kind = "" Then GoTo NextI
 
-        entry = bCur
+        entry = eCur
         If kind = "BUY" Then
             sl = entry - atr * 1.5
             tp1 = entry + atr * 1.5
@@ -311,11 +312,11 @@ Sub MS2_Stock_Logic_Run()
             tp3 = entry - atr * 3#
         End If
 
-        ws.Cells(i, "R").Value = entry
-        ws.Cells(i, "S").Value = sl
-        ws.Cells(i, "T").Value = tp1
-        ws.Cells(i, "U").Value = tp2
-        ws.Cells(i, "V").Value = tp3
+        ws.Cells(i, "S").Value = entry
+        ws.Cells(i, "T").Value = sl
+        ws.Cells(i, "U").Value = tp1
+        ws.Cells(i, "V").Value = tp2
+        ws.Cells(i, "W").Value = tp3
 
         wsT.Cells(tradeRow, "A").Value = tradeRow - 1
         wsT.Cells(tradeRow, "B").Value = code
@@ -496,7 +497,7 @@ Sub MS2_Show_Log()
 End Sub
 
 '============================================================
-' DATA_MS2 の見出し(2行目)・タイトル帯(1行目)を修復（27列）
+' DATA_MS2 の見出し(2行目)・タイトル帯(1行目)を修復（28列）
 '============================================================
 Sub MS2_Fix_DATA_Header()
 
@@ -505,11 +506,11 @@ Sub MS2_Fix_DATA_Header()
     Dim c As Long, nCol As Long
 
     Set ws = Sheets("DATA_MS2")
-    headers = Array("No", "銘柄コード（株探）", "銘柄名", "現在値", "高値", "安値", "終値", _
+    headers = Array("No", "株探リンク", "銘柄コード", "銘柄名", "現在値", "高値", "安値", "終値", _
         "出来高", "前日高値", "前日安値", "前日終値", "寄り方向", "ATR(14・5分足)", "ゾーン", _
         "STOP-BUY", "STOP-SELL", "売買種別", "Entry", "SL", "TP1", "TP2", "TP3", _
         "2回目戻し", "時間帯", "ボラフィルタ", "ダマシ除去", "トレンド方向")
-    nCol = UBound(headers) - LBound(headers) + 1     ' 27
+    nCol = UBound(headers) - LBound(headers) + 1     ' 28
 
     On Error Resume Next
     ws.Range(ws.Cells(1, 1), ws.Cells(1, nCol)).UnMerge
@@ -538,7 +539,7 @@ Sub MS2_Fix_DATA_Header()
     On Error Resume Next
     ws.Activate
     ActiveWindow.FreezePanes = False
-    ws.Range("D3").Select
+    ws.Range("E3").Select
     ActiveWindow.FreezePanes = True
     On Error GoTo 0
 

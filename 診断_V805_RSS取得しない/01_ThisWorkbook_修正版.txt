@@ -1,0 +1,185 @@
+' ==================================================================
+' ThisWorkbook（Microsoft Excel Objects）  V805 修正版
+'
+' 【変更点】
+'  ① Workbook_Open から「Call 日次更新_本日分」を撤去。
+'     RSS が 1 銘柄も返していない状態で日次更新が走ると、
+'     ・E列(当日値) を ClearContents した直後に書き戻せる行がゼロ
+'     ・それでも E3 に当日日付だけ入る
+'     ・以後は冪等性チェック「既に取込済」でその日は二度と取り込めない
+'     という形で 1 日分のデータが確定的に失われるため。
+'     （これは Module7 の完了メッセージが指示していた対策そのもの）
+'
+'  ② OnTime（15:31 / 15:31:30 / 15:32）は残すが、
+'     発火時に RSS が生きているかを待ってから走らせる。
+'
+'  ③ 旧 OnTime を必ずキャンセルしてから登録し直す（多重登録の防止）。
+'     Workbook_BeforeClose でも解除する。
+'
+'  ④ 手動実行用に「日次更新_RSS待ち」を用意。
+'     引け後に自分で押すときはこちらを使う。
+' ==================================================================
+
+Option Explicit
+
+' ★★ 自動更新のスイッチ。異常時は False に戻す ★★
+Private Const AUTO_ENABLED As Boolean = True
+
+' RSS が揃うのを待つ最大秒数
+Private Const RSS_WAIT_SEC As Long = 90
+
+Private mT1 As Date, mT2 As Date, mT3 As Date
+Private mScheduled As Boolean
+
+
+Private Sub Workbook_Open()
+
+    If Not AUTO_ENABLED Then
+        Application.StatusBar = "【自動更新は停止中】ThisWorkbook の AUTO_ENABLED を True にすると再開します。"
+        Exit Sub
+    End If
+
+    ' --- ここでは絶対に日次更新を呼ばない（RSS 未接続のため） ---
+    ' 旧版の Call 日次更新_本日分 は撤去した。
+
+    Call CancelSchedules
+    Call SetSchedules
+
+    On Error Resume Next
+    Call 損切りアラート
+    On Error GoTo 0
+
+    Application.StatusBar = "V805 起動完了。RSS が揃うまで数十秒かかります（" & _
+                            Format(Now, "hh:nn:ss") & "）"
+End Sub
+
+
+Private Sub Workbook_BeforeClose(Cancel As Boolean)
+    Call CancelSchedules
+    On Error Resume Next
+    Application.StatusBar = False
+    On Error GoTo 0
+End Sub
+
+
+' ------------------------------------------------------------------
+' OnTime 登録 / 解除
+' ------------------------------------------------------------------
+Private Sub SetSchedules()
+    Dim base As Date
+    base = Int(Now()) + TimeValue("15:31:00")
+    If Now() >= base Then Exit Sub
+
+    mT1 = base
+    mT2 = base + TimeValue("00:00:30")
+    mT3 = base + TimeValue("00:01:00")
+
+    On Error Resume Next
+    Application.OnTime mT1, "'" & ThisWorkbook.Name & "'!日次更新_自動_RSS待ち"
+    Application.OnTime mT2, "'" & ThisWorkbook.Name & "'!売抽出更新"
+    Application.OnTime mT3, "'" & ThisWorkbook.Name & "'!株価抽出"
+    On Error GoTo 0
+
+    mScheduled = True
+End Sub
+
+Private Sub CancelSchedules()
+    If Not mScheduled Then Exit Sub
+    On Error Resume Next
+    Application.OnTime mT1, "'" & ThisWorkbook.Name & "'!日次更新_自動_RSS待ち", , False
+    Application.OnTime mT2, "'" & ThisWorkbook.Name & "'!売抽出更新", , False
+    Application.OnTime mT3, "'" & ThisWorkbook.Name & "'!株価抽出", , False
+    On Error GoTo 0
+    mScheduled = False
+End Sub
+
+
+' ==================================================================
+' 以下 2 つは標準モジュール（例: Mod_RSS環境診断）に置いてもよい。
+' ThisWorkbook に置く場合は OnTime から呼べるよう Public にしておく。
+' ==================================================================
+
+' ------------------------------------------------------------------
+' 15:31 の自動実行。RSS が揃ってから日次更新する。
+' ------------------------------------------------------------------
+Public Sub 日次更新_自動_RSS待ち()
+    gUnattended = True
+    On Error GoTo Fin
+
+    If Not RSS待機(RSS_WAIT_SEC) Then
+        Call AutoLog("日次更新中止: RSS が " & RSS_WAIT_SEC & " 秒待っても揃わなかった")
+        GoTo Fin
+    End If
+
+    Call 日次更新_自動
+
+Fin:
+    gUnattended = False
+End Sub
+
+
+' ------------------------------------------------------------------
+' 手動実行用。引け後に自分で押すときはこれ。
+' ------------------------------------------------------------------
+Public Sub 日次更新_RSS待ち()
+    If Not RSS待機(RSS_WAIT_SEC) Then
+        MsgBox "RSS の値が " & RSS_WAIT_SEC & " 秒待っても揃いませんでした。" & vbCrLf & vbCrLf & _
+               "・MarketSpeed II が起動・ログイン済みか" & vbCrLf & _
+               "・計算方法が「自動」になっているか" & vbCrLf & _
+               "・終値シートの C 列が #NAME? になっていないか" & vbCrLf & vbCrLf & _
+               "を確認してください（RSS環境診断 マクロが使えます）。", _
+               vbExclamation, "RSS未接続"
+        Exit Sub
+    End If
+    Call 日次更新_本日分
+End Sub
+
+
+' ------------------------------------------------------------------
+' RSS が実データを返し始めるまで待つ。
+' 終値シート C6:C25 のうち 5 件以上が正の数値になったら OK とみなす。
+' ------------------------------------------------------------------
+Public Function RSS待機(Optional ByVal maxSec As Long = 90) As Boolean
+    Dim ws As Worksheet
+    On Error Resume Next
+    Set ws = ThisWorkbook.Sheets("終値")
+    On Error GoTo 0
+    If ws Is Nothing Then Exit Function
+
+    ' 手動計算のままだと RTD は永遠に反映されない
+    If Application.Calculation <> xlCalculationAutomatic Then
+        Application.Calculation = xlCalculationAutomatic
+    End If
+
+    Dim t0 As Double: t0 = Timer
+    Do
+        DoEvents
+        Application.Calculate
+
+        Dim ok As Long: ok = 0
+        Dim r As Long
+        For r = 6 To 25
+            Dim v As Variant
+            v = ws.Cells(r, 3).Value
+            If Not IsError(v) Then
+                If IsNumeric(v) Then
+                    If CDbl(v) > 0 Then ok = ok + 1
+                End If
+            End If
+        Next r
+
+        If ok >= 5 Then
+            RSS待機 = True
+            Application.StatusBar = "RSS 接続確認 OK (" & Format(Now, "hh:nn:ss") & ")"
+            Exit Function
+        End If
+
+        Application.StatusBar = "RSS の値を待機中... " & Int(Timer - t0) & " / " & maxSec & " 秒"
+        Dim w As Double: w = Timer + 1
+        Do While Timer < w
+            DoEvents
+        Loop
+    Loop While (Timer - t0) < maxSec
+
+    RSS待機 = False
+End Function

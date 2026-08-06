@@ -27,6 +27,8 @@ Attribute VB_Name = "modFetch250"
 '  使い方
 '    OHLCV_全銘柄取得     … 銘柄管理の全銘柄をまとめて取得（時間がかかる）
 '    OHLCV_1銘柄取得      … データ取込!B1 の1銘柄だけ
+'    OHLCV_日付軸を作り直す … 軸を250日に張り替える（既存データは消える）
+'    OHLCV_日付軸を作り直す … 軸を250日に張り替える（既存データは消える）
 '    OHLCV_取得状況を確認  … 何銘柄そろっているかを表示
 '==============================================================================
 Option Explicit
@@ -200,7 +202,15 @@ Public Sub OHLCV_1銘柄取得()
     Dim got As Long: got = FetchAndWrite(dws, code, priceRow)
     Cleanup prevCalc, prevScr
     If got > 0 Then
-        MsgBox code & " を " & got & " 日分 書き込みました。（日付軸 " & gAxisN & " 日）", _
+        Dim tip As String
+        If gAxisN < HIST_MAX Then
+            tip = vbCrLf & vbCrLf & _
+                  "※ いまの日付軸は " & gAxisN & " 日しかありません。" & vbCrLf & _
+                  "   1銘柄取得は既存の軸をそのまま使うので、これ以上は増えません。" & vbCrLf & _
+                  "   " & HIST_MAX & " 日に増やすには、先に OHLCV_日付軸を作り直す を" & vbCrLf & _
+                  "   実行してから OHLCV_全銘柄取得 を回してください。"
+        End If
+        MsgBox code & " を " & got & " 日分 書き込みました。（日付軸 " & gAxisN & " 日）" & tip, _
                vbInformation, "取得完了"
     Else
         MsgBox code & " のデータを取得できませんでした。" & vbCrLf & vbCrLf & _
@@ -219,7 +229,73 @@ End Sub
 
 
 '==============================================================================
-' ③ 取得状況の確認
+' ③ 日付軸だけを作り直す
+'
+'  1銘柄取得は「いまシートにある日付軸」をそのまま使う。V805 から
+'  引き継いだ軸は 74日分（2026/04/14～08/06）しかないため、それ以前の
+'  日付は取得できていても書き込まれない。
+'  このマクロで軸を 250日分に張り替えてから取得すると全部入る。
+'
+'  ★軸を張り替えると、旧軸に合わせて書かれていた既存データはすべて消える。
+'    古いデータを残すと列と日付がズレて、銘柄間の比較が静かに壊れるため。
+'    そのあと OHLCV_全銘柄取得 で取り直すこと。
+'==============================================================================
+Public Sub OHLCV_日付軸を作り直す()
+    Dim prevCalc As XlCalculation, prevScr As Boolean
+    prevCalc = Application.Calculation: prevScr = Application.ScreenUpdating
+    On Error GoTo ErrHandler
+    Application.EnableCancelKey = xlErrorHandler
+    Application.ScreenUpdating = False
+    Application.Calculation = xlCalculationAutomatic
+
+    Dim dws As Worksheet: Set dws = MustSheet(SH_DATA)
+    Dim mws As Worksheet: Set mws = MustSheet(SH_MEI)
+
+    If MsgBox("日付軸を " & HIST_MAX & " 営業日分に作り直します。" & vbCrLf & vbCrLf & _
+              "★5シートの既存データはすべて消えます。" & vbCrLf & _
+              "  そのあと OHLCV_全銘柄取得 で取り直してください。" & vbCrLf & vbCrLf & _
+              "続けますか？", vbYesNo + vbExclamation, "日付軸の作り直し") <> vbYes Then
+        Cleanup prevCalc, prevScr
+        Exit Sub
+    End If
+
+    PrepareDataSheet dws
+    FindHeader dws
+    If hRow = 0 Then Err.Raise 5, , "データ取込シートのヘッダ行が見つかりません。"
+
+    Application.StatusBar = "日付軸を取得中…"
+    If Not BuildAxisFrom(dws, "TOPX") Then
+        Dim r As Long
+        For r = MEI_ROW1 To MEI_ROWN
+            If Trim$(CStr(mws.Cells(r, 2).Value)) <> "" Then
+                If BuildAxisFrom(dws, CStr(mws.Cells(r, 2).Value)) Then Exit For
+            End If
+        Next r
+    End If
+    If gAxisN = 0 Then Err.Raise 5, , "日付軸を作れませんでした。" & vbCrLf & _
+                                      "データ取込シートで RSS がデータを返しているか確認してください。"
+    WriteAxis
+
+    Cleanup prevCalc, prevScr
+    MsgBox "日付軸を " & gAxisN & " 営業日分に作り直しました。" & vbCrLf & _
+           "（" & Format$(gAxis(gAxisN), "yyyy/mm/dd") & " ～ " & _
+           Format$(gAxis(1), "yyyy/mm/dd") & "）" & vbCrLf & vbCrLf & _
+           IIf(gAxisN < HIST_MAX, _
+               "※ " & HIST_MAX & " 日には届きませんでした。楽天から取れる範囲がこれだけです。" & vbCrLf & vbCrLf, "") & _
+           "続けて OHLCV_全銘柄取得 を実行してください。", _
+           vbInformation, "日付軸の作り直し"
+    Exit Sub
+
+ErrHandler:
+    If Err.Number = 18 Then Resume Next
+    Dim msg As String: msg = "Err " & Err.Number & ": " & Err.Description
+    Cleanup prevCalc, prevScr
+    MsgBox "作り直しを中断しました。" & vbCrLf & vbCrLf & msg, vbCritical, "エラー"
+End Sub
+
+
+'==============================================================================
+' ④ 取得状況の確認
 '==============================================================================
 Public Sub OHLCV_取得状況を確認()
     Dim mws As Worksheet: Set mws = MustSheet(SH_MEI)
@@ -277,13 +353,17 @@ Private Function FetchAndWrite(ByVal dws As Worksheet, ByVal code As String, _
     ReDim al(1 To 1, 1 To HIST_MAX): ReDim ac(1 To 1, 1 To HIST_MAX)
     ReDim av(1 To 1, 1 To HIST_MAX)
 
+    Dim used() As Boolean: ReDim used(1 To HIST_MAX)
     Dim i As Long, k As Long, placed As Long
     For i = 1 To n
         k = AxisIndex(d(i))
         If k > 0 Then
-            ao(1, k) = o(i): ah(1, k) = h(i): al(1, k) = l(i)
-            ac(1, k) = c(i): av(1, k) = v(i)
-            placed = placed + 1
+            If Not used(k) Then          ' 同じ日付が2度来ても1回だけ数える
+                used(k) = True
+                ao(1, k) = o(i): ah(1, k) = h(i): al(1, k) = l(i)
+                ac(1, k) = c(i): av(1, k) = v(i)
+                placed = placed + 1
+            End If
         End If
     Next i
     If placed = 0 Then Exit Function
@@ -433,7 +513,15 @@ End Sub
 
 
 ' 日付軸を5シートの3行目へ書く
+' 日付軸を5シートの3行目へ書く。
+'
+' ★軸を書き換えるときは、既存の銘柄データを必ず全部消す。
+'   古いデータは「古い軸の並び」で書かれているので、軸だけ差し替えると
+'   同じ列が違う日付を指すことになり、銘柄間の比較が静かに壊れる。
+'   消してしまえば、取得できなかった銘柄は空欄として残るので誤りに気づける。
 Private Sub WriteAxis()
+    Dim changed As Boolean: changed = AxisChanged()
+
     Dim arr As Variant
     ReDim arr(1 To 1, 1 To HIST_MAX)
     Dim i As Long
@@ -451,9 +539,31 @@ Private Sub WriteAxis()
             .Value = arr
             .NumberFormatLocal = "m/d"
         End With
+        If changed Then
+            ' TOPX行(5)から最終銘柄行まで、履歴域をまとめて消す
+            ws.Range(ws.Cells(TOPIX_ROW, FIRST_COL), _
+                     ws.Cells(STOCK_ROW1 + (MEI_ROWN - MEI_ROW1), _
+                              FIRST_COL + HIST_MAX - 1)).ClearContents
+        End If
         ws.Protect PWD, UserInterfaceOnly:=True
     Next s
 End Sub
+
+
+' 新しい軸が、いまシートに入っている軸と違うか
+Private Function AxisChanged() As Boolean
+    Dim ws As Worksheet: Set ws = MustSheet("終値")
+    Dim i As Long
+    For i = 1 To HIST_MAX
+        Dim cur As Variant: cur = ws.Cells(DATE_ROW, FIRST_COL + i - 1).Value
+        If i <= gAxisN Then
+            If Not IsDate(cur) Then AxisChanged = True: Exit Function
+            If CDate(cur) <> gAxis(i) Then AxisChanged = True: Exit Function
+        Else
+            If IsDate(cur) Then AxisChanged = True: Exit Function
+        End If
+    Next i
+End Function
 
 
 ' 日付軸の中での位置（1起点）。無ければ 0

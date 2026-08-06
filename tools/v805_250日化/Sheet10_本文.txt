@@ -1,0 +1,125 @@
+'=============================================================================
+' ■ 株探データ取込 (データ取込シート → 5価格シートへ日付照合で転記)
+'   - 列シフトしない / 冪等 / 既存値は上書き
+'   - B1: 銘柄コード, A5以降: 株探時系列表 (A日付 B始値 C高値 D安値 E終値 H出来高)
+'=============================================================================
+Public Sub 株探取込_日付照合()
+    Const SRC_SHEET As String = "データ取込"
+    Const CODE_CELL As String = "B1"
+    Const DATA_FIRST_ROW As Long = 5   ' 表データが始まる行
+    
+    On Error GoTo ErrHandler
+    
+    Dim wsSrc As Worksheet
+    Set wsSrc = ThisWorkbook.Sheets(SRC_SHEET)
+    
+    '── 銘柄コードを取得 ──
+    Dim stockCode As String
+    stockCode = Trim(CStr(wsSrc.Range(CODE_CELL).Value))
+    If Len(stockCode) = 0 Then
+        MsgBox "データ取込シートの " & CODE_CELL & _
+               " に銘柄コードを入力してください。", vbExclamation
+        Exit Sub
+    End If
+    
+    '── 銘柄管理シートから該当行を検索 ──
+    Dim wsMei As Worksheet: Set wsMei = ThisWorkbook.Sheets("銘柄管理")
+    Dim lastRow As Long: lastRow = wsMei.Cells(wsMei.Rows.Count, 2).End(xlUp).Row
+    Dim targetRow As Long: targetRow = 0
+    Dim r As Long
+    For r = 5 To lastRow
+        If Trim(CStr(wsMei.Cells(r, 2).Value)) = stockCode Then
+            targetRow = r
+            Exit For
+        End If
+    Next r
+    If targetRow = 0 Then
+        MsgBox "銘柄コード " & stockCode & _
+               " は銘柄管理シートに登録されていません。", vbExclamation
+        Exit Sub
+    End If
+    
+    '── データ取込シートの最終行 ──
+    Dim srcLastRow As Long
+    srcLastRow = wsSrc.Cells(wsSrc.Rows.Count, 1).End(xlUp).Row
+    If srcLastRow < DATA_FIRST_ROW Then
+        MsgBox "データ取込シートに取込対象データがありません。", vbExclamation
+        Exit Sub
+    End If
+    
+    '── 転記先の対応表 ──
+    '   データ取込シートの列 → 価格シート名
+    Dim shs() As Variant, cols() As Variant
+    shs = Array("始値", "高値", "安値", "終値", "出来高")
+    cols = Array(2, 3, 4, 5, 8)                          ' B C D E H
+    
+    '── 各シートの row3 日付を辞書化して高速検索 ──
+    Dim dateMap As Object: Set dateMap = CreateObject("Scripting.Dictionary")
+    Dim shIdx As Long
+    For shIdx = 0 To 4
+        Dim ws As Worksheet: Set ws = ThisWorkbook.Sheets(shs(shIdx))
+        Dim subMap As Object: Set subMap = CreateObject("Scripting.Dictionary")
+        Dim c As Long
+        For c = 5 To 254
+        ' E～IT（250営業日分）
+            Dim dv As Variant: dv = ws.Cells(3, c).Value
+            If IsDate(dv) Then
+                subMap(CDate(dv)) = c  ' 日付 → 列番号
+            End If
+        Next c
+        Set dateMap(shs(shIdx)) = subMap
+    Next shIdx
+    
+    '── 転記ループ ──
+    Application.ScreenUpdating = False
+    Application.Calculation = xlCalculationManual
+    
+    Dim writeCnt As Long: writeCnt = 0
+    Dim missCnt As Long: missCnt = 0
+    Dim i As Long
+    
+    For i = DATA_FIRST_ROW To srcLastRow
+        Dim d As Variant: d = wsSrc.Cells(i, 1).Value
+        ' 日付セル: "2026/04/17" or "04/17" or ExcelシリアルいずれでもIsDateなら可
+        If Not IsDate(d) Then GoTo NextRow
+        Dim dd As Date: dd = CDate(d)
+        
+        For shIdx = 0 To 4
+            Set ws = ThisWorkbook.Sheets(shs(shIdx))
+            Set subMap = dateMap(shs(shIdx))
+            If subMap.Exists(dd) Then
+                Dim tgtCol As Long: tgtCol = subMap(dd)
+                Dim v As Variant: v = wsSrc.Cells(i, cols(shIdx)).Value
+                ' カンマ付き文字列(例: "1,262,900") も数値化
+                If VarType(v) = vbString Then
+                    v = Replace(CStr(v), ",", "")
+                End If
+                If IsNumeric(v) Then
+                    If CDbl(v) > 0 Then
+                        ws.Cells(targetRow, tgtCol).Value = CDbl(v)
+                        writeCnt = writeCnt + 1
+                    End If
+                End If
+            Else
+                missCnt = missCnt + 1
+            End If
+        Next shIdx
+NextRow:
+    Next i
+    
+    Application.Calculation = xlCalculationAutomatic
+    Application.ScreenUpdating = True
+    
+    MsgBox "取込完了" & vbCrLf & vbCrLf & _
+           "銘柄コード: " & stockCode & "（" & _
+           wsMei.Cells(targetRow, 3).Value & "）" & vbCrLf & _
+           "書込セル数: " & writeCnt & vbCrLf & _
+           "日付不一致でスキップ: " & missCnt & " 箇所", _
+           vbInformation, "株探取込"
+    Exit Sub
+    
+ErrHandler:
+    Application.Calculation = xlCalculationAutomatic
+    Application.ScreenUpdating = True
+    MsgBox "エラーが発生しました: " & Err.Description, vbCritical
+End Sub

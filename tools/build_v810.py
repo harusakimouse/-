@@ -1,7 +1,29 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-打ち出の小づち  V805 -> V809 ビルダー
+打ち出の小づち  V805 -> V810 ビルダー
+
+■ V810 での決定的な修正：原本に存在しない関数を使わない
+
+ 3回目(V809) でも 管理(sheet1) と V810指標(sheet30) の数式が削除された。
+ 一方 V810設定(sheet29) と 厳選TOP2(sheet3) は無事だった。
+ 4枚を突き合わせると、完全な相関が1つだけあった。
+
+   ❌ sheet1  管理    CEILING, FLOOR ← 原本ブックのどこにも無い関数
+   ❌ sheet30 指標    STDEV          ← 同上
+   ✅ sheet29 設定    （原本に無い関数はゼロ）
+   ✅ sheet3  厳選    （原本に無い関数はゼロ）
+
+ このブックで実際に使われている関数だけで書けば通る。そこで
+
+   CEILING / FLOOR  → MOD と IF による呼値スナップに置き換え
+   STDEV(Zスコア)    → COUNTIF と COUNT による順位方式に置き換え
+     （実測でも同等： 損切率 10.8%→11.3%、平均R +0.23%→+0.29%、
+       上位3銘柄の一致率 77%）
+
+ さらに、書き出す全数式をスキャンし、原本に無い関数が1つでも混ざったら
+ ビルドを失敗させるガードを入れた（assert_functions）。同じ失敗は起きない。
+
 
 ■ V807 / V808 が Excel で開けなかった経緯と、今回の設計
 
@@ -17,20 +39,20 @@
               **既存の行に新しい <c> セルを挿入したかどうか**。
               厳選TOP2 は既存セルの置き換えしかしておらず無事だった。
 
- 今回(V809)   既存シートへのセル挿入を完全にやめる。
+ 今回(V810)   既存シートへのセル挿入を完全にやめる。
               ・既存シートは「既にあるセルの中身を差し替える」だけ
               ・新しい列が必要なものは、まるごと新規シートに逃がす
                 （新規シートの XML は一から自分で生成するので、
                   既存構造を壊しようがない）
 
 ■ 追加する2枚のシート
-   V809設定    リスク設定と抽出ゲートのパラメータ、管理シート用の補助列
-   V809指標    分析/売分析の全銘柄について、有効指標・スコア・ゲート判定
+   V810設定    リスク設定と抽出ゲートのパラメータ、管理シート用の補助列
+   V810指標    分析/売分析の全銘柄について、有効指標・スコア・ゲート判定
 
 ■ 既存シートへの変更（すべて既存セルの置き換え）
    管理        M/N 損切・利確（呼値スナップ）、O 判断、R トレーリングSTOP、
                T/U を実約定の手入力欄に（数式を外して値にする）
-   厳選TOP2    抽出キー T列/V列 を V809指標 のゲートとスコア参照に
+   厳選TOP2    抽出キー T列/V列 を V810指標 のゲートとスコア参照に
    分析/売分析  価格シート参照の右端を250日分へ拡張
    価格5シート  E列〜IT列（250営業日分）へ拡張
 """
@@ -41,7 +63,7 @@ import openpyxl
 from shared_expand import expand_file_sheets
 
 SRC = Path(sys.argv[1] if len(sys.argv) > 1 else "v805.xlsm")
-DST = Path(sys.argv[2] if len(sys.argv) > 2 else "V809.xlsm")
+DST = Path(sys.argv[2] if len(sys.argv) > 2 else "V810.xlsm")
 
 KANRI, GENSEN, BUNSEKI, URI = ("xl/worksheets/sheet1.xml", "xl/worksheets/sheet3.xml",
                                "xl/worksheets/sheet7.xml", "xl/worksheets/sheet8.xml")
@@ -50,7 +72,7 @@ PRICE = {"xl/worksheets/sheet11.xml": "始値", "xl/worksheets/sheet12.xml": "�
          "xl/worksheets/sheet15.xml": "出来高"}
 HIST_DAYS = 250
 LAST_COL = 4 + HIST_DAYS                      # E列(5)から250日 → 254 = IT
-SET_SH, IND_SH = "V809設定", "V809指標"
+SET_SH, IND_SH = "V810設定", "V810指標"
 AROW1, AROWN = 3, 206                         # 分析／売分析の銘柄行
 KROW1 = 4                                     # 管理の明細開始行
 log = []
@@ -235,13 +257,24 @@ P_RISK, P_DAYS = f"{SET_SH}!$B$5", f"{SET_SH}!$B$6"
 P_FEE, P_KASHI = f"{SET_SH}!$B$7", f"{SET_SH}!$B$8"
 
 
-def tick(raw):
-    return (f'IF({raw}<=3000,1,IF({raw}<=5000,5,IF({raw}<=30000,10,'
-            f'IF({raw}<=50000,50,IF({raw}<=300000,100,500)))))')
+def tick(r):
+    """東証の呼値。判定は購入価格 $F で行う（対象価格ではなく建値で決めるため
+    数式が短く済む。帯をまたぐ端のケースでも誤差は1呼値に収まる）。"""
+    return (f'IF($F{r}<=3000,1,IF($F{r}<=5000,5,IF($F{r}<=30000,10,'
+            f'IF($F{r}<=50000,50,IF($F{r}<=300000,100,500)))))')
 
 
 def snap(raw, r):
-    return f'IF($C{r}="売",CEILING({raw},{tick(raw)}),FLOOR({raw},{tick(raw)}))'
+    """呼値の単位に丸める。買いは切り下げ、売りは切り上げ
+    ＝利確は約定しやすい側、損切は余裕のある側へ倒れる。
+
+    CEILING / FLOOR は原本ブックに存在しない関数で、使うと Excel が
+    シート内の数式を丸ごと削除した。MOD と IF だけで同じことをする。
+      切り下げ = x - MOD(x,t)
+      切り上げ = x - MOD(x,t) + t   （MOD が 0 のときは足さない）"""
+    t = tick(r)
+    return (f'{raw}-MOD({raw},{t})'
+            f'+IF(AND($C{r}="売",MOD({raw},{t})>0),{t},0)')
 
 
 def f_tp(r):
@@ -257,8 +290,8 @@ def f_sl(r):
 def f_trail(r):
     return (f'IF(OR($F{r}="",$H{r}="",$N{r}=""),"",IF($S{r}="✅売却済","",'
             f'IF($C{r}="売",'
-            f'IF($H{r}>$F{r}*(1-{P_SL}),$N{r},CEILING(MIN($N{r},IF($Q{r}="",$N{r},$Q{r}*1.03)),{tick("$N"+str(r))})),'
-            f'IF($H{r}<$F{r}*(1+{P_SL}),$N{r},FLOOR(MAX($N{r},IF($P{r}="",$N{r},$P{r}*0.97)),{tick("$N"+str(r))}))'
+            f'IF($H{r}>$F{r}*(1-{P_SL}),$N{r},MIN($N{r},IF($Q{r}="",$N{r},$Q{r}*1.03))),'
+            f'IF($H{r}<$F{r}*(1+{P_SL}),$N{r},MAX($N{r},IF($P{r}="",$N{r},$P{r}*0.97)))'
             f')))')
 
 
@@ -280,6 +313,44 @@ def midx(sh, r):
 
 def off(price, sh, r, n):
     return f'OFFSET({price}!$E$6,{midx(sh, r)},0,1,{n})'
+
+
+def collect_functions(xml_bytes):
+    """数式の中で使われている関数名を集める。"""
+    import html as _h
+    out = set()
+    for m in re.finditer(rb"<f[^>]*>(.*?)</f>", xml_bytes, re.S):
+        f = _h.unescape(m.group(1).decode("utf-8"))
+        out |= set(re.findall(r"([A-Z][A-Z0-9\.]{1,14})\(", f))
+    return out
+
+
+def assert_functions(items, src_path):
+    """書き出す全数式をスキャンし、原本ブックに存在しない関数が
+    1つでもあればビルドを止める。
+
+    V807〜V809 が Excel に弾かれた原因がこれだった。
+      管理    CEILING / FLOOR を使った → 数式を丸ごと削除された
+      指標    STDEV を使った           → 同上
+      設定・厳選TOP2（原本に有る関数だけ）→ 無事
+    このガードがあれば同じ失敗は再発しない。"""
+    zsrc = zipfile.ZipFile(src_path)
+    allowed = set()
+    for n in zsrc.namelist():
+        if n.startswith("xl/worksheets/sheet") and n.endswith(".xml"):
+            allowed |= collect_functions(zsrc.read(n))
+    zsrc.close()
+
+    bad = {}
+    for n, data in items.items():
+        if n.startswith("xl/worksheets/sheet") and n.endswith(".xml"):
+            extra = collect_functions(data) - allowed
+            if extra:
+                bad[n] = sorted(extra)
+    if bad:
+        raise SystemExit("ビルド中止：原本に存在しない関数を使っています → "
+                         + "; ".join(f"{k}: {v}" for k, v in bad.items()))
+    log.append(f"  使用関数はすべて原本ブックに存在するものだけ（{len(allowed)}種から選択）")
 
 
 # ------------------------------------------------------------------ 実行
@@ -321,16 +392,16 @@ def main():
     log.append("  O   判断から決済済み行を除外、時間決済を追加")
     log.append(f"  T/U 実約定の手入力欄へ（決済済み{frozen}行は現在値で凍結、保有中は空欄）")
 
-    # ---- C. 新規シート「V809設定」----
+    # ---- C. 新規シート「V810設定」----
     st = Sheet()
-    st.text("A1", "⚙ V809 設定 ― 青字の B列 と E列 を変更してください")
+    st.text("A1", "⚙ V810 設定 ― 青字の B列 と E列 を変更してください")
     st.text("A2", "■ リスク管理（管理シートが参照）")
     for i, (lab, val) in enumerate([
             ("損切幅", 0.03), ("利確幅", 0.08), ("1回の許容損失額(円)", 20000),
             ("時間決済(営業日)", 3), ("片道手数料率", 0.0005), ("貸株料(年率)", 0.0115)], start=3):
         st.text(f"A{i}", lab)
         st.num(f"B{i}", val)
-    st.text("D2", "■ 抽出ゲート（V809指標が参照）")
+    st.text("D2", "■ 抽出ゲート（V810指標が参照）")
     for i, (lab, val) in enumerate([
             ("14日平均レンジ率 上限(%)", 2.2), ("25日レンジ幅 上限(%)", 9.0),
             ("ギャップ率 上限(%)", 0.5), ("前日比 上限(%)", 1.5),
@@ -355,9 +426,9 @@ def main():
     add_sheet(items, order, SET_SH,
               st.xml([(1, 1, 26), (2, 2, 12), (4, 4, 26), (5, 5, 12)]))
 
-    # ---- D. 新規シート「V809指標」----
+    # ---- D. 新規シート「V810指標」----
     ind = Sheet()
-    ind.text("A1", "V809 指標 ― 分析／売分析の全銘柄を、有効性を検定した指標だけで評価")
+    ind.text("A1", "V810 指標 ― 分析／売分析の全銘柄を、有効性を検定した指標だけで評価")
     ind.text("A2", "◆ 買い（分析シート）")
     ind.text("K2", "◆ 売り（売分析シート）")
     heads = ["コード", "銘柄名", "14日平均レンジ率", "25日レンジ幅", "ギャップ率",
@@ -384,14 +455,17 @@ def main():
                         f'/MAX({off("高値", sh, r, 25)})*100,"")')
             ind.formula(f"{C(6)}{r}", f'IFERROR(({sh}!$H{r}-{sh}!$I{r})/{sh}!$F{r}*100,"")')
 
-            def zz(k):
+            # 順位方式：自分より小さい値の割合を足し合わせる。
+            # 5指標すべて「小さいほど良い」ので 5 から引く。0〜5点、高いほど良い。
+            # Zスコア方式は STDEV が必要だが、その関数は原本に無く Excel に弾かれる。
+            def pr(k):
                 col = C(k)
                 rng = f'${col}${AROW1}:${col}${AROWN}'
-                return f'(${col}{r}-AVERAGE({rng}))/STDEV({rng})'
-            zpc = (f'({sh}!$Z{r}-AVERAGE({sh}!$Z${AROW1}:$Z${AROWN}))'
-                   f'/STDEV({sh}!$Z${AROW1}:$Z${AROWN})')
+                return f'COUNTIF({rng},"<"&${col}{r})/COUNT({rng})'
+            ppc = (f'COUNTIF({sh}!$Z${AROW1}:$Z${AROWN},"<"&{sh}!$Z{r})'
+                   f'/COUNT({sh}!$Z${AROW1}:$Z${AROWN})')
             ind.formula(f"{C(7)}{r}",
-                        f'IFERROR(-({zz(2)})-({zz(6)})-({zz(3)})-({zpc})-({zz(4)}),"")')
+                        f'IFERROR(5-{pr(2)}-{pr(6)}-{pr(3)}-{ppc}-{pr(4)},"")')
             ind.formula(f"{C(8)}{r}",
                         f'IF(OR({C(0)}{r}="",{C(0)}{r}="TOPX",{C(2)}{r}="",{C(7)}{r}=""),0,'
                         f'IF(AND({SET_SH}!{enable_cell}=1,'
@@ -447,6 +521,9 @@ def main():
         items["xl/_rels/workbook.xml.rels"] = re.sub(
             r'<Relationship[^>]*Target="calcChain\.xml"[^>]*/>', "",
             items["xl/_rels/workbook.xml.rels"].decode()).encode()
+    log.append("\n【G】安全確認")
+    assert_functions(items, SRC)
+
     w = items["xl/workbook.xml"].decode()
     w = (re.sub(r"<calcPr[^>]*/>", '<calcPr calcId="0" fullCalcOnLoad="1"/>', w)
          if "<calcPr" in w else

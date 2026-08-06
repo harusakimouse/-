@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-打ち出の小づち  V805 -> V810 ビルダー
+打ち出の小づち  V805 -> V811 ビルダー
 
-■ V810 での決定的な修正：原本に存在しない関数を使わない
+■ V811 での決定的な修正：原本に存在しない関数を使わない
 
- 3回目(V809) でも 管理(sheet1) と V810指標(sheet30) の数式が削除された。
- 一方 V810設定(sheet29) と 厳選TOP2(sheet3) は無事だった。
+ 3回目(V809) でも 管理(sheet1) と V811指標(sheet30) の数式が削除された。
+ 一方 V811設定(sheet29) と 厳選TOP2(sheet3) は無事だった。
  4枚を突き合わせると、完全な相関が1つだけあった。
 
    ❌ sheet1  管理    CEILING, FLOOR ← 原本ブックのどこにも無い関数
@@ -39,20 +39,20 @@
               **既存の行に新しい <c> セルを挿入したかどうか**。
               厳選TOP2 は既存セルの置き換えしかしておらず無事だった。
 
- 今回(V810)   既存シートへのセル挿入を完全にやめる。
+ 今回(V811)   既存シートへのセル挿入を完全にやめる。
               ・既存シートは「既にあるセルの中身を差し替える」だけ
               ・新しい列が必要なものは、まるごと新規シートに逃がす
                 （新規シートの XML は一から自分で生成するので、
                   既存構造を壊しようがない）
 
 ■ 追加する2枚のシート
-   V810設定    リスク設定と抽出ゲートのパラメータ、管理シート用の補助列
-   V810指標    分析/売分析の全銘柄について、有効指標・スコア・ゲート判定
+   V811設定    リスク設定と抽出ゲートのパラメータ、管理シート用の補助列
+   V811指標    分析/売分析の全銘柄について、有効指標・スコア・ゲート判定
 
 ■ 既存シートへの変更（すべて既存セルの置き換え）
    管理        M/N 損切・利確（呼値スナップ）、O 判断、R トレーリングSTOP、
                T/U を実約定の手入力欄に（数式を外して値にする）
-   厳選TOP2    抽出キー T列/V列 を V810指標 のゲートとスコア参照に
+   厳選TOP2    抽出キー T列/V列 を V811指標 のゲートとスコア参照に
    分析/売分析  価格シート参照の右端を250日分へ拡張
    価格5シート  E列〜IT列（250営業日分）へ拡張
 """
@@ -63,7 +63,7 @@ import openpyxl
 from shared_expand import expand_file_sheets
 
 SRC = Path(sys.argv[1] if len(sys.argv) > 1 else "v805.xlsm")
-DST = Path(sys.argv[2] if len(sys.argv) > 2 else "V810.xlsm")
+DST = Path(sys.argv[2] if len(sys.argv) > 2 else "V811.xlsm")
 
 KANRI, GENSEN, BUNSEKI, URI = ("xl/worksheets/sheet1.xml", "xl/worksheets/sheet3.xml",
                                "xl/worksheets/sheet7.xml", "xl/worksheets/sheet8.xml")
@@ -72,7 +72,7 @@ PRICE = {"xl/worksheets/sheet11.xml": "始値", "xl/worksheets/sheet12.xml": "�
          "xl/worksheets/sheet15.xml": "出来高"}
 HIST_DAYS = 250
 LAST_COL = 4 + HIST_DAYS                      # E列(5)から250日 → 254 = IT
-SET_SH, IND_SH = "V810設定", "V810指標"
+SET_SH, IND_SH = "V811設定", "V811指標"
 AROW1, AROWN = 3, 206                         # 分析／売分析の銘柄行
 KROW1 = 4                                     # 管理の明細開始行
 log = []
@@ -303,7 +303,7 @@ def f_judge(r):
             f'IF($H{r}>=$F{r}*(1+{P_SL}*0.7),"⚠️損切接近","保持継続"))))),'
             f'IF($H{r}>=$M{r},"🟢利確",IF(AND($R{r}<>"",$H{r}<=$R{r}),"🟠TRAIL",'
             f'IF($H{r}<=$N{r},"🔴損切",IF($W{r}>={P_DAYS},"⏱時間決済",'
-            f'IF($H{r}<=$F{r}*(1-{P_SL}*0.7),"⚠️損切接近","保持継続")))))))')
+            f'IF($H{r}<=$F{r}*(1-{P_SL}*0.7),"⚠️損切接近","保持継続"))))))))')
 
 
 def midx(sh, r):
@@ -313,6 +313,66 @@ def midx(sh, r):
 
 def off(price, sh, r, n):
     return f'OFFSET({price}!$E$6,{midx(sh, r)},0,1,{n})'
+
+
+def paren_balance(f):
+    """文字列リテラルの中を除いて丸括弧の釣り合いを数える。0 なら正常。"""
+    depth = 0
+    in_str = False
+    for ch in f:
+        if ch == '"':
+            in_str = not in_str
+        elif not in_str:
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+                if depth < 0:
+                    return -999
+    return depth
+
+
+def assert_formulas(items):
+    """書き出す全数式について
+        (1) 丸括弧が釣り合っているか
+        (2) Excel の数式パーサで構文解析できるか
+    を検査し、1つでも通らなければビルドを止める。
+
+    V807〜V810 が Excel に弾かれた真因はこれだった。
+      管理 O列（判断）      閉じ括弧が1つ足りない
+      指標 J列/T列（判定）  同上
+    Excel は構文エラーの数式を1つ見つけると、そのシートの数式を
+    まとめて削除する。括弧の深さは数えていたのに、最後に 0 へ戻るかを
+    見ていなかったため4回見逃した。"""
+    import html as _h
+    try:
+        from formulas import Parser
+    except Exception:
+        Parser = None
+
+    bad = []
+    for n, data in items.items():
+        if not (n.startswith("xl/worksheets/sheet") and n.endswith(".xml")):
+            continue
+        seen = set()
+        for m in re.finditer(rb'<c r="([A-Z]+)(\d+)"[^>]*>\s*<f[^>]*>(.*?)</f>', data, re.S):
+            col = m.group(1).decode()
+            if col in seen:
+                continue                     # 列ごとに1つ見れば十分（同じ型の数式なので）
+            seen.add(col)
+            f = _h.unescape(m.group(3).decode("utf-8"))
+            ref = col + m.group(2).decode()
+            if paren_balance(f) != 0:
+                bad.append(f"{n} {ref}: 丸括弧の過不足 {paren_balance(f):+d}")
+                continue
+            if Parser is not None:
+                try:
+                    Parser().ast("=" + f)
+                except Exception as e:
+                    bad.append(f"{n} {ref}: 構文解析エラー {type(e).__name__}")
+    if bad:
+        raise SystemExit("ビルド中止：数式の構文エラー\n  " + "\n  ".join(bad))
+    log.append("  全数式の括弧の釣り合いと構文解析を確認")
 
 
 def collect_functions(xml_bytes):
@@ -392,16 +452,16 @@ def main():
     log.append("  O   判断から決済済み行を除外、時間決済を追加")
     log.append(f"  T/U 実約定の手入力欄へ（決済済み{frozen}行は現在値で凍結、保有中は空欄）")
 
-    # ---- C. 新規シート「V810設定」----
+    # ---- C. 新規シート「V811設定」----
     st = Sheet()
-    st.text("A1", "⚙ V810 設定 ― 青字の B列 と E列 を変更してください")
+    st.text("A1", "⚙ V811 設定 ― 青字の B列 と E列 を変更してください")
     st.text("A2", "■ リスク管理（管理シートが参照）")
     for i, (lab, val) in enumerate([
             ("損切幅", 0.03), ("利確幅", 0.08), ("1回の許容損失額(円)", 20000),
             ("時間決済(営業日)", 3), ("片道手数料率", 0.0005), ("貸株料(年率)", 0.0115)], start=3):
         st.text(f"A{i}", lab)
         st.num(f"B{i}", val)
-    st.text("D2", "■ 抽出ゲート（V810指標が参照）")
+    st.text("D2", "■ 抽出ゲート（V811指標が参照）")
     for i, (lab, val) in enumerate([
             ("14日平均レンジ率 上限(%)", 2.2), ("25日レンジ幅 上限(%)", 9.0),
             ("ギャップ率 上限(%)", 0.5), ("前日比 上限(%)", 1.5),
@@ -426,9 +486,9 @@ def main():
     add_sheet(items, order, SET_SH,
               st.xml([(1, 1, 26), (2, 2, 12), (4, 4, 26), (5, 5, 12)]))
 
-    # ---- D. 新規シート「V810指標」----
+    # ---- D. 新規シート「V811指標」----
     ind = Sheet()
-    ind.text("A1", "V810 指標 ― 分析／売分析の全銘柄を、有効性を検定した指標だけで評価")
+    ind.text("A1", "V811 指標 ― 分析／売分析の全銘柄を、有効性を検定した指標だけで評価")
     ind.text("A2", "◆ 買い（分析シート）")
     ind.text("K2", "◆ 売り（売分析シート）")
     heads = ["コード", "銘柄名", "14日平均レンジ率", "25日レンジ幅", "ギャップ率",
@@ -482,7 +542,7 @@ def main():
                         f'IF({sh}!$Z{r}>{SET_SH}!$E$6,"×前日に急騰",'
                         f'IF({sh}!$Z{r}<{SET_SH}!$E$7,"×前日に急落",'
                         f'IF({C(5)}{r}<{SET_SH}!$E$8,"×高値から離れすぎ",'
-                        f'IF({C(6)}{r}>{SET_SH}!$E$9,"×当日の値幅が大きい","×")))))))))')
+                        f'IF({C(6)}{r}>{SET_SH}!$E$9,"×当日の値幅が大きい","×"))))))))))')
 
     block(1, "分析", "$E$11")
     block(11, "売分析", "$E$12")
@@ -522,6 +582,7 @@ def main():
             r'<Relationship[^>]*Target="calcChain\.xml"[^>]*/>', "",
             items["xl/_rels/workbook.xml.rels"].decode()).encode()
     log.append("\n【G】安全確認")
+    assert_formulas(items)
     assert_functions(items, SRC)
 
     w = items["xl/workbook.xml"].decode()

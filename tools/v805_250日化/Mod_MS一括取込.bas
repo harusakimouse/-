@@ -429,6 +429,9 @@ Public Sub データ取込_ヘッダ修復()
     dws.Range("D1").Value = "→ 株探(過去データ)"
     dws.Range("E1").Value = "→"
     dws.Range("J1").Value = "本数"
+    ' L1 はどの数式からも VBA からも参照されていない空き。
+    ' J1 が K1 のラベルなのに M1 だけラベルが無かったので、ここに入れる。
+    dws.Range("L1").Value = "開始日"
     If Trim$(CStr(dws.Range("B1").Value)) = "" Then dws.Range("B1").Value = "3401"
     dws.Range("K1").Value = 400
     dws.Range("M1").Value = Format$(Date - 420, "yyyymmdd")
@@ -468,7 +471,8 @@ Public Sub データ取込_ヘッダ修復()
     MsgBox "作り直しました。" & vbCrLf & vbCrLf & _
            "  B1 銘柄コード = " & dws.Range("B1").Value & vbCrLf & _
            "  K1 本数       = " & dws.Range("K1").Value & vbCrLf & _
-           "  M1 開始日     = " & dws.Range("M1").Value & vbCrLf & vbCrLf & _
+           "  M1 開始日     = " & dws.Range("M1").Value & _
+           "  （" & Format$(Date - 420, "yyyy/mm/dd") & "）" & vbCrLf & vbCrLf & _
            "B3 に銘柄名、D3 以降に日付が並べば復旧完了です。" & vbCrLf & _
            "（出るまで数秒かかります）", vbInformation, "ヘッダ修復"
 End Sub

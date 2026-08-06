@@ -96,9 +96,9 @@ def set_f(xml, cell, f):
     """数式をセットする。既存セルの属性（書式）は保持し、キャッシュ値は捨てる。"""
     m = re.search(r'(<c r="%s"[^>]*?)(/>|>.*?</c>)' % cell, xml, re.S)
     if m:
-        attrs = re.sub(r'\s+t="[a-z]+"', "", m.group(1))     # 型指定を外す
-        attrs = re.sub(r'\s+cm="\d+"', "", attrs)
-        return xml[: m.start()] + attrs + ">" + f"<f>{esc(f)}</f>" + "</c>" + xml[m.end():]
+        # 数式が変わるのでキャッシュ値は捨てるが、s=(書式) t=(型) cm= はそのまま残す。
+        # 属性を落とすと Excel が「パーツ内の数式」を丸ごと削除することがある。
+        return xml[: m.start()] + m.group(1) + ">" + f"<f>{esc(f)}</f>" + "</c>" + xml[m.end():]
     return _put(xml, cell, f'<c r="{cell}"><f>{esc(f)}</f></c>')
 
 
@@ -115,8 +115,7 @@ def freeze_value(xml, cell, v):
     m = re.search(r'(<c r="%s"[^>]*?)(/>|>.*?</c>)' % cell, xml, re.S)
     if not m:
         return xml if v is None else _put(xml, cell, f'<c r="{cell}"><v>{v}</v></c>')
-    attrs = re.sub(r'\s+t="[a-z]+"', "", m.group(1))
-    attrs = re.sub(r'\s+cm="\d+"', "", attrs)
+    attrs = re.sub(r'\s+t="[a-z]+"', "", m.group(1))   # 値型に戻すので型指定は外す
     body = "/>" if v is None else f"><v>{v}</v></c>"
     return xml[: m.start()] + attrs + body + xml[m.end():]
 
@@ -281,6 +280,38 @@ def widen_refs(xml, name):
     return xml
 
 
+def fix_geometry(xml, name):
+    """行の spans 属性と worksheet の dimension を、実際のセルに合わせて直す。
+
+    spans は「その行に存在する列の範囲」の宣言。新しい列を足したのに
+    宣言を直さないと実態とずれ、Excel が数式を丸ごと落とすことがある。
+    dimension も同様に、シート全体の使用範囲を宣言し直す。"""
+    lo_all, hi_all, row_min, row_max = 10 ** 9, 0, 10 ** 9, 0
+
+    def fix_row(m):
+        nonlocal lo_all, hi_all, row_min, row_max
+        r, attrs, body = int(m.group(1)), m.group(2), m.group(3)
+        cols = [colnum(c) for c in re.findall(r'<c r="([A-Z]+)%d"' % r, m.group(0))]
+        if not cols:
+            return m.group(0)
+        lo, hi = min(cols), max(cols)
+        lo_all, hi_all = min(lo_all, lo), max(hi_all, hi)
+        row_min, row_max = min(row_min, r), max(row_max, r)
+        if 'spans="' in attrs:
+            attrs = re.sub(r'spans="\d+:\d+"', f'spans="{lo}:{hi}"', attrs)
+        else:
+            attrs = f' spans="{lo}:{hi}"' + attrs
+        return f'<row r="{r}"{attrs}{body}'
+
+    xml = re.sub(r'<row r="(\d+)"([^>]*?)((?:/>|>(?:(?!</row>).)*</row>))',
+                 fix_row, xml, flags=re.S)
+    if hi_all:
+        ref = f"{colname(lo_all)}{row_min}:{colname(hi_all)}{row_max}"
+        xml = re.sub(r'<dimension ref="[^"]+"/>', f'<dimension ref="{ref}"/>', xml)
+        log.append(f"  {name}: spans と dimension を実態に合わせて再計算 → {ref}")
+    return xml
+
+
 # ---------------------------------------------------------- 価格シートの拡張
 def extend_price(xml, name):
     xml = re.sub(r'<dimension ref="A1:[A-Z]+(\d+)"/>',
@@ -375,10 +406,18 @@ def main():
 
     # --- E. 価格シートを250日に拡張 ---
     log.append(f"\n【E】価格シートを{HIST_DAYS}営業日分に拡張")
-    for path, name in ((KANRI, "管理"), (BUNSEKI, "分析"), (URI, "売分析"), (GENSEN, "厳選TOP2")):
+    # 管理シートは対象外。AE〜AI の到達日シミュレーション列は 3,664 個の配列数式で、
+    # T/U を手入力にした今は使われない。触らないことでリスクを減らす。
+    for path, name in ((BUNSEKI, "分析"), (URI, "売分析")):
         items[path] = widen_refs(items[path].decode(), name).encode()
     for path, name in PRICE.items():
         items[path] = extend_price(items[path].decode(), name).encode()
+
+    # --- 行の spans と dimension を実態に合わせる ---
+    log.append("\n【F】幾何情報の整合")
+    for path, name in ((KANRI, "管理"), (GENSEN, "厳選TOP2"),
+                       (BUNSEKI, "分析"), (URI, "売分析")):
+        items[path] = fix_geometry(items[path].decode(), name).encode()
 
     # --- 仕上げ ---
     if "xl/calcChain.xml" in items:

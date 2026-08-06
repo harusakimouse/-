@@ -28,40 +28,50 @@ def esc(s):
 def expand_shared(xml: str, ws) -> tuple:
     """xml 内の shared 数式セルを、openpyxl が展開した数式で置き換える。
 
-    注意：<c> 要素の範囲を厳密に区切ること。`.*?</f>` のような緩い書き方だと
-    追従セル（<f t="shared" si="0"/> の自己終了タグ）を処理するときに
-    次のマスターセルの </f> まで食ってしまい、間の <row> 構造ごと消える。
+    重要：<c> 要素の改変は最小限にする。
+      ・<c> タグの属性（s= スタイル, t= 型, cm= メタデータ）は一切触らない
+      ・キャッシュ値 <v> もそのまま残す
+      ・置き換えるのは <f …/> または <f …>…</f> の部分だけ
+    Excel は <c> の属性と中身の整合にうるさく、型属性を落とすだけでも
+    「パーツ内の数式」を丸ごと削除することがある。
+
+    また <c> の範囲は厳密に区切ること。`.*?</f>` のような緩い書き方だと
+    追従セル（自己終了タグ）の処理で次のマスターの </f> まで食ってしまい、
+    間の <row> 構造ごと壊れる。
     """
     n_master = n_follow = n_fail = 0
 
-    # 1つの <c> 要素だけに確実にマッチさせる（内部に </c> を含ませない）
     cell_pat = re.compile(
         r'<c\s[^>]*?r="(?P<ref>[A-Z]+\d+)"[^>]*?'
         r'(?:/>|>(?P<inner>(?:(?!</c>).)*)</c>)', re.S)
+    f_pat = re.compile(r'<f[^>]*?t="shared"[^>]*?(?:/>|>(?:(?!</f>).)*</f>)', re.S)
 
     def repl(m):
         nonlocal n_master, n_follow, n_fail
         inner = m.group("inner")
         if inner is None or 't="shared"' not in inner:
-            return m.group(0)                     # 共有数式でないセルは触らない
-        ref = m.group("ref")
+            return m.group(0)
+        fm = f_pat.search(inner)
+        if fm is None:
+            n_fail += 1
+            return m.group(0)
         try:
-            v = ws[ref].value
+            v = ws[m.group("ref")].value
         except Exception:
             v = None
         if not isinstance(v, str) or not v.startswith("="):
             n_fail += 1
             return m.group(0)
-        if "ref=" in inner.split(">", 1)[0]:
+        if "ref=" in fm.group(0):
             n_master += 1
         else:
             n_follow += 1
-        head = re.match(r'<c\s[^>]*?r="[^"]*"[^>]*?>', m.group(0)).group(0)
-        head = re.sub(r'\s+t="[a-z]+"', "", head)      # 型指定を外す
-        return head + f"<f>{esc(v[1:])}</f></c>"
+        # <f> の部分だけを差し替える。<c> の属性も <v> も元のまま。
+        new_inner = inner[: fm.start()] + f"<f>{esc(v[1:])}</f>" + inner[fm.end():]
+        head = m.group(0)[: m.group(0).index(">") + 1]
+        return head + new_inner + "</c>"
 
-    out = cell_pat.sub(repl, xml)
-    return out, (n_master, n_follow, n_fail)
+    return cell_pat.sub(repl, xml), (n_master, n_follow, n_fail)
 
 
 def expand_file_sheets(src_xlsm, items, sheet_map):

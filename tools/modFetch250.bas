@@ -32,7 +32,7 @@ Attribute VB_Name = "modFetch250"
 Option Explicit
 
 '------------------------------------------------------------ 設定（ここを触る）
-Public Const HIST_MAX      As Long = 250     ' 取得する営業日数（E列〜IT列）
+Private Const HIST_MAX     As Long = 250     ' 取得する営業日数（E列〜IT列）
 Private Const WAIT_LIMIT   As Double = 25    ' RSS応答の待ち時間の上限（秒）
 Private Const STABLE_POLLS As Long = 3       ' この回数だけ内容が変わらなければ受信完了
 Private Const POLL_WAIT    As Double = 0.2   ' 1回の待ち（秒）

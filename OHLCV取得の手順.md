@@ -30,8 +30,11 @@
 1. マーケットスピードを起動してログインしておく
 2. V811.xlsm を開く
 3. `Alt + F11` でVBAエディタを開く
-4. メニュー **ファイル → ファイルのインポート** で `modFetch250.bas` を選ぶ
-5. `Alt + F8` でマクロ一覧を開く
+4. 左のツリーで **`VBAProject (V811.xlsm)` をクリックして選択**
+5. 既に `modFetch250` や `modFetch2501` があれば、**すべて右クリック →「解放」→「いいえ」**で消す
+6. メニュー **ファイル → ファイルのインポート**（`Ctrl+M`）で `modFetch250.bas` を選ぶ（**1回だけ**）
+7. **デバッグ → VBAProject のコンパイル** でエラーが出ないことを確認
+8. `Alt + F11` でExcelに戻り `Ctrl + S` で保存 → `Alt + F8` でマクロ一覧
 
 ### 実行
 
@@ -116,7 +119,7 @@ RSSは非同期なので、値が届くまで待つ必要があります。
 ## 3. 設定（モジュール冒頭で変更できます）
 
 ```vba
-Public Const HIST_MAX      As Long = 250     ' 取得する営業日数
+Private Const HIST_MAX     As Long = 250     ' 取得する営業日数
 Private Const WAIT_LIMIT   As Double = 25    ' RSS応答の待ち時間の上限（秒）
 Private Const STABLE_POLLS As Long = 3       ' この回数だけ内容が変わらなければ受信完了
 Private Const POLL_WAIT    As Double = 0.2   ' 1回の待ち（秒）

@@ -28,6 +28,7 @@ Attribute VB_Name = "modFetch250"
 '    OHLCV_全銘柄取得     … 銘柄管理の全銘柄をまとめて取得（時間がかかる）
 '    OHLCV_1銘柄取得      … 銘柄コードを訊いて、その1銘柄だけ
 '    OHLCV_日付軸を作り直す … 軸を250日に張り替える（既存データは消える）
+'    OHLCV_価格データを全消去 … 5シートの E5:IT305 を消すだけ（RSS不要）
 '    OHLCV_取得状況を確認  … 何銘柄そろっているかを表示
 '==============================================================================
 Option Explicit
@@ -68,6 +69,7 @@ Private gAxis() As Date          ' 日付軸（新しい順）
 Private gAxisN  As Long
 Private gCancel As Boolean
 Private gStep   As String        ' いま何をしているか（エラー時に場所を特定するため）
+Private gClearLog As String      ' 直前の消去で、シートごとに何セル消したか
 
 
 '==============================================================================
@@ -304,7 +306,8 @@ Public Sub OHLCV_日付軸を作り直す()
     MsgBox "日付軸を " & gAxisN & " 営業日分に作り直しました。" & vbCrLf & _
            "（" & Format$(gAxis(gAxisN), "yyyy/mm/dd") & " ～ " & _
            Format$(gAxis(1), "yyyy/mm/dd") & "）" & vbCrLf & _
-           "5シートの既存データ（E5:IT305）は消去しました。" & vbCrLf & vbCrLf & _
+           "既存データの消去（値が入っているセル数）:" & vbCrLf & gClearLog & vbCrLf & _
+           "右側が 0 なら消えています。" & vbCrLf & vbCrLf & _
            IIf(gAxisN < HIST_MAX, _
                "※ " & HIST_MAX & " 日には届きませんでした。楽天から取れる範囲がこれだけです。" & vbCrLf & vbCrLf, "") & _
            "続けて OHLCV_全銘柄取得 を実行してください。", _
@@ -555,6 +558,7 @@ Private Sub WriteAxis(Optional ByVal forceClear As Boolean = False)
     ' 「まっさらにしてから取り直す」ためのマクロなので、消さずに残すと
     ' 取得に失敗した銘柄が古い値のまま居座り、それに気づけない。
     Dim changed As Boolean: changed = forceClear Or AxisChanged()
+    gClearLog = ""
 
     Dim arr As Variant
     ReDim arr(1 To 1, 1 To HIST_MAX)
@@ -587,10 +591,10 @@ Private Sub WriteAxis(Optional ByVal forceClear As Boolean = False)
         On Error GoTo 0
 
         If changed Then
-            gStep = CStr(s) & " シートの旧データを消去（E5:IT305）"
-            ws.Range(ws.Cells(TOPIX_ROW, FIRST_COL), _
-                     ws.Cells(STOCK_ROW1 + (MEI_ROWN - MEI_ROW1), _
-                              FIRST_COL + HIST_MAX - 1)).ClearContents
+            gStep = CStr(s) & " シートの旧データを消去"
+            Dim nBefore As Long, nAfter As Long
+            nBefore = ClearPrices(ws, nAfter)
+            gClearLog = gClearLog & "  " & CStr(s) & ": " & nBefore & " → " & nAfter & vbCrLf
         End If
 
         Reprotect ws, wasP
@@ -813,6 +817,82 @@ Private Sub Reprotect(ByVal ws As Worksheet, ByVal wasProtected As Boolean)
     On Error Resume Next
     ws.Protect PWD, UserInterfaceOnly:=True
     On Error GoTo 0
+End Sub
+
+
+' 価格データ領域（E5:IT305）を消し、消す前と消したあとの
+' 「値が入っているセル数」を返す。0 → 0 なら元から空、
+' 100 → 100 なら消せていない（保護など）と、数字で切り分けられる。
+Private Function ClearPrices(ByVal ws As Worksheet, ByRef remain As Long) As Long
+    Dim rng As Range
+    Set rng = ws.Range(ws.Cells(TOPIX_ROW, FIRST_COL), _
+                       ws.Cells(STOCK_ROW1 + (MEI_ROWN - MEI_ROW1), _
+                                FIRST_COL + HIST_MAX - 1))
+    ClearPrices = FilledCount(rng)
+    rng.ClearContents
+    remain = FilledCount(rng)
+End Function
+
+
+Private Function FilledCount(ByVal rng As Range) As Long
+    Dim n As Long
+    On Error Resume Next
+    n = Application.WorksheetFunction.CountA(rng)
+    If Err.Number <> 0 Then Err.Clear: n = -1
+    On Error GoTo 0
+    FilledCount = n
+End Function
+
+
+'==============================================================================
+' ⑤ 価格データだけを消す（RSS もマーケットスピードも不要）
+'
+'  「作り直したのにデータが消えない」ときの切り分け用でもある。
+'  シートごとに、消す前と消したあとのセル数を出す。
+'==============================================================================
+Public Sub OHLCV_価格データを全消去()
+    Dim prevScr As Boolean: prevScr = Application.ScreenUpdating
+    On Error GoTo ErrHandler
+    Application.ScreenUpdating = True
+
+    If MsgBox("始値・高値・安値・終値・出来高 の5シートについて、" & vbCrLf & _
+              "E5:IT305（銘柄の価格データ）を消去します。" & vbCrLf & _
+              "3行目の日付軸は残します。" & vbCrLf & vbCrLf & _
+              "続けますか？", vbYesNo + vbExclamation, "価格データの消去") <> vbYes Then
+        Application.ScreenUpdating = prevScr
+        Exit Sub
+    End If
+
+    Dim rep As String, s As Variant
+    For Each s In Split(SHEETS_LIST, ",")
+        Dim ws As Worksheet: Set ws = MustSheet(CStr(s))
+        Dim wasP As Boolean
+        gStep = CStr(s) & " シートの保護解除"
+        If Not TryUnprotect(ws, wasP) Then
+            rep = rep & "  " & CStr(s) & ": 保護を解除できず、消せませんでした" & vbCrLf
+        Else
+            gStep = CStr(s) & " シートの価格データを消去"
+            Dim nBefore As Long, nAfter As Long
+            nBefore = ClearPrices(ws, nAfter)
+            rep = rep & "  " & CStr(s) & ": " & nBefore & " セル → " & nAfter & " セル" & vbCrLf
+            Reprotect ws, wasP
+        End If
+    Next s
+    gStep = ""
+
+    Application.ScreenUpdating = prevScr
+    MsgBox "消去しました。（値が入っているセル数）" & vbCrLf & vbCrLf & rep & vbCrLf & _
+           "右側が 0 なら消えています。0 になっていないシートは" & vbCrLf & _
+           "保護が残っているか、数式が入っています。" & vbCrLf & vbCrLf & _
+           "続けて OHLCV_全銘柄取得 を実行してください。", vbInformation, "価格データの消去"
+    Exit Sub
+
+ErrHandler:
+    Dim wh As String: wh = IIf(gStep = "", "(場所不明)", gStep)
+    Application.ScreenUpdating = prevScr
+    MsgBox "消去を中断しました。" & vbCrLf & vbCrLf & _
+           "場所: " & wh & vbCrLf & vbCrLf & _
+           "Err " & Err.Number & ": " & Err.Description, vbCritical, "エラー"
 End Sub
 
 

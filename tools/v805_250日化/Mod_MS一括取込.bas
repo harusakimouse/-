@@ -339,8 +339,11 @@ Private Function WaitForRss(ByVal dataWs As Worksheet, ByVal meiName As String) 
         If n < 0 Then n = 0
 
         Dim nameOk As Boolean
-        If cName = 0 Or meiName = "" Then
-            nameOk = True                       ' 名前で確認できないときは行数だけで見る
+        If cName = 0 Or meiName = "" Or IsNumeric(meiName) Then
+            ' 名前で確認できないときは行数だけで見る。
+            ' 銘柄管理 C5（TOPX）には銘柄名ではなく指数値が入っているため、
+            ' 数値のときも名前照合をあきらめる（照合しないと永久に一致しない）。
+            nameOk = True
         Else
             nameOk = (Trim$(CStr(dataWs.Cells(hRow + 1, cName).Value)) = meiName)
         End If
@@ -476,3 +479,172 @@ Public Sub データ取込_ヘッダ修復()
            "B3 に銘柄名、D3 以降に日付が並べば復旧完了です。" & vbCrLf & _
            "（出るまで数秒かかります）", vbInformation, "ヘッダ修復"
 End Sub
+
+
+'==============================================================================
+' 取り込めていない銘柄だけ、もう一度取りに行く
+'
+'  一括取込で失敗した銘柄（RSSの応答が間に合わなかった等）を拾い直す。
+'  終値シートの E:IT に何日ぶん入っているかで判定するので、
+'  何度実行しても、そろっている銘柄には触らない。
+'  待ち時間は一括取込より長め（60秒）。
+'==============================================================================
+Public Sub MS取込_不足分だけ()
+    Const NEED As Long = 200          ' この日数未満の銘柄を取り直す
+    Const LONG_WAIT As Double = 60
+
+    Dim prevCalc As XlCalculation, prevScr As Boolean
+    prevCalc = Application.Calculation
+    prevScr = Application.ScreenUpdating
+
+    On Error GoTo ErrHandler
+    Application.EnableCancelKey = xlErrorHandler
+
+    Dim dataWs As Worksheet, mws As Worksheet, cws As Worksheet
+    Set dataWs = Nothing: Set mws = Nothing: Set cws = Nothing
+    On Error Resume Next
+    Set dataWs = ThisWorkbook.Sheets("データ取込")
+    Set mws = ThisWorkbook.Sheets("銘柄管理")
+    Set cws = ThisWorkbook.Sheets("終値")
+    On Error GoTo ErrHandler
+    If dataWs Is Nothing Or mws Is Nothing Or cws Is Nothing Then
+        Err.Raise 5, , "データ取込 / 銘柄管理 / 終値 のいずれかが見つかりません。"
+    End If
+
+    FindHeaderCols dataWs
+    If hRow = 0 Then Err.Raise 5, , _
+        "データ取込シートのヘッダ行が見つかりません。" & vbCrLf & _
+        "先に データ取込_ヘッダ修復 を実行してください。"
+
+    ' --- 足りない銘柄を数える ---
+    Dim targets As String, total As Long, r As Long
+    For r = MEI_ROW1 To MEI_ROWN
+        If Trim$(CStr(mws.Cells(r, 2).Value)) <> "" Then
+            If FilledDays(cws, r) < NEED Then
+                total = total + 1
+                targets = targets & "  " & Trim$(CStr(mws.Cells(r, 2).Value)) & _
+                          " (" & FilledDays(cws, r) & " 日)" & vbCrLf
+            End If
+        End If
+    Next r
+
+    If total = 0 Then
+        MsgBox "足りない銘柄はありません。" & vbCrLf & _
+               "全銘柄が " & NEED & " 日以上そろっています。", vbInformation, "不足分の取り直し"
+        Exit Sub
+    End If
+
+    If MsgBox(total & " 銘柄が " & NEED & " 日分に足りていません。" & vbCrLf & _
+              "取り直しますか？" & vbCrLf & vbCrLf & Left$(targets, 900), _
+              vbYesNo + vbQuestion, "不足分の取り直し") <> vbYes Then Exit Sub
+
+    refCnt = 0
+    Dim okCnt As Long, ngCnt As Long, doneCnt As Long, ngList As String
+    Dim t0 As Double: t0 = Timer
+
+    For r = MEI_ROW1 To MEI_ROWN
+        Dim code As String: code = Trim$(CStr(mws.Cells(r, 2).Value))
+        If code <> "" Then
+            If FilledDays(cws, r) < NEED Then
+                doneCnt = doneCnt + 1
+                Dim meiName As String: meiName = Trim$(CStr(mws.Cells(r, 3).Value))
+                ShowProgress doneCnt, total, code, meiName, t0
+
+                Application.ScreenUpdating = True
+                Application.Calculation = xlCalculationAutomatic
+                dataWs.Range("B1").Value = ""       ' いったん空にして確実に取り直させる
+                Application.Calculate
+                dataWs.Range("B1").Value = code
+                Application.Calculate
+
+                Dim gotIt As Boolean: gotIt = WaitLong(dataWs, meiName, LONG_WAIT)
+
+                Application.Calculation = xlCalculationManual
+                Application.ScreenUpdating = False
+
+                Dim wrote As Long: wrote = 0
+                Dim shifted As Boolean: shifted = False
+                If gotIt Then wrote = WriteOneStock(dataWs, r, shifted)
+
+                If wrote > 0 Then
+                    okCnt = okCnt + 1
+                Else
+                    ngCnt = ngCnt + 1
+                    ngList = ngList & "  " & code & " " & meiName & vbCrLf
+                End If
+            End If
+        End If
+    Next r
+
+    RestoreApp prevCalc, prevScr
+
+    Dim msg As String
+    msg = "不足分の取り直し 完了" & vbCrLf & String(30, "-") & vbCrLf & _
+          "  成功: " & okCnt & " 銘柄" & vbCrLf & _
+          "  失敗: " & ngCnt & " 銘柄" & vbCrLf
+    If ngList <> "" Then
+        msg = msg & vbCrLf & "まだ取得できない銘柄:" & vbCrLf & Left$(ngList, 700) & vbCrLf & _
+              "RSSがこの銘柄の日足を返していない可能性があります。" & vbCrLf
+    End If
+    msg = msg & vbCrLf & "Ctrl+S で保存し、F9 で再計算してください。"
+    MsgBox msg, vbInformation, "不足分の取り直し"
+    Exit Sub
+
+ErrHandler:
+    If Err.Number = 18 Then
+        RestoreApp prevCalc, prevScr
+        MsgBox "ESC で中断しました。", vbExclamation, "中断"
+        Exit Sub
+    End If
+    Dim e As String: e = "Err " & Err.Number & ": " & Err.Description
+    RestoreApp prevCalc, prevScr
+    MsgBox "中断しました。" & vbCrLf & vbCrLf & e, vbCritical, "エラー"
+End Sub
+
+
+' 終値シートの指定行に、値が入っている日数
+Private Function FilledDays(ByVal cws As Worksheet, ByVal r As Long) As Long
+    Dim n As Long
+    On Error Resume Next
+    n = Application.WorksheetFunction.Count( _
+            cws.Range(cws.Cells(r, 5), cws.Cells(r, LAST_COL)))
+    If Err.Number <> 0 Then Err.Clear: n = 0
+    On Error GoTo 0
+    FilledDays = n
+End Function
+
+
+' WaitForRss と同じだが、待ち時間を指定できる
+Private Function WaitLong(ByVal dataWs As Worksheet, ByVal meiName As String, _
+                          ByVal limitSec As Double) As Boolean
+    Dim t0 As Double: t0 = Timer
+    Dim prevN As Long: prevN = -1
+    Dim same As Long: same = 0
+
+    Do While Timer - t0 < limitSec
+        PauseFor POLL_WAIT
+        DoEvents
+
+        Dim n As Long
+        n = dataWs.Cells(dataWs.Rows.Count, cDt).End(xlUp).Row - hRow
+        If n < 0 Then n = 0
+
+        Dim nameOk As Boolean
+        If cName = 0 Or meiName = "" Or IsNumeric(meiName) Then
+            nameOk = True
+        Else
+            nameOk = (Trim$(CStr(dataWs.Cells(hRow + 1, cName).Value)) = meiName)
+        End If
+
+        If n > 0 And nameOk Then
+            If n = prevN Then same = same + 1 Else same = 0
+            If same >= STABLE_POLLS And (Timer - t0) >= MIN_SETTLE Then
+                WaitLong = True
+                Exit Function
+            End If
+        Else
+            same = 0
+        End If
+        prevN = n
+    Loop
+End Function

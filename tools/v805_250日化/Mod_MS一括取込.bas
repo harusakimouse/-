@@ -394,3 +394,81 @@ Private Sub RestoreApp(ByVal prevCalc As XlCalculation, ByVal prevScr As Boolean
     Application.StatusBar = False
     On Error GoTo 0
 End Sub
+
+
+'==============================================================================
+' データ取込シートのヘッダと数式を作り直す
+'
+'  「データ取込シートをクリアしますか？」で「はい」を押すと
+'  Range("A2:Z500").ClearContents が走り、2行目のヘッダと A3 の
+'  RssChartPast 数式まで消える。そうなると
+'  「ヘッダ行が見つかりません」でどのマクロも動かなくなる。
+'  これを1発で戻すためのもの。
+'==============================================================================
+Public Sub データ取込_ヘッダ修復()
+    Dim dws As Worksheet
+    Set dws = Nothing
+    On Error Resume Next
+    Set dws = ThisWorkbook.Sheets("データ取込")
+    On Error GoTo 0
+    If dws Is Nothing Then
+        MsgBox "「データ取込」シートが見つかりません。", vbExclamation
+        Exit Sub
+    End If
+
+    If MsgBox("データ取込シートの 1～2行目と A3 の数式を作り直します。" & vbCrLf & _
+              "取得済みの価格シートには触りません。" & vbCrLf & vbCrLf & _
+              "続けますか？", vbYesNo + vbQuestion, "ヘッダ修復") <> vbYes Then Exit Sub
+
+    On Error Resume Next
+    dws.Unprotect Password:=PWD
+    On Error GoTo 0
+
+    ' --- 1行目：ラベルと取得条件 ---
+    dws.Range("A1").Value = "コード →"
+    dws.Range("D1").Value = "→ 株探(過去データ)"
+    dws.Range("E1").Value = "→"
+    dws.Range("J1").Value = "本数"
+    If Trim$(CStr(dws.Range("B1").Value)) = "" Then dws.Range("B1").Value = "3401"
+    dws.Range("K1").Value = 400
+    dws.Range("M1").Value = Format$(Date - 420, "yyyymmdd")
+
+    ' --- 2行目：RssChartPast に渡す項目名（これがヘッダ行）---
+    dws.Range("B2").Value = "銘柄名称"
+    dws.Range("C2").Value = "市場名称"
+    dws.Range("D2").Value = "日付"
+    dws.Range("E2").Value = "時刻"
+    dws.Range("F2").Value = "出来高"
+    dws.Range("G2").Value = "始値"
+    dws.Range("H2").Value = "高値"
+    dws.Range("I2").Value = "安値"
+    dws.Range("J2").Value = "終値"
+    dws.Range("K2").Value = "移動平均1"
+    dws.Range("L2").Value = "移動平均2"
+
+    ' --- 数式 ---
+    Dim errMsg As String
+    On Error Resume Next
+    dws.Range("C1").Formula = "=IF(B1="""","""",RssMarket(B1,""銘柄名称""))"
+    If Err.Number <> 0 Then errMsg = errMsg & "  C1 (RssMarket)" & vbCrLf: Err.Clear
+    dws.Range("A3").Formula = "=RssChartPast(B2:J2,B1,""D"",$M$1,$K$1)"
+    If Err.Number <> 0 Then errMsg = errMsg & "  A3 (RssChartPast)" & vbCrLf: Err.Clear
+    On Error GoTo 0
+
+    Application.Calculate
+    DoEvents
+
+    If errMsg <> "" Then
+        MsgBox "数式を入れられませんでした:" & vbCrLf & errMsg & vbCrLf & _
+               "マーケットスピードが起動してログイン済みか確認し、" & vbCrLf & _
+               "もう一度実行してください。", vbExclamation, "ヘッダ修復"
+        Exit Sub
+    End If
+
+    MsgBox "作り直しました。" & vbCrLf & vbCrLf & _
+           "  B1 銘柄コード = " & dws.Range("B1").Value & vbCrLf & _
+           "  K1 本数       = " & dws.Range("K1").Value & vbCrLf & _
+           "  M1 開始日     = " & dws.Range("M1").Value & vbCrLf & vbCrLf & _
+           "B3 に銘柄名、D3 以降に日付が並べば復旧完了です。" & vbCrLf & _
+           "（出るまで数秒かかります）", vbInformation, "ヘッダ修復"
+End Sub

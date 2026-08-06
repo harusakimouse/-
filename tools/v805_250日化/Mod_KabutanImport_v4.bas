@@ -217,24 +217,20 @@ NextSheet:
     Application.ScreenUpdating = True
 
     ' --- 完了メッセージ + クリア確認 ---
-    Dim clearRet As Integer
-    clearRet = MsgBox("取込完了！" & vbCrLf & vbCrLf & _
-                      "銘柄: " & codeInput & " " & meiName & vbCrLf & _
-                      "取込件数: " & dateCount & " 日分" & vbCrLf & _
-                      "日付範囲: " & Format(dateVals(0), "m/d") & " ～ " & _
-                      Format(dateVals(dateCount - 1), "m/d") & vbCrLf & _
-                      "書込みセル数: " & writeCount & vbCrLf & _
-                      "スキップ(値0): " & skipCount & vbCrLf & vbCrLf & _
-                      "データ取込シートをクリアしますか？", _
-                      vbYesNo + vbInformation, "取込完了")
+    MsgBox "取込完了！" & vbCrLf & vbCrLf & _
+           "銘柄: " & codeInput & " " & meiName & vbCrLf & _
+           "取込件数: " & dateCount & " 日分" & vbCrLf & _
+           "日付範囲: " & Format(dateVals(0), "m/d") & " ～ " & _
+           Format(dateVals(dateCount - 1), "m/d") & vbCrLf & _
+           "書込みセル数: " & writeCount & vbCrLf & _
+           "スキップ(値0): " & skipCount, _
+           vbOKOnly + vbInformation, "取込完了"
 
-    If clearRet = vbYes Then
-        dataWs.Range("A2:Z500").ClearContents
-        dataWs.Cells(2, 1).Select
-        MsgBox "クリアしました。次の銘柄を貼付けてください。" & vbCrLf & _
-               "※ 1行目のヘッダは残してあります。", _
-               vbInformation, "クリア完了"
-    End If
+    ' ★「データ取込シートをクリアしますか？」は廃止した。
+    '   A2:Z500 は 2行目のヘッダ（銘柄名称/市場名称/日付/…）と
+    '   A3 の RssChartPast 数式まで含むので、消すと以後どのマクロも
+    '   取り込めなくなる。「1行目のヘッダは残してあります」という
+    '   案内は誤りだった（ヘッダは2行目にある）。
 End Sub
 
 ' ================================================================
@@ -247,7 +243,11 @@ Public Sub データ取込_クリア()
     On Error GoTo 0
     If dataWs Is Nothing Then Exit Sub
 
-    dataWs.Range("A2:Z500").ClearContents
-    dataWs.Cells(2, 1).Select
-    MsgBox "データ取込シートをクリアしました。", vbInformation, "クリア完了"
+    ' ★A2:Z500 を消すと 2行目のヘッダと A3 の RssChartPast 数式まで
+    '   消えてしまい、以後どのマクロも取り込めなくなる。
+    '   このシートは B1 の銘柄コードで動くので、B1 を空にすれば表示は消える。
+    dataWs.Range("B1").ClearContents
+    Application.Calculate
+    MsgBox "銘柄コード(B1)を空にしました。" & vbCrLf & _
+           "2行目のヘッダと A3 の数式は残してあります。", vbInformation, "クリア完了"
 End Sub

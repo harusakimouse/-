@@ -226,25 +226,19 @@ NextSh:
     Application.Calculation = xlCalculationAutomatic
     Application.ScreenUpdating = True
 
-    Dim ret2 As Integer
-    ret2 = MsgBox("MS時系列取込 完了！" & vbCrLf & vbCrLf & _
-                  "銘柄: " & codeInput & " " & meiName & vbCrLf & _
-                  "取込件数: " & cnt & " 日分" & vbCrLf & _
-                  "日付範囲: " & Format(dateVals(1), "m/d") & " ～ " & _
-                  Format(dateVals(cnt), "m/d") & vbCrLf & _
-                  "書込みセル数: " & writeCount & vbCrLf & _
-                  "スキップ(値0): " & skipCount & vbCrLf & vbCrLf & _
-                  "データ取込シートをクリアしますか？", _
-                  vbYesNo + vbInformation, "完了")
+    MsgBox "MS時系列取込 完了！" & vbCrLf & vbCrLf & _
+           "銘柄: " & codeInput & " " & meiName & vbCrLf & _
+           "取込件数: " & cnt & " 日分" & vbCrLf & _
+           "日付範囲: " & Format(dateVals(1), "m/d") & " ～ " & _
+           Format(dateVals(cnt), "m/d") & vbCrLf & _
+           "書込みセル数: " & writeCount & vbCrLf & _
+           "スキップ(値0): " & skipCount, _
+           vbOKOnly + vbInformation, "完了"
 
-    If ret2 = vbYes Then
-        On Error Resume Next
-        dataWs.Unprotect Password:=PWD
-        dataWs.Range("A2:Z500").ClearContents
-        dataWs.Cells(2, 1).Select
-        dataWs.Protect Password:=PWD, UserInterfaceOnly:=True, _
-                       DrawingObjects:=True, Contents:=True, Scenarios:=True
-        On Error GoTo 0
-        MsgBox "クリアしました。次の銘柄を貼付けてください。", vbInformation
-    End If
+    ' ★「データ取込シートをクリアしますか？」は廃止した。
+    '   クリアは Range("A2:Z500").ClearContents で、2行目のヘッダ
+    '   （銘柄名称/市場名称/日付/…）と A3 の RssChartPast 数式まで
+    '   消してしまい、以後どのマクロも取り込めなくなる。
+    '   RSS は B1 を書き換えれば自動で更新されるので、そもそも
+    '   クリアする必要がない。
 End Sub

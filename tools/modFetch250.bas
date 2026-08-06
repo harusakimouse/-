@@ -67,6 +67,7 @@ Private colOpen As Long, colHigh As Long, colLow As Long, colClose As Long, colV
 Private gAxis() As Date          ' 日付軸（新しい順）
 Private gAxisN  As Long
 Private gCancel As Boolean
+Private gStep   As String        ' いま何をしているか（エラー時に場所を特定するため）
 
 
 '==============================================================================
@@ -135,6 +136,7 @@ Public Sub OHLCV_全銘柄取得()
             ShowProgress dws, idx, nTarget, code, CStr(mws.Cells(r, 3).Value), _
                          nDone, nFail, t0
             Dim got As Long
+            gStep = code & " の取得と書き込み"
             got = FetchAndWrite(dws, code, priceRow)
             If got > 0 Then
                 nDone = nDone + 1
@@ -164,8 +166,10 @@ ErrHandler:
         Resume Next
     End If
     Dim msg As String: msg = "Err " & Err.Number & ": " & Err.Description
+    Dim wh As String: wh = IIf(gStep = "", "(場所不明)", gStep)
     Cleanup prevCalc, prevScr
-    MsgBox "取得を中断しました。" & vbCrLf & vbCrLf & msg & vbCrLf & vbCrLf & _
+    MsgBox "取得を中断しました。" & vbCrLf & vbCrLf & _
+           "場所: " & wh & vbCrLf & vbCrLf & msg & vbCrLf & vbCrLf & _
            "アプリの状態は元に戻しました。", vbCritical, "取得エラー"
 End Sub
 
@@ -296,8 +300,10 @@ Public Sub OHLCV_日付軸を作り直す()
 ErrHandler:
     If Err.Number = 18 Then Resume Next
     Dim msg As String: msg = "Err " & Err.Number & ": " & Err.Description
+    Dim wh As String: wh = IIf(gStep = "", "(場所不明)", gStep)
     Cleanup prevCalc, prevScr
-    MsgBox "作り直しを中断しました。" & vbCrLf & vbCrLf & msg, vbCritical, "エラー"
+    MsgBox "作り直しを中断しました。" & vbCrLf & vbCrLf & _
+           "場所: " & wh & vbCrLf & vbCrLf & msg, vbCritical, "エラー"
 End Sub
 
 
@@ -543,21 +549,36 @@ Private Sub WriteAxis()
     Dim s As Variant
     For Each s In Split(SHEETS_LIST, ",")
         Dim ws As Worksheet: Set ws = MustSheet(CStr(s))
-        ws.Unprotect PWD
+        Dim wasP As Boolean
+        gStep = CStr(s) & " シートの保護解除"
+        If Not TryUnprotect(ws, wasP) Then
+            Err.Raise 1004, , "「" & CStr(s) & "」シートの保護を解除できません。" & vbCrLf & _
+                              "パスワードが " & PWD & " と違う可能性があります。" & vbCrLf & _
+                              "手動で「校閲→シート保護の解除」をしてから再実行してください。"
+        End If
+
+        gStep = CStr(s) & " シートの3行目（日付軸）を書き込み"
         With ws.Range(ws.Cells(DATE_ROW, FIRST_COL), _
                       ws.Cells(DATE_ROW, FIRST_COL + HIST_MAX - 1))
             .ClearContents
             .Value = arr
-            .NumberFormatLocal = "m/d"
         End With
+        On Error Resume Next                      ' 表示書式は失敗しても致命的でない
+        ws.Range(ws.Cells(DATE_ROW, FIRST_COL), _
+                 ws.Cells(DATE_ROW, FIRST_COL + HIST_MAX - 1)).NumberFormatLocal = "m/d"
+        Err.Clear
+        On Error GoTo 0
+
         If changed Then
-            ' TOPX行(5)から最終銘柄行まで、履歴域をまとめて消す
+            gStep = CStr(s) & " シートの旧データを消去（E5:IT305）"
             ws.Range(ws.Cells(TOPIX_ROW, FIRST_COL), _
                      ws.Cells(STOCK_ROW1 + (MEI_ROWN - MEI_ROW1), _
                               FIRST_COL + HIST_MAX - 1)).ClearContents
         End If
-        ws.Protect PWD, UserInterfaceOnly:=True
+
+        Reprotect ws, wasP
     Next s
+    gStep = ""
 End Sub
 
 
@@ -598,13 +619,22 @@ End Function
 '------------------------------------------------------------------ 書き込み
 Private Sub PutRow(ByVal shName As String, ByVal priceRow As Long, ByRef arr As Variant)
     Dim ws As Worksheet: Set ws = MustSheet(shName)
-    ws.Unprotect PWD
+    Dim wasP As Boolean
+    gStep = shName & " シートの保護解除"
+    If Not TryUnprotect(ws, wasP) Then
+        Err.Raise 1004, , "「" & shName & "」シートの保護を解除できません。" & vbCrLf & _
+                          "手動で「校閲→シート保護の解除」をしてから再実行してください。"
+    End If
+
+    gStep = shName & " シートの " & priceRow & " 行目に書き込み"
     With ws.Range(ws.Cells(priceRow, FIRST_COL), _
                   ws.Cells(priceRow, FIRST_COL + HIST_MAX - 1))
         .ClearContents
         .Value = arr                          ' 1行まとめて書く（1セルずつより桁違いに速い）
     End With
-    ws.Protect PWD, UserInterfaceOnly:=True
+
+    Reprotect ws, wasP
+    gStep = ""
 End Sub
 
 
@@ -629,6 +659,7 @@ End Function
 ' M1 は「ここから未来へ」の起点なので、今日を入れてはいけない。
 ' HIST_MAX 営業日ぶんを確実に含むよう、暦日で FETCH_BACK 日さかのぼる。
 Private Sub PrepareDataSheet(ByVal dws As Worksheet)
+    gStep = "データ取込!K1/M1 に取得条件を書き込み"
     dws.Range("K1").Value = FETCH_BARS
     dws.Range("M1").Value = Format$(Date - FETCH_BACK, "yyyymmdd")
 End Sub
@@ -736,6 +767,35 @@ Private Sub ShowProgress(ByVal dws As Worksheet, ByVal idx As Long, ByVal total 
     dws.Range("P3").Value = Format$(Now, "hh:nn:ss") & " 更新"
     On Error GoTo 0
     DoEvents                                       ' 画面を描き直させる
+End Sub
+
+
+' シート保護を外す。パスワード付き→なし の順に試し、結果を返す。
+' 価格5シートは保護されている。パスワードが違うと Unprotect が 1004 を出すので、
+' 失敗した場合はどのシートで失敗したかを呼び出し側で報告できるようにする。
+Private Function TryUnprotect(ByVal ws As Worksheet, ByRef wasProtected As Boolean) As Boolean
+    wasProtected = ws.ProtectContents
+    If Not wasProtected Then TryUnprotect = True: Exit Function
+
+    On Error Resume Next
+    ws.Unprotect PWD
+    If Err.Number <> 0 Then
+        Err.Clear
+        ws.Unprotect                       ' パスワードなしで再挑戦
+    End If
+    Dim e As Long: e = Err.Number
+    Err.Clear
+    On Error GoTo 0
+    TryUnprotect = (e = 0) And (Not ws.ProtectContents)
+End Function
+
+
+' 元が保護されていたシートだけ、保護をかけ直す
+Private Sub Reprotect(ByVal ws As Worksheet, ByVal wasProtected As Boolean)
+    If Not wasProtected Then Exit Sub
+    On Error Resume Next
+    ws.Protect PWD, UserInterfaceOnly:=True
+    On Error GoTo 0
 End Sub
 
 

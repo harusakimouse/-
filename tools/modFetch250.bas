@@ -34,7 +34,16 @@ Attribute VB_Name = "modFetch250"
 Option Explicit
 
 '------------------------------------------------------------ 設定（ここを触る）
-Private Const HIST_MAX     As Long = 250     ' 取得する営業日数（E列～IT列）
+Private Const HIST_MAX     As Long = 250     ' 保存する営業日数（E列～IT列）
+' RssChartPast(範囲, コード, "D", 開始日, 本数) の第4引数 M1 は「開始日」で、
+' そこから未来方向へ本数ぶん返す。つまり
+'   M1 に今日を入れると1本しか返ってこない（当初これで失敗した）
+'   M1 を十分さかのぼらせ、本数に余裕を持たせて今日まで届かせる
+' 返ってきたものを日付の新しい順に並べ、先頭 HIST_MAX 本だけ採用する。
+Private Const FETCH_BARS   As Long = 400     ' RSS に要求する本数（休日ぶんの余裕込み）
+Private Const FETCH_BACK   As Long = 420     ' 開始日を何暦日さかのぼるか
+Private Const MIN_SETTLE   As Double = 1#    ' 受信完了と認めるまでの最低待ち（秒）
+
 Private Const WAIT_LIMIT   As Double = 25    ' RSS応答の待ち時間の上限（秒）
 Private Const STABLE_POLLS As Long = 3       ' この回数だけ内容が変わらなければ受信完了
 Private Const POLL_WAIT    As Double = 0.2   ' 1回の待ち（秒）
@@ -382,8 +391,8 @@ Private Function FetchSeries(ByVal dws As Worksheet, ByVal code As String, _
                              ByRef d() As Date, ByRef o() As Double, ByRef h() As Double, _
                              ByRef l() As Double, ByRef c() As Double, _
                              ByRef v() As Double) As Long
-    ReDim d(1 To HIST_MAX): ReDim o(1 To HIST_MAX): ReDim h(1 To HIST_MAX)
-    ReDim l(1 To HIST_MAX): ReDim c(1 To HIST_MAX): ReDim v(1 To HIST_MAX)
+    ReDim d(1 To FETCH_BARS): ReDim o(1 To FETCH_BARS): ReDim h(1 To FETCH_BARS)
+    ReDim l(1 To FETCH_BARS): ReDim c(1 To FETCH_BARS): ReDim v(1 To FETCH_BARS)
 
     dws.Range("B1").Value = code
     Application.Calculate
@@ -392,7 +401,7 @@ Private Function FetchSeries(ByVal dws As Worksheet, ByVal code As String, _
     Dim lastRow As Long, i As Long, n As Long
     lastRow = dws.Cells(dws.Rows.Count, colDate).End(xlUp).Row
     For i = hRow + 1 To lastRow
-        If n >= HIST_MAX Then Exit For
+        If n >= FETCH_BARS Then Exit For
         Dim dv As Variant: dv = dws.Cells(i, colDate).Value
         If IsDate(dv) Then
             Dim cv As Variant: cv = dws.Cells(i, colClose).Value
@@ -411,6 +420,11 @@ Private Function FetchSeries(ByVal dws As Worksheet, ByVal code As String, _
             End If
         End If
     Next i
+
+    ' 日付の新しい順に並べ、直近 HIST_MAX 本だけ残す。
+    ' RSS は古い順に返してくるので、先頭から切ると古いほうを拾ってしまう。
+    If n > 1 Then SortDesc d, o, h, l, c, v, n
+    If n > HIST_MAX Then n = HIST_MAX
     FetchSeries = n
 End Function
 
@@ -442,7 +456,7 @@ Private Function WaitForRss(ByVal dws As Worksheet, ByVal wantName As String) As
             nameOK = (Trim$(CStr(dws.Cells(hRow + 1, colName).Value)) = wantName)
         End If
 
-        If n > 0 And n = lastN And nameOK Then
+        If n > 0 And n = lastN And nameOK And (Timer - t0) >= MIN_SETTLE Then
             same = same + 1
             If same >= STABLE_POLLS Then
                 WaitForRss = True
@@ -484,8 +498,7 @@ Private Function BuildAxisFrom(ByVal dws As Worksheet, ByVal code As String) As 
     Dim n As Long: n = FetchSeries(dws, code, d, o, h, l, c, v)
     If n = 0 Then Exit Function
 
-    SortDesc d, o, h, l, c, v, n
-    ReDim gAxis(1 To n)
+    ReDim gAxis(1 To n)                       ' FetchSeries が降順で返す
     Dim i As Long
     For i = 1 To n
         gAxis(i) = d(i)
@@ -613,9 +626,13 @@ End Function
 
 
 '------------------------------------------------------------------ 補助
+' データ取込シートの取得条件を設定する。
+'   K1 = 本数     M1 = 開始日(yyyymmdd)
+' M1 は「ここから未来へ」の起点なので、今日を入れてはいけない。
+' HIST_MAX 営業日ぶんを確実に含むよう、暦日で FETCH_BACK 日さかのぼる。
 Private Sub PrepareDataSheet(ByVal dws As Worksheet)
-    dws.Range("K1").Value = HIST_MAX                    ' 本数
-    dws.Range("M1").Value = Format$(Date, "yyyymmdd")   ' 開始日＝今日
+    dws.Range("K1").Value = FETCH_BARS
+    dws.Range("M1").Value = Format$(Date - FETCH_BACK, "yyyymmdd")
 End Sub
 
 

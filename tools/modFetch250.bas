@@ -109,7 +109,7 @@ Public Sub OHLCV_全銘柄取得()
     End If
     If gAxisN = 0 Then Err.Raise 5, , "日付軸を作れませんでした。" & vbCrLf & _
                                       "データ取込シートで RSS がデータを返しているか確認してください。"
-    WriteAxis
+    WriteAxis True                            ' ★軸が同じでも既存データは消す
     Application.StatusBar = "日付軸 " & gAxisN & " 営業日分を確定しました。"
 
     '--- 銘柄をループ ---
@@ -303,7 +303,8 @@ Public Sub OHLCV_日付軸を作り直す()
     Cleanup prevCalc, prevScr
     MsgBox "日付軸を " & gAxisN & " 営業日分に作り直しました。" & vbCrLf & _
            "（" & Format$(gAxis(gAxisN), "yyyy/mm/dd") & " ～ " & _
-           Format$(gAxis(1), "yyyy/mm/dd") & "）" & vbCrLf & vbCrLf & _
+           Format$(gAxis(1), "yyyy/mm/dd") & "）" & vbCrLf & _
+           "5シートの既存データ（E5:IT305）は消去しました。" & vbCrLf & vbCrLf & _
            IIf(gAxisN < HIST_MAX, _
                "※ " & HIST_MAX & " 日には届きませんでした。楽天から取れる範囲がこれだけです。" & vbCrLf & vbCrLf, "") & _
            "続けて OHLCV_全銘柄取得 を実行してください。", _
@@ -549,8 +550,11 @@ End Sub
 '   古いデータは「古い軸の並び」で書かれているので、軸だけ差し替えると
 '   同じ列が違う日付を指すことになり、銘柄間の比較が静かに壊れる。
 '   消してしまえば、取得できなかった銘柄は空欄として残るので誤りに気づける。
-Private Sub WriteAxis()
-    Dim changed As Boolean: changed = AxisChanged()
+Private Sub WriteAxis(Optional ByVal forceClear As Boolean = False)
+    ' 軸が変わっていなくても、作り直しを明示的に頼まれたときは必ず消す。
+    ' 「まっさらにしてから取り直す」ためのマクロなので、消さずに残すと
+    ' 取得に失敗した銘柄が古い値のまま居座り、それに気づけない。
+    Dim changed As Boolean: changed = forceClear Or AxisChanged()
 
     Dim arr As Variant
     ReDim arr(1 To 1, 1 To HIST_MAX)

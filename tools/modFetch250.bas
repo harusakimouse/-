@@ -26,7 +26,7 @@ Attribute VB_Name = "modFetch250"
 '
 '  使い方
 '    OHLCV_全銘柄取得     … 銘柄管理の全銘柄をまとめて取得（時間がかかる）
-'    OHLCV_1銘柄取得      … データ取込!B1 の1銘柄だけ
+'    OHLCV_1銘柄取得      … 銘柄コードを訊いて、その1銘柄だけ
 '    OHLCV_日付軸を作り直す … 軸を250日に張り替える（既存データは消える）
 '    OHLCV_取得状況を確認  … 何銘柄そろっているかを表示
 '==============================================================================
@@ -179,6 +179,7 @@ End Sub
 '==============================================================================
 Public Sub OHLCV_1銘柄取得()
     Dim prevCalc As XlCalculation, prevScr As Boolean
+    Dim code2 As String
     prevCalc = Application.Calculation: prevScr = Application.ScreenUpdating
     On Error GoTo ErrHandler
     Application.EnableCancelKey = xlErrorHandler
@@ -187,16 +188,28 @@ Public Sub OHLCV_1銘柄取得()
 
     Dim dws As Worksheet: Set dws = MustSheet(SH_DATA)
     Dim mws As Worksheet: Set mws = MustSheet(SH_MEI)
-    Dim code As String: code = UCase$(Trim$(CStr(dws.Range("B1").Value)))
-    If code = "" Then Err.Raise 5, , "データ取込シートの B1 に銘柄コードを入れてください。"
 
-    Dim r As Long, priceRow As Long
+    ' B1 には全銘柄取得で最後に処理した銘柄が残っている。黙ってそれを
+    ' 取りに行くと「頼んでいない銘柄が入る」ので、必ず訊いてから走る。
+    Dim code As String
+    code = UCase$(Trim$(CStr(InputBox( _
+              "取得する銘柄コードを入れてください。", "1銘柄取得", _
+              Trim$(CStr(dws.Range("B1").Value))))))
+    If code = "" Then
+        Cleanup prevCalc, prevScr
+        Exit Sub                              ' キャンセル
+    End If
+
+    Dim r As Long, priceRow As Long, nm As String
     For r = MEI_ROW1 To MEI_ROWN
         If UCase$(Trim$(CStr(mws.Cells(r, 2).Value))) = code Then
-            priceRow = STOCK_ROW1 + (r - MEI_ROW1): Exit For
+            priceRow = STOCK_ROW1 + (r - MEI_ROW1)
+            nm = Trim$(CStr(mws.Cells(r, 3).Value))
+            Exit For
         End If
     Next r
     If priceRow = 0 Then Err.Raise 5, , "銘柄コード " & code & " が銘柄管理にありません。"
+    If nm <> "" Then code2 = code & " " & nm Else code2 = code
 
     PrepareDataSheet dws
     FindHeader dws
@@ -221,10 +234,10 @@ Public Sub OHLCV_1銘柄取得()
                   "   " & HIST_MAX & " 日に増やすには、先に OHLCV_日付軸を作り直す を" & vbCrLf & _
                   "   実行してから OHLCV_全銘柄取得 を回してください。"
         End If
-        MsgBox code & " を " & got & " 日分 書き込みました。（日付軸 " & gAxisN & " 日）" & tip, _
+        MsgBox code2 & " を " & got & " 日分 書き込みました。（日付軸 " & gAxisN & " 日）" & tip, _
                vbInformation, "取得完了"
     Else
-        MsgBox code & " のデータを取得できませんでした。" & vbCrLf & vbCrLf & _
+        MsgBox code2 & " のデータを取得できませんでした。" & vbCrLf & vbCrLf & _
                "・マーケットスピードが起動してログイン済みか" & vbCrLf & _
                "・データ取込シートの A3 に RssChartPast の数式があるか" & vbCrLf & _
                "を確認してください。", vbExclamation, "取得できず"

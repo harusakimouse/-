@@ -28,7 +28,6 @@ Attribute VB_Name = "modFetch250"
 '    OHLCV_全銘柄取得     … 銘柄管理の全銘柄をまとめて取得（時間がかかる）
 '    OHLCV_1銘柄取得      … データ取込!B1 の1銘柄だけ
 '    OHLCV_日付軸を作り直す … 軸を250日に張り替える（既存データは消える）
-'    OHLCV_日付軸を作り直す … 軸を250日に張り替える（既存データは消える）
 '    OHLCV_取得状況を確認  … 何銘柄そろっているかを表示
 '==============================================================================
 Option Explicit
@@ -79,7 +78,7 @@ Public Sub OHLCV_全銘柄取得()
     gCancel = False
     On Error GoTo ErrHandler
     Application.EnableCancelKey = xlErrorHandler      ' ESC を捕まえる
-    Application.ScreenUpdating = False
+    Application.ScreenUpdating = True     ' 進捗が見えるように、あえて止めない
     Application.Calculation = xlCalculationAutomatic  ' RSS は自動計算でないと更新されない
 
     Dim dws As Worksheet: Set dws = MustSheet(SH_DATA)
@@ -98,7 +97,7 @@ Public Sub OHLCV_全銘柄取得()
     If hRow = 0 Then Err.Raise 5, , "データ取込シートに「日付」「始値」「終値」を含むヘッダ行が見つかりません。"
 
     '--- 日付軸を作る（TOPX 基準。取れなければ最初に成功した銘柄で作る）---
-    Application.StatusBar = "日付軸を作成中…"
+    Application.StatusBar = "日付軸を作成中… RSSの応答を待っています": DoEvents
     If Not BuildAxisFrom(dws, "TOPX") Then
         Dim r0 As Long
         For r0 = MEI_ROW1 To MEI_ROWN
@@ -119,7 +118,7 @@ Public Sub OHLCV_全銘柄取得()
         If Trim$(CStr(mws.Cells(r, 2).Value)) <> "" Then nTarget = nTarget + 1
     Next r
 
-    Dim idx As Long
+    Dim idx As Long, t0 As Double: t0 = Timer
     For r = MEI_ROW1 To MEI_ROWN
         Dim code As String: code = Trim$(CStr(mws.Cells(r, 2).Value))
         If code <> "" Then
@@ -133,9 +132,8 @@ Public Sub OHLCV_全銘柄取得()
                 End If
             End If
 
-            Application.StatusBar = "[" & idx & "/" & nTarget & "] " & code & " " & _
-                                    CStr(mws.Cells(r, 3).Value) & " を取得中…" & _
-                                    "  (完了 " & nDone & " / 失敗 " & nFail & ")  ESCで中断"
+            ShowProgress dws, idx, nTarget, code, CStr(mws.Cells(r, 3).Value), _
+                         nDone, nFail, t0
             Dim got As Long
             got = FetchAndWrite(dws, code, priceRow)
             If got > 0 Then
@@ -180,7 +178,7 @@ Public Sub OHLCV_1銘柄取得()
     prevCalc = Application.Calculation: prevScr = Application.ScreenUpdating
     On Error GoTo ErrHandler
     Application.EnableCancelKey = xlErrorHandler
-    Application.ScreenUpdating = False
+    Application.ScreenUpdating = True     ' 進捗が見えるように、あえて止めない
     Application.Calculation = xlCalculationAutomatic  ' RSS は自動計算でないと更新されない
 
     Dim dws As Worksheet: Set dws = MustSheet(SH_DATA)
@@ -254,7 +252,7 @@ Public Sub OHLCV_日付軸を作り直す()
     prevCalc = Application.Calculation: prevScr = Application.ScreenUpdating
     On Error GoTo ErrHandler
     Application.EnableCancelKey = xlErrorHandler
-    Application.ScreenUpdating = False
+    Application.ScreenUpdating = True     ' 進捗が見えるように、あえて止めない
     Application.Calculation = xlCalculationAutomatic
 
     Dim dws As Worksheet: Set dws = MustSheet(SH_DATA)
@@ -272,7 +270,7 @@ Public Sub OHLCV_日付軸を作り直す()
     FindHeader dws
     If hRow = 0 Then Err.Raise 5, , "データ取込シートのヘッダ行が見つかりません。"
 
-    Application.StatusBar = "日付軸を取得中…"
+    Application.StatusBar = "日付軸を取得中… RSSの応答を待っています": DoEvents
     If Not BuildAxisFrom(dws, "TOPX") Then
         Dim r As Long
         For r = MEI_ROW1 To MEI_ROWN
@@ -713,6 +711,34 @@ Private Sub PauseFor(ByVal sec As Double)
 End Sub
 
 
+' 進捗を「ステータスバー」と「データ取込シートの P1:P3」の両方に出す。
+' ステータスバーは環境によっては見落としやすいので、シート上にも書く。
+Private Sub ShowProgress(ByVal dws As Worksheet, ByVal idx As Long, ByVal total As Long, _
+                         ByVal code As String, ByVal nm As String, _
+                         ByVal nDone As Long, ByVal nFail As Long, ByVal t0 As Double)
+    Dim el As Double: el = Timer - t0
+    If el < 0 Then el = 0                          ' 日付をまたいだ
+    Dim eta As String
+    If idx > 1 And el > 0 Then
+        Dim rest As Double: rest = el / (idx - 1) * (total - idx + 1)
+        eta = "  残り約 " & Format$(rest / 60, "0") & " 分"
+    End If
+
+    Dim line1 As String
+    line1 = "[" & idx & "/" & total & "] " & code & " " & nm & " を取得中" & _
+            "   完了 " & nDone & " / 失敗 " & nFail & _
+            "   経過 " & Format$(el / 60, "0") & " 分" & eta & "   ESCで中断"
+
+    Application.StatusBar = line1
+    On Error Resume Next
+    dws.Range("P1").Value = "▼ 取得の進み具合（ESCで中断）"
+    dws.Range("P2").Value = line1
+    dws.Range("P3").Value = Format$(Now, "hh:nn:ss") & " 更新"
+    On Error GoTo 0
+    DoEvents                                       ' 画面を描き直させる
+End Sub
+
+
 Private Function MustSheet(ByVal nm As String) As Worksheet
     On Error Resume Next
     Set MustSheet = ThisWorkbook.Sheets(nm)
@@ -727,6 +753,9 @@ End Function
 Private Sub Cleanup(ByVal prevCalc As XlCalculation, ByVal prevScr As Boolean)
     On Error Resume Next
     Application.StatusBar = False
+    On Error Resume Next
+    ThisWorkbook.Sheets(SH_DATA).Range("P1:P3").ClearContents
+    On Error GoTo 0
     Application.Calculation = prevCalc
     Application.ScreenUpdating = prevScr
     Application.EnableEvents = True

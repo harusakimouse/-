@@ -1,49 +1,49 @@
 Attribute VB_Name = "modRiskGate"
 '==============================================================================
-' modRiskGate  ―  打ち出の小づち V806 リスク管理モジュール
+' modRiskGate  �\  �ł��o�̏��Â� V806 ���X�N�Ǘ����W���[��
 '
-'  V805 の問題点に対する処置：
-'   (1) スコアの合算だけで採用を決めていたため、過熱銘柄が高得点で通過していた
-'       → 減点では防げないので「ハードゲート」で足切りする
-'   (2) 相場環境シグナル（"相場上昇・見送り"）が算出されているのに無視されていた
-'       → ゲートで強制的に反映する
-'   (3) 全銘柄一律100株のため1トレードのリスク額が最大145倍ばらついていた
-'       → リスク額を固定して株数を逆算する
-'   (4) 同一銘柄への連続エントリー（ナンピン）を止める仕組みが無かった
-'       → 建玉存在チェックを入れる
-'   (5) 1日あたりの新規建玉数・総リスクに上限が無かった
-'       → 日次上限を設ける
+'  V805 �̖��_�ɑ΂��鏈�u�F
+'   (1) �X�R�A�̍��Z�����ō̗p�����߂Ă������߁A�ߔM�����������_�Œʉ߂��Ă���
+'       �� ���_�ł͖h���Ȃ��̂Łu�n�[�h�Q�[�g�v�ő��؂肷��
+'   (2) ������V�O�i���i"����㏸�E������"�j���Z�o����Ă���̂ɖ�������Ă���
+'       �� �Q�[�g�ŋ����I�ɔ��f����
+'   (3) �S�����ꗥ100���̂���1�g���[�h�̃��X�N�z���ő�145�{�΂���Ă���
+'       �� ���X�N�z���Œ肵�Ċ������t�Z����
+'   (4) ��������ւ̘A���G���g���[�i�i���s���j���~�߂�d�g�݂���������
+'       �� ���ʑ��݃`�F�b�N������
+'   (5) 1��������̐V�K���ʐ��E�����X�N�ɏ������������
+'       �� ���������݂���
 '
-'  使い方： 標準モジュールとしてインポートし、発注リスト生成の直前に
-'           CheckEntry() を呼んで False なら採用しない。
+'  �g�����F �W�����W���[���Ƃ��ăC���|�[�g���A�������X�g�����̒��O��
+'           CheckEntry() ���Ă�� False �Ȃ�̗p���Ȃ��B
 '==============================================================================
 Option Explicit
 
-'------------------------------------------------------------ 設定（ここを触る）
-Public Const RISK_PER_TRADE   As Double = 20000   ' 1トレードの許容損失額（円）
-Public Const STOP_PCT         As Double = 0.03    ' 損切幅（MAE分析より。V806のAG2と揃えること）
-Public Const MAX_NEW_PER_DAY  As Long = 3         ' 1日の新規建玉数の上限
-Public Const MAX_OPEN_TOTAL   As Long = 8         ' 同時保有の上限
-Public Const MAX_DAILY_RISK   As Double = 60000   ' 1日に晒す合計リスク額の上限（円）
+'------------------------------------------------------------ �ݒ�i������G��j
+Public Const RISK_PER_TRADE   As Double = 20000   ' 1�g���[�h�̋��e�����z�i�~�j
+Public Const STOP_PCT         As Double = 0.03    ' ���ؕ��iMAE���͂��BV806��AG2�Ƒ����邱�Ɓj
+Public Const MAX_NEW_PER_DAY  As Long = 3         ' 1���̐V�K���ʐ��̏��
+Public Const MAX_OPEN_TOTAL   As Long = 8         ' �����ۗL�̏��
+Public Const MAX_DAILY_RISK   As Double = 60000   ' 1���ɎN�����v���X�N�z�̏���i�~�j
 
-' 買いゲート
-Public Const BUY_RSI_MAX      As Double = 70      ' これ以上は過熱として採用しない
-Public Const BUY_RSI_MIN      As Double = 45      ' これ未満はトレンド不成立
-Public Const BUY_VOL_MIN      As Double = 1.5     ' 出来高倍率の下限
+' �����Q�[�g
+Public Const BUY_RSI_MAX      As Double = 70      ' ����ȏ�͉ߔM�Ƃ��č̗p���Ȃ�
+Public Const BUY_RSI_MIN      As Double = 45      ' ���ꖢ���̓g�����h�s����
+Public Const BUY_VOL_MIN      As Double = 1.5     ' �o�����{���̉���
 
-' 売りゲート
-Public Const SELL_RSI_MIN     As Double = 30      ' これ以下は売られ過ぎ＝踏み上げリスク
+' ����Q�[�g
+Public Const SELL_RSI_MIN     As Double = 30      ' ����ȉ��͔����߂������ݏグ���X�N
 Public Const SELL_RSI_MAX     As Double = 55
 Public Const SELL_VOL_MIN     As Double = 1.5
-Public Const STOP_TP          As Double = 0.08    ' 利確幅（V806のAG3と揃えること）
+Public Const STOP_TP          As Double = 0.08    ' ���m���iV806��AG3�Ƒ����邱�Ɓj
 
-Private Const SH_KANRI        As String = "管理"
+Private Const SH_KANRI        As String = "�Ǘ�"
 Private Const ROW_FIRST       As Long = 4
 
 
 '==============================================================================
-' エントリー可否判定。採用してよければ True、見送るなら False を返し
-' rejectReason に理由を格納する。
+' �G���g���[�۔���B�̗p���Ă悯��� True�A������Ȃ� False ��Ԃ�
+' rejectReason �ɗ��R���i�[����B
 '==============================================================================
 Public Function CheckEntry(ByVal code As String, _
                            ByVal side As String, _
@@ -56,73 +56,73 @@ Public Function CheckEntry(ByVal code As String, _
 
     rejectReason = ""
 
-    '--- ゲート0: システム自身が「見送り」と判定しているものは採用しない -------
-    '    V805 ではこのシグナルが算出されながら発注に反映されておらず、
-    '    8/7 の ＳＵＭＣＯ・ミネベアミツミ はここで止まるはずだった。
-    If InStr(finalSignal, "見送り") > 0 Then
-        rejectReason = "最終シグナルが見送り: " & finalSignal
+    '--- �Q�[�g0: �V�X�e�����g���u������v�Ɣ��肵�Ă�����͍̗̂p���Ȃ� -------
+    '    V805 �ł͂��̃V�O�i�����Z�o����Ȃ��甭���ɔ��f����Ă��炸�A
+    '    8/7 �� �r�t�l�b�n�E�~�l�x�A�~�c�~ �͂����Ŏ~�܂�͂��������B
+    If InStr(finalSignal, "������") > 0 Then
+        rejectReason = "�ŏI�V�O�i����������: " & finalSignal
         Exit Function
     End If
 
-    '--- ゲート1: 建玉数・重複 ------------------------------------------------
+    '--- �Q�[�g1: ���ʐ��E�d�� ------------------------------------------------
     If CountOpenPositions() >= MAX_OPEN_TOTAL Then
-        rejectReason = "同時保有上限 " & MAX_OPEN_TOTAL & " 件に到達"
+        rejectReason = "�����ۗL��� " & MAX_OPEN_TOTAL & " ���ɓ��B"
         Exit Function
     End If
     If CountNewToday() >= MAX_NEW_PER_DAY Then
-        rejectReason = "本日の新規建玉が上限 " & MAX_NEW_PER_DAY & " 件に到達"
+        rejectReason = "�{���̐V�K���ʂ���� " & MAX_NEW_PER_DAY & " ���ɓ��B"
         Exit Function
     End If
     If HasOpenPosition(code, side) Then
-        rejectReason = code & " は同方向の建玉を保有中（ナンピン禁止）"
+        rejectReason = code & " �͓������̌��ʂ�ۗL���i�i���s���֎~�j"
         Exit Function
     End If
     If WasStoppedRecently(code, 5) Then
-        rejectReason = code & " は直近5営業日に損切済み（再エントリー禁止）"
+        rejectReason = code & " �͒���5�c�Ɠ��ɑ��؍ς݁i�ăG���g���[�֎~�j"
         Exit Function
     End If
 
-    '--- ゲート2: 方向別のテクニカル条件 --------------------------------------
-    If side = "買" Then
+    '--- �Q�[�g2: �����ʂ̃e�N�j�J������ --------------------------------------
+    If side = "��" Then
         If rsi >= BUY_RSI_MAX Then
-            rejectReason = "RSI " & Format(rsi, "0.0") & " が過熱（" & BUY_RSI_MAX & "以上）"
+            rejectReason = "RSI " & Format(rsi, "0.0") & " ���ߔM�i" & BUY_RSI_MAX & "�ȏ�j"
             Exit Function
         End If
         If rsi < BUY_RSI_MIN Then
-            rejectReason = "RSI " & Format(rsi, "0.0") & " が弱すぎる（" & BUY_RSI_MIN & "未満）"
+            rejectReason = "RSI " & Format(rsi, "0.0") & " ���シ����i" & BUY_RSI_MIN & "�����j"
             Exit Function
         End If
         If volRatio < BUY_VOL_MIN Then
-            rejectReason = "出来高倍率 " & Format(volRatio, "0.00") & " が不足"
+            rejectReason = "�o�����{�� " & Format(volRatio, "0.00") & " ���s��"
             Exit Function
         End If
-        If emaTrend <> "パーフェクト▲" And emaTrend <> "上昇トレンド▲" Then
-            rejectReason = "EMAトレンドが上昇でない（" & emaTrend & "）"
+        If emaTrend <> "�p�[�t�F�N�g��" And emaTrend <> "�㏸�g�����h��" Then
+            rejectReason = "EMA�g�����h���㏸�łȂ��i" & emaTrend & "�j"
             Exit Function
         End If
         If macd <= 0 Then
-            rejectReason = "MACDがマイナス"
+            rejectReason = "MACD���}�C�i�X"
             Exit Function
         End If
     Else
         If rsi <= SELL_RSI_MIN Then
-            rejectReason = "RSI " & Format(rsi, "0.0") & " が売られ過ぎ（踏み上げリスク）"
+            rejectReason = "RSI " & Format(rsi, "0.0") & " �������߂��i���ݏグ���X�N�j"
             Exit Function
         End If
         If rsi > SELL_RSI_MAX Then
-            rejectReason = "RSI " & Format(rsi, "0.0") & " が高い（下降トレンド不成立）"
+            rejectReason = "RSI " & Format(rsi, "0.0") & " �������i���~�g�����h�s�����j"
             Exit Function
         End If
         If volRatio < SELL_VOL_MIN Then
-            rejectReason = "出来高倍率 " & Format(volRatio, "0.00") & " が不足"
+            rejectReason = "�o�����{�� " & Format(volRatio, "0.00") & " ���s��"
             Exit Function
         End If
-        If emaTrend <> "下降トレンド▼" Then
-            rejectReason = "EMAトレンドが下降でない（" & emaTrend & "）"
+        If emaTrend <> "���~�g�����h��" Then
+            rejectReason = "EMA�g�����h�����~�łȂ��i" & emaTrend & "�j"
             Exit Function
         End If
         If macd >= 0 Then
-            rejectReason = "MACDがプラス"
+            rejectReason = "MACD���v���X"
             Exit Function
         End If
     End If
@@ -132,8 +132,8 @@ End Function
 
 
 '==============================================================================
-' リスク額を一定にした発注株数。単元(100株)未満は切り捨て、最低1単元。
-' 建値が高い銘柄ほど株数が減り、1トレードの損失額が RISK_PER_TRADE に揃う。
+' ���X�N�z�����ɂ������������B�P��(100��)�����͐؂�̂āA�Œ�1�P���B
+' ���l�����������قǊ���������A1�g���[�h�̑����z�� RISK_PER_TRADE �ɑ����B
 '==============================================================================
 Public Function CalcQty(ByVal entryPrice As Double, _
                         Optional ByVal riskYen As Double = RISK_PER_TRADE, _
@@ -141,20 +141,20 @@ Public Function CalcQty(ByVal entryPrice As Double, _
     Dim units As Long
     If entryPrice <= 0 Or stopPct <= 0 Then Exit Function
     units = Int(riskYen / (entryPrice * stopPct) / 100)
-    If units < 1 Then units = 1          ' 1単元でも上限超過なら見送り判断は呼び出し側で
+    If units < 1 Then units = 1          ' 1�P���ł�������߂Ȃ猩���蔻�f�͌Ăяo������
     CalcQty = units * 100
 End Function
 
 
 '==============================================================================
-' 本日これから建てる分を含めた合計リスク額が上限内かを確認する
+' �{�����ꂩ�猚�Ă镪���܂߂����v���X�N�z������������m�F����
 '==============================================================================
 Public Function FitsDailyRisk(ByVal entryPrice As Double, ByVal qty As Long) As Boolean
     FitsDailyRisk = (TodayRiskYen() + entryPrice * STOP_PCT * qty) <= MAX_DAILY_RISK
 End Function
 
 
-'------------------------------------------------------------------- 内部関数
+'------------------------------------------------------------------- �����֐�
 Private Function LastRow() As Long
     LastRow = ThisWorkbook.Sheets(SH_KANRI).Cells(ThisWorkbook.Sheets(SH_KANRI).Rows.Count, 2).End(xlUp).Row
 End Function
@@ -163,7 +163,7 @@ Private Function CountOpenPositions() As Long
     Dim ws As Worksheet, r As Long, n As Long
     Set ws = ThisWorkbook.Sheets(SH_KANRI)
     For r = ROW_FIRST To LastRow()
-        If ws.Cells(r, 2).Value <> "" And InStr(ws.Cells(r, 19).Value, "保有") > 0 Then n = n + 1
+        If ws.Cells(r, 2).Value <> "" And InStr(ws.Cells(r, 19).Value, "�ۗL") > 0 Then n = n + 1
     Next r
     CountOpenPositions = n
 End Function
@@ -185,20 +185,20 @@ Private Function HasOpenPosition(ByVal code As String, ByVal side As String) As 
     For r = ROW_FIRST To LastRow()
         If CStr(ws.Cells(r, 2).Value) = code _
            And CStr(ws.Cells(r, 3).Value) = side _
-           And InStr(ws.Cells(r, 19).Value, "保有") > 0 Then
+           And InStr(ws.Cells(r, 19).Value, "�ۗL") > 0 Then
             HasOpenPosition = True
             Exit Function
         End If
     Next r
 End Function
 
-' 直近 nDays 営業日以内に同一銘柄を損切していたら True
-' （V805 では 助川電気工業 を 8/4 に -16,800円 で損切した3営業日後に同方向で再エントリーしていた）
+' ���� nDays �c�Ɠ��ȓ��ɓ�������𑹐؂��Ă����� True
+' �iV805 �ł� ����d�C�H�� �� 8/4 �� -16,800�~ �ő��؂���3�c�Ɠ���ɓ������ōăG���g���[���Ă����j
 Private Function WasStoppedRecently(ByVal code As String, ByVal nDays As Long) As Boolean
     Dim ws As Worksheet, r As Long
     Set ws = ThisWorkbook.Sheets(SH_KANRI)
     For r = ROW_FIRST To LastRow()
-        If CStr(ws.Cells(r, 2).Value) = code And InStr(ws.Cells(r, 24).Value, "損切") > 0 Then
+        If CStr(ws.Cells(r, 2).Value) = code And InStr(ws.Cells(r, 24).Value, "����") > 0 Then
             If IsDate(ws.Cells(r, 20).Value) Then
                 If Date - CDate(ws.Cells(r, 20).Value) <= nDays Then
                     WasStoppedRecently = True
@@ -224,74 +224,74 @@ End Function
 
 
 '==============================================================================
-' 既存の管理シートに対して、現行の建玉がゲートを通るかを一括点検する。
-' 実行するとイミディエイトウィンドウに却下理由が出る。
+' �����̊Ǘ��V�[�g�ɑ΂��āA���s�̌��ʂ��Q�[�g��ʂ邩���ꊇ�_������B
+' ���s����ƃC�~�f�B�G�C�g�E�B���h�E�ɋp�����R���o��B
 '==============================================================================
 Public Sub AuditOpenPositions()
     Dim ws As Worksheet, r As Long, reason As String, ng As Long
     Set ws = ThisWorkbook.Sheets(SH_KANRI)
-    Debug.Print "=== 建玉ゲート点検 " & Format(Now, "yyyy/mm/dd hh:nn") & " ==="
+    Debug.Print "=== ���ʃQ�[�g�_�� " & Format(Now, "yyyy/mm/dd hh:nn") & " ==="
     For r = ROW_FIRST To LastRow()
-        If InStr(ws.Cells(r, 19).Value, "保有") > 0 Then
+        If InStr(ws.Cells(r, 19).Value, "�ۗL") > 0 Then
             If ws.Cells(r, 6).Value = "" Then
-                Debug.Print "行" & r & " " & ws.Cells(r, 4).Value & ": 購入価格が空欄。損切ライン算出不能"
+                Debug.Print "�s" & r & " " & ws.Cells(r, 4).Value & ": �w�����i���󗓁B���؃��C���Z�o�s�\"
                 ng = ng + 1
             End If
         End If
     Next r
-    Debug.Print "要修正 " & ng & " 件"
+    Debug.Print "�v�C�� " & ng & " ��"
 End Sub
 
 
 '==============================================================================
-'  以下は V805 で発見した既存VBAのバグに対する置換コードです。
-'  該当モジュールの当該箇所を、それぞれ差し替えてください。
+'  �ȉ��� V805 �Ŕ�����������VBA�̃o�O�ɑ΂���u���R�[�h�ł��B
+'  �Y�����W���[���̓��Y�ӏ����A���ꂼ�ꍷ���ւ��Ă��������B
 '==============================================================================
 
 '------------------------------------------------------------------------------
-' 【バグ1・最優先】Module1.損切りアラート が一度も発火しない
+' �y�o�O1�E�ŗD��zModule1.���؂�A���[�g ����x�����΂��Ȃ�
 '
-'  現行:  If InStr(ステータス, "損切推奨") > 0 Or InStr(ステータス, "STOP推奨") > 0 Then
+'  ���s:  If InStr(�X�e�[�^�X, "���ؐ���") > 0 Or InStr(�X�e�[�^�X, "STOP����") > 0 Then
 '
-'  S列が生成する文字列は「🔴損切り」「⚠️損切注意」であり、「損切推奨」は
-'  旧22列レイアウト時代の文字列。列参照だけ新レイアウトに直され、比較文字列が
-'  取り残された。結果、損失拡大中でも起動時に「全ポジション正常です」を表示する。
+'  S�񂪐������镶����́u[����]���؂�v�u[����]���ؒ��Ӂv�ł���A�u���ؐ����v��
+'  ��22�񃌃C�A�E�g����̕�����B��Q�Ƃ����V���C�A�E�g�ɒ�����A��r������
+'  ���c���ꂽ�B���ʁA�����g�咆�ł��N�����Ɂu�S�|�W�V��������ł��v��\������B
 '
-'  置換後（部分一致にする）:
-'     If InStr(ステータス, "損切") > 0 Or InStr(ステータス, "STOP") > 0 Then
+'  �u����i������v�ɂ���j:
+'     If InStr(�X�e�[�^�X, "����") > 0 Or InStr(�X�e�[�^�X, "STOP") > 0 Then
 '------------------------------------------------------------------------------
 
 '------------------------------------------------------------------------------
-' 【バグ2】Module6.追記_本日の候補 の重複チェックが機能していない
+' �y�o�O2�zModule6.�ǋL_�{���̌�� �̏d���`�F�b�N���@�\���Ă��Ȃ�
 '
-'  現行:  If WorksheetFunction.CountIfs(ws.Range("B:B"), cd, ws.Range("E:E"), bd) = 0 Then
-'         → 「コード AND 購入日」の複合条件のため、日が変われば必ず通過する
+'  ���s:  If WorksheetFunction.CountIfs(ws.Range("B:B"), cd, ws.Range("E:E"), bd) = 0 Then
+'         �� �u�R�[�h AND �w�����v�̕��������̂��߁A�����ς��ΕK���ʉ߂���
 '
-'  下の IsEntryAllowed に置き換えること。
+'  ���� IsEntryAllowed �ɒu�������邱�ƁB
 '------------------------------------------------------------------------------
 Public Function IsEntryAllowed(ByVal ws As Worksheet, ByVal cd As String, _
                                ByVal bd As Double, ByRef reason As String) As Boolean
     Dim wf As WorksheetFunction: Set wf = Application.WorksheetFunction
     reason = ""
 
-    ' ① 同一コード＋同一購入日（従来の条件）
+    ' �@ ����R�[�h�{����w�����i�]���̏����j
     If wf.CountIfs(ws.Range("B:B"), cd, ws.Range("E:E"), bd) > 0 Then
-        reason = "本日すでに追記済み"
+        reason = "�{�����łɒǋL�ς�"
         Exit Function
     End If
 
-    ' ② 同一コードで未決済ポジションが残っている（T列=売却日が空）
-    '    ダイヘン -100,500円、タカラスタンダード3連続はここで止まるはずだった
+    ' �A ����R�[�h�Ŗ����σ|�W�V�������c���Ă���iT��=���p������j
+    '    �_�C�w�� -100,500�~�A�^�J���X�^���_�[�h3�A���͂����Ŏ~�܂�͂�������
     If wf.CountIfs(ws.Range("B:B"), cd, ws.Range("T:T"), "") > 0 Then
-        reason = "同一銘柄を保有中（ナンピン禁止）"
+        reason = "���������ۗL���i�i���s���֎~�j"
         Exit Function
     End If
 
-    ' ③ 直近10営業日以内に同一コードでエントリー済み
-    '    助川電気工業は損切の3営業日後に再エントリーされていた
+    ' �B ����10�c�Ɠ��ȓ��ɓ���R�[�h�ŃG���g���[�ς�
+    '    ����d�C�H�Ƃ͑��؂�3�c�Ɠ���ɍăG���g���[����Ă���
     If wf.CountIfs(ws.Range("B:B"), cd, _
                    ws.Range("E:E"), ">=" & CDbl(wf.WorkDay(bd, -10))) > 0 Then
-        reason = "直近10営業日に同一銘柄をエントリー済み"
+        reason = "����10�c�Ɠ��ɓ���������G���g���[�ς�"
         Exit Function
     End If
 
@@ -300,14 +300,14 @@ End Function
 
 
 '------------------------------------------------------------------------------
-' 【バグ3】損切/利確価格が東証の呼値に乗っておらず、145件中71件(49%)が発注不可
-'          → 逆指値が証券会社に弾かれ、損切注文が存在しないポジションになる
+' �y�o�O3�z����/���m���i�����؂̌Ēl�ɏ���Ă��炸�A145����71��(49%)�������s��
+'          �� �t�w�l���،���Ђɒe����A���ؒ��������݂��Ȃ��|�W�V�����ɂȂ�
 '
-'  V806 のシート数式側では対応済み。VBAから価格を書き込む場合はこの関数を通すこと。
+'  V806 �̃V�[�g�������ł͑Ή��ς݁BVBA���牿�i���������ޏꍇ�͂��̊֐���ʂ����ƁB
 '------------------------------------------------------------------------------
 Public Function SnapTick(ByVal p As Double, ByVal roundUp As Boolean) As Double
     Dim t As Double
-    ' 東証の呼値（TOPIX100構成銘柄はより細かいため、別途対応が必要）
+    ' ���؂̌Ēl�iTOPIX100�\�������͂��ׂ������߁A�ʓr�Ή����K�v�j
     Select Case p
         Case Is <= 3000#:   t = 1
         Case Is <= 5000#:   t = 5
@@ -317,44 +317,44 @@ Public Function SnapTick(ByVal p As Double, ByVal roundUp As Boolean) As Double
         Case Else:          t = 500
     End Select
     If roundUp Then
-        SnapTick = -Int(-p / t) * t          ' 切り上げ
+        SnapTick = -Int(-p / t) * t          ' �؂�グ
     Else
-        SnapTick = Int(p / t) * t            ' 切り下げ
+        SnapTick = Int(p / t) * t            ' �؂艺��
     End If
 End Function
 
-' 買い＝切り下げ／売り＝切り上げ。どちらも「利確は約定しやすい側・損切は余裕のある側」に倒れる。
+' �������؂艺���^���聁�؂�グ�B�ǂ�����u���m�͖�肵�₷�����E���؂͗]�T�̂��鑤�v�ɓ|���B
 Public Sub WriteExitLines(ByVal ws As Worksheet, ByVal r As Long)
     Dim px As Double, isSell As Boolean
     If Not IsNumeric(ws.Cells(r, "F").Value) Then Exit Sub
     px = CDbl(ws.Cells(r, "F").Value)
-    isSell = (ws.Cells(r, "C").Value = "売")
+    isSell = (ws.Cells(r, "C").Value = "��")
     ws.Cells(r, "M").Value = SnapTick(px * IIf(isSell, 1 - STOP_TP, 1 + STOP_TP), isSell)
     ws.Cells(r, "N").Value = SnapTick(px * IIf(isSell, 1 + STOP_PCT, 1 - STOP_PCT), isSell)
 End Sub
 
 
 '------------------------------------------------------------------------------
-' 【バグ4】抽出Sub 4本にエラーハンドラがなく、Calculation = xlCalculationManual が
-'          残留しうる。残ると H列(RSS現在値)が更新されず、L/O/S/AH列が凍結し
-'          損切判定が完全に沈黙する。トレードシステムとして最悪の失敗モード。
+' �y�o�O4�z���oSub 4�{�ɃG���[�n���h�����Ȃ��ACalculation = xlCalculationManual ��
+'          �c��������B�c��� H��(RSS���ݒl)���X�V���ꂸ�AL/O/S/AH�񂪓�����
+'          ���ؔ��肪���S�ɒ��ق���B�g���[�h�V�X�e���Ƃ��čň��̎��s���[�h�B
 '
-'  対象: Mod_買抽出_順張りVWAP.抽出実行_順張り / Mod_売抽出_下降VWAP.抽出実行_下降
-'        Mod_買抽出v13.抽出実行           / Mod_SellExtrac.S_抽出実行
+'  �Ώ�: Mod_�����o_������VWAP.���o���s_������ / Mod_�����o_���~VWAP.���o���s_���~
+'        Mod_�����ov13.���o���s           / Mod_SellExtrac.S_���o���s
 '
-'  4本すべてを次の骨格で囲むこと。
+'  4�{���ׂĂ����̍��i�ň͂ނ��ƁB
 '------------------------------------------------------------------------------
-'   Private Sub 抽出実行_順張り(...)
+'   Private Sub ���o���s_������(...)
 '       Dim prevCalc As XlCalculation
 '       prevCalc = Application.Calculation
 '       On Error GoTo ErrHandler
-'       … 既存処理 …
+'       �c �������� �c
 '       GoTo CleanExit
 '   ErrHandler:
-'       MsgBox "【抽出処理エラー】" & vbCrLf & _
+'       MsgBox "�y���o�����G���[�z" & vbCrLf & _
 '              "Err " & Err.Number & ": " & Err.Description & vbCrLf & vbCrLf & _
-'              "アプリ状態を復元しました。データは不完全な可能性があります。", _
-'              vbCritical, "抽出中断"
+'              "�A�v����Ԃ𕜌����܂����B�f�[�^�͕s���S�ȉ\��������܂��B", _
+'              vbCritical, "���o���f"
 '   CleanExit:
 '       On Error Resume Next
 '       Application.StatusBar = False
@@ -367,16 +367,16 @@ End Sub
 
 
 '------------------------------------------------------------------------------
-' 【バグ5】Mod_KanriSheet は旧22列レイアウトのまま残存している死にモジュール。
-'          管理シート作成 は Application.DisplayAlerts = False の後 ws.Delete を
-'          実行するため、押すと全取引履歴が無警告で消滅する。
+' �y�o�O5�zMod_KanriSheet �͋�22�񃌃C�A�E�g�̂܂܎c�����Ă��鎀�Ƀ��W���[���B
+'          �Ǘ��V�[�g�쐬 �� Application.DisplayAlerts = False �̌� ws.Delete ��
+'          ���s���邽�߁A�����ƑS������������x���ŏ��ł���B
 '
-'  → モジュールごと削除するか、最低限ボタンの割り当てを外すこと。
+'  �� ���W���[�����ƍ폜���邩�A�Œ���{�^���̊��蓖�Ă��O�����ƁB
 '------------------------------------------------------------------------------
 
 '------------------------------------------------------------------------------
-' 【バグ6】末尾行探索が Do While Cells(r,"B").Value <> "" で、B列に空白行が
-'          1行でも混ざるとそこで停止し、以降の既存データを上書きする。
+' �y�o�O6�z�����s�T���� Do While Cells(r,"B").Value <> "" �ŁAB��ɋ󔒍s��
+'          1�s�ł�������Ƃ����Œ�~���A�ȍ~�̊����f�[�^���㏑������B
 '------------------------------------------------------------------------------
 Public Function NextWriteRow(ByVal ws As Worksheet) As Long
     NextWriteRow = ws.Cells(ws.Rows.Count, "B").End(xlUp).Row + 1

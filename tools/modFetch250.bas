@@ -1,93 +1,93 @@
 Attribute VB_Name = "modFetch250"
 '==============================================================================
-' modFetch250 ― OHLCV 5シートへ 250営業日分を取得して書き込む
+' modFetch250 �\ OHLCV 5�V�[�g�� 250�c�Ɠ������擾���ď�������
 '
-'  データ取込シートに元からある仕組みをそのまま回す。
+'  �f�[�^�捞�V�[�g�Ɍ����炠��d�g�݂����̂܂܉񂷁B
 '      A3 = RssChartPast(B2:J2, B1, "D", $M$1, $K$1)
-'        B1  銘柄コード
-'        K1  本数（日数）
-'        M1  開始日（yyyymmdd）
+'        B1  �����R�[�h
+'        K1  �{���i�����j
+'        M1  �J�n���iyyyymmdd�j
 '
-'  やること
-'    1. K1=250 / M1=今日 をセット
-'    2. 日付軸（row 3）を作る … TOPX を基準にする
-'    3. 銘柄管理 B6:B305 を上から順に
-'         B1 に銘柄コードを入れる → 再計算 → RSSの応答を待つ
-'         → 日付を突き合わせて 始値/高値/安値/終値/出来高 の5シートへ書く
-'    4. 途中経過をステータスバーに出す。ESC で中断できる
+'  ��邱��
+'    1. K1=250 / M1=���� ���Z�b�g
+'    2. ���t���irow 3�j����� �c TOPX ����ɂ���
+'    3. �����Ǘ� B6:B305 ���ォ�珇��
+'         B1 �ɖ����R�[�h������ �� �Čv�Z �� RSS�̉�����҂�
+'         �� ���t��˂����킹�� �n�l/���l/���l/�I�l/�o���� ��5�V�[�g�֏���
+'    4. �r���o�߂��X�e�[�^�X�o�[�ɏo���BESC �Œ��f�ł���
 '
-'  ★日付で突き合わせて書く理由
-'    V805 の取込は「E列＝最新、F列＝1日前…」と順番に詰めていた。
-'    この方式だと売買停止などで1日抜けた銘柄だけ列が1つズレ、
-'    銘柄どうしの日付が揃わなくなる。指標はすべて銘柄間の比較で
-'    計算するので、ズレると結果が壊れる。
-'    そこで row 3 の日付軸に対して MATCH して、同じ日付の列に書く。
-'    軸に無い日付は書かない（欠測として空欄のまま）。
+'  �����t�œ˂����킹�ď������R
+'    V805 �̎捞�́uE�񁁍ŐV�AF��1���O�c�v�Ə��Ԃɋl�߂Ă����B
+'    ���̕������Ɣ�����~�Ȃǂ�1������������������1�Y���A
+'    �����ǂ����̓��t������Ȃ��Ȃ�B�w�W�͂��ׂĖ����Ԃ̔�r��
+'    �v�Z����̂ŁA�Y����ƌ��ʂ�����B
+'    ������ row 3 �̓��t���ɑ΂��� MATCH ���āA�������t�̗�ɏ����B
+'    ���ɖ������t�͏����Ȃ��i�����Ƃ��ċ󗓂̂܂܁j�B
 '
-'  使い方
-'    OHLCV_全銘柄取得     … 銘柄管理の全銘柄をまとめて取得（時間がかかる）
-'    OHLCV_1銘柄取得      … データ取込!B1 の1銘柄だけ
-'    OHLCV_取得状況を確認  … 何銘柄そろっているかを表示
+'  �g����
+'    OHLCV_�S�����擾     �c �����Ǘ��̑S�������܂Ƃ߂Ď擾�i���Ԃ�������j
+'    OHLCV_1�����擾      �c �f�[�^�捞!B1 ��1��������
+'    OHLCV_�擾�󋵂��m�F  �c ������������Ă��邩��\��
 '==============================================================================
 Option Explicit
 
-'------------------------------------------------------------ 設定（ここを触る）
-Private Const HIST_MAX     As Long = 250     ' 取得する営業日数（E列〜IT列）
-Private Const WAIT_LIMIT   As Double = 25    ' RSS応答の待ち時間の上限（秒）
-Private Const STABLE_POLLS As Long = 3       ' この回数だけ内容が変わらなければ受信完了
-Private Const POLL_WAIT    As Double = 0.2   ' 1回の待ち（秒）
-Private Const SKIP_IF_HAVE As Long = 0       ' 既にこの日数以上ある銘柄を飛ばす（0=飛ばさない）
+'------------------------------------------------------------ �ݒ�i������G��j
+Private Const HIST_MAX     As Long = 250     ' �擾����c�Ɠ����iE��`IT��j
+Private Const WAIT_LIMIT   As Double = 25    ' RSS�����̑҂����Ԃ̏���i�b�j
+Private Const STABLE_POLLS As Long = 3       ' ���̉񐔂������e���ς��Ȃ���Ύ�M����
+Private Const POLL_WAIT    As Double = 0.2   ' 1��̑҂��i�b�j
+Private Const SKIP_IF_HAVE As Long = 0       ' ���ɂ��̓����ȏ゠��������΂��i0=��΂��Ȃ��j
 
 Private Const PWD          As String = "ne19480314"
-Private Const FIRST_COL    As Long = 5       ' E列
-Private Const DATE_ROW     As Long = 3       ' 価格シートの日付ヘッダ行
-Private Const TOPIX_ROW    As Long = 5       ' 価格シートの TOPX 行
-Private Const STOCK_ROW1   As Long = 6       ' 価格シートの1銘柄目
-Private Const MEI_ROW1     As Long = 6       ' 銘柄管理の1銘柄目
+Private Const FIRST_COL    As Long = 5       ' E��
+Private Const DATE_ROW     As Long = 3       ' ���i�V�[�g�̓��t�w�b�_�s
+Private Const TOPIX_ROW    As Long = 5       ' ���i�V�[�g�� TOPX �s
+Private Const STOCK_ROW1   As Long = 6       ' ���i�V�[�g��1������
+Private Const MEI_ROW1     As Long = 6       ' �����Ǘ���1������
 Private Const MEI_ROWN     As Long = 305
-Private Const SH_DATA      As String = "データ取込"
-Private Const SH_MEI       As String = "銘柄管理"
+Private Const SH_DATA      As String = "�f�[�^�捞"
+Private Const SH_MEI       As String = "�����Ǘ�"
 
-Private Const SHEETS_LIST  As String = "始値,高値,安値,終値,出来高"
+Private Const SHEETS_LIST  As String = "�n�l,���l,���l,�I�l,�o����"
 
-' データ取込シートの列位置（FindHeader が埋める）
-Private hRow As Long, cName As Long, cDate As Long
-Private cOpen As Long, cHigh As Long, cLow As Long, cClose As Long, cVol As Long
+' �f�[�^�捞�V�[�g�̗�ʒu�iFindHeader �����߂�j
+Private hRow As Long, colName As Long, colDate As Long
+Private colOpen As Long, colHigh As Long, colLow As Long, colClose As Long, colVol As Long
 
-Private gAxis() As Date          ' 日付軸（新しい順）
+Private gAxis() As Date          ' ���t���i�V�������j
 Private gAxisN  As Long
 Private gCancel As Boolean
 
 
 '==============================================================================
-' ① 全銘柄を取得して5シートへ書き込む
+' �@ �S�������擾����5�V�[�g�֏�������
 '==============================================================================
-Public Sub OHLCV_全銘柄取得()
+Public Sub OHLCV_�S�����擾()
     Dim prevCalc As XlCalculation, prevScr As Boolean
     prevCalc = Application.Calculation: prevScr = Application.ScreenUpdating
     gCancel = False
     On Error GoTo ErrHandler
-    Application.EnableCancelKey = xlErrorHandler      ' ESC を捕まえる
+    Application.EnableCancelKey = xlErrorHandler      ' ESC ��߂܂���
     Application.ScreenUpdating = False
-    Application.Calculation = xlCalculationAutomatic  ' RSS は自動計算でないと更新されない
+    Application.Calculation = xlCalculationAutomatic  ' RSS �͎����v�Z�łȂ��ƍX�V����Ȃ�
 
     Dim dws As Worksheet: Set dws = MustSheet(SH_DATA)
     Dim mws As Worksheet: Set mws = MustSheet(SH_MEI)
 
-    If MsgBox("銘柄管理に登録された全銘柄について、" & HIST_MAX & "営業日分を取得します。" & vbCrLf & _
-              "銘柄数によっては10〜30分かかります。" & vbCrLf & vbCrLf & _
-              "途中で止めるときは ESC キーを押してください。" & vbCrLf & _
-              "始めますか？", vbYesNo + vbQuestion, "OHLCV 一括取得") <> vbYes Then
+    If MsgBox("�����Ǘ��ɓo�^���ꂽ�S�����ɂ��āA" & HIST_MAX & "�c�Ɠ������擾���܂��B" & vbCrLf & _
+              "�������ɂ���Ă�10�`30��������܂��B" & vbCrLf & vbCrLf & _
+              "�r���Ŏ~�߂�Ƃ��� ESC �L�[�������Ă��������B" & vbCrLf & _
+              "�n�߂܂����H", vbYesNo + vbQuestion, "OHLCV �ꊇ�擾") <> vbYes Then
         Cleanup prevCalc, prevScr
         Exit Sub
     End If
 
     PrepareDataSheet dws
     FindHeader dws
-    If hRow = 0 Then Err.Raise 5, , "データ取込シートに「日付」「始値」「終値」を含むヘッダ行が見つかりません。"
+    If hRow = 0 Then Err.Raise 5, , "�f�[�^�捞�V�[�g�Ɂu���t�v�u�n�l�v�u�I�l�v���܂ރw�b�_�s��������܂���B"
 
-    '--- 日付軸を作る（TOPX 基準。取れなければ最初に成功した銘柄で作る）---
-    Application.StatusBar = "日付軸を作成中…"
+    '--- ���t�������iTOPX ��B���Ȃ���΍ŏ��ɐ������������ō��j---
+    Application.StatusBar = "���t�����쐬���c"
     If Not BuildAxisFrom(dws, "TOPX") Then
         Dim r0 As Long
         For r0 = MEI_ROW1 To MEI_ROWN
@@ -96,12 +96,12 @@ Public Sub OHLCV_全銘柄取得()
             End If
         Next r0
     End If
-    If gAxisN = 0 Then Err.Raise 5, , "日付軸を作れませんでした。" & vbCrLf & _
-                                      "データ取込シートで RSS がデータを返しているか確認してください。"
+    If gAxisN = 0 Then Err.Raise 5, , "���t�������܂���ł����B" & vbCrLf & _
+                                      "�f�[�^�捞�V�[�g�� RSS ���f�[�^��Ԃ��Ă��邩�m�F���Ă��������B"
     WriteAxis
-    Application.StatusBar = "日付軸 " & gAxisN & " 営業日分を確定しました。"
+    Application.StatusBar = "���t�� " & gAxisN & " �c�Ɠ������m�肵�܂����B"
 
-    '--- 銘柄をループ ---
+    '--- ���������[�v ---
     Dim r As Long, nTarget As Long, nDone As Long, nSkip As Long, nFail As Long
     Dim failList As String
     For r = MEI_ROW1 To MEI_ROWN
@@ -123,8 +123,8 @@ Public Sub OHLCV_全銘柄取得()
             End If
 
             Application.StatusBar = "[" & idx & "/" & nTarget & "] " & code & " " & _
-                                    CStr(mws.Cells(r, 3).Value) & " を取得中…" & _
-                                    "  (完了 " & nDone & " / 失敗 " & nFail & ")  ESCで中断"
+                                    CStr(mws.Cells(r, 3).Value) & " ���擾���c" & _
+                                    "  (���� " & nDone & " / ���s " & nFail & ")  ESC�Œ��f"
             Dim got As Long
             got = FetchAndWrite(dws, code, priceRow)
             If got > 0 Then
@@ -139,43 +139,43 @@ NextStock:
     Next r
 
     Cleanup prevCalc, prevScr
-    MsgBox IIf(gCancel, "ESC で中断しました。" & vbCrLf & vbCrLf, "") & _
-           "取得完了: " & nDone & " 銘柄" & vbCrLf & _
-           "スキップ: " & nSkip & " 銘柄" & vbCrLf & _
-           "失敗:     " & nFail & " 銘柄" & vbCrLf & _
-           IIf(nFail > 0, vbCrLf & "失敗した銘柄: " & failList & vbCrLf & _
-               "（時間をおいて、もう一度実行すると取れることがあります）", "") & vbCrLf & vbCrLf & _
-           "日付軸: " & gAxisN & " 営業日分", _
-           vbInformation, "OHLCV 一括取得"
+    MsgBox IIf(gCancel, "ESC �Œ��f���܂����B" & vbCrLf & vbCrLf, "") & _
+           "�擾����: " & nDone & " ����" & vbCrLf & _
+           "�X�L�b�v: " & nSkip & " ����" & vbCrLf & _
+           "���s:     " & nFail & " ����" & vbCrLf & _
+           IIf(nFail > 0, vbCrLf & "���s��������: " & failList & vbCrLf & _
+               "�i���Ԃ������āA������x���s����Ǝ��邱�Ƃ�����܂��j", "") & vbCrLf & vbCrLf & _
+           "���t��: " & gAxisN & " �c�Ɠ���", _
+           vbInformation, "OHLCV �ꊇ�擾"
     Exit Sub
 
 ErrHandler:
-    If Err.Number = 18 Then                 ' ESC が押された
+    If Err.Number = 18 Then                 ' ESC �������ꂽ
         gCancel = True
         Resume Next
     End If
     Dim msg As String: msg = "Err " & Err.Number & ": " & Err.Description
     Cleanup prevCalc, prevScr
-    MsgBox "取得を中断しました。" & vbCrLf & vbCrLf & msg & vbCrLf & vbCrLf & _
-           "アプリの状態は元に戻しました。", vbCritical, "取得エラー"
+    MsgBox "�擾�𒆒f���܂����B" & vbCrLf & vbCrLf & msg & vbCrLf & vbCrLf & _
+           "�A�v���̏�Ԃ͌��ɖ߂��܂����B", vbCritical, "�擾�G���["
 End Sub
 
 
 '==============================================================================
-' ② データ取込!B1 の1銘柄だけ取得する
+' �A �f�[�^�捞!B1 ��1���������擾����
 '==============================================================================
-Public Sub OHLCV_1銘柄取得()
+Public Sub OHLCV_1�����擾()
     Dim prevCalc As XlCalculation, prevScr As Boolean
     prevCalc = Application.Calculation: prevScr = Application.ScreenUpdating
     On Error GoTo ErrHandler
     Application.EnableCancelKey = xlErrorHandler
     Application.ScreenUpdating = False
-    Application.Calculation = xlCalculationAutomatic  ' RSS は自動計算でないと更新されない
+    Application.Calculation = xlCalculationAutomatic  ' RSS �͎����v�Z�łȂ��ƍX�V����Ȃ�
 
     Dim dws As Worksheet: Set dws = MustSheet(SH_DATA)
     Dim mws As Worksheet: Set mws = MustSheet(SH_MEI)
     Dim code As String: code = UCase$(Trim$(CStr(dws.Range("B1").Value)))
-    If code = "" Then Err.Raise 5, , "データ取込シートの B1 に銘柄コードを入れてください。"
+    If code = "" Then Err.Raise 5, , "�f�[�^�捞�V�[�g�� B1 �ɖ����R�[�h�����Ă��������B"
 
     Dim r As Long, priceRow As Long
     For r = MEI_ROW1 To MEI_ROWN
@@ -183,16 +183,16 @@ Public Sub OHLCV_1銘柄取得()
             priceRow = STOCK_ROW1 + (r - MEI_ROW1): Exit For
         End If
     Next r
-    If priceRow = 0 Then Err.Raise 5, , "銘柄コード " & code & " が銘柄管理にありません。"
+    If priceRow = 0 Then Err.Raise 5, , "�����R�[�h " & code & " �������Ǘ��ɂ���܂���B"
 
     PrepareDataSheet dws
     FindHeader dws
-    If hRow = 0 Then Err.Raise 5, , "データ取込シートのヘッダ行が見つかりません。"
+    If hRow = 0 Then Err.Raise 5, , "�f�[�^�捞�V�[�g�̃w�b�_�s��������܂���B"
 
-    ReadAxis                                  ' 既にある日付軸を使う
+    ReadAxis                                  ' ���ɂ�����t�����g��
     If gAxisN = 0 Then
         If Not BuildAxisFrom(dws, "TOPX") Then
-            If Not BuildAxisFrom(dws, code) Then Err.Raise 5, , "日付軸を作れませんでした。"
+            If Not BuildAxisFrom(dws, code) Then Err.Raise 5, , "���t�������܂���ł����B"
         End If
         WriteAxis
     End If
@@ -200,13 +200,13 @@ Public Sub OHLCV_1銘柄取得()
     Dim got As Long: got = FetchAndWrite(dws, code, priceRow)
     Cleanup prevCalc, prevScr
     If got > 0 Then
-        MsgBox code & " を " & got & " 日分 書き込みました。（日付軸 " & gAxisN & " 日）", _
-               vbInformation, "取得完了"
+        MsgBox code & " �� " & got & " ���� �������݂܂����B�i���t�� " & gAxisN & " ���j", _
+               vbInformation, "�擾����"
     Else
-        MsgBox code & " のデータを取得できませんでした。" & vbCrLf & vbCrLf & _
-               "・マーケットスピードが起動してログイン済みか" & vbCrLf & _
-               "・データ取込シートの A3 に RssChartPast の数式があるか" & vbCrLf & _
-               "を確認してください。", vbExclamation, "取得できず"
+        MsgBox code & " �̃f�[�^���擾�ł��܂���ł����B" & vbCrLf & vbCrLf & _
+               "�E�}�[�P�b�g�X�s�[�h���N�����ă��O�C���ς݂�" & vbCrLf & _
+               "�E�f�[�^�捞�V�[�g�� A3 �� RssChartPast �̐��������邩" & vbCrLf & _
+               "���m�F���Ă��������B", vbExclamation, "�擾�ł���"
     End If
     Exit Sub
 
@@ -214,16 +214,16 @@ ErrHandler:
     If Err.Number = 18 Then Resume Next
     Dim msg As String: msg = "Err " & Err.Number & ": " & Err.Description
     Cleanup prevCalc, prevScr
-    MsgBox "取得を中断しました。" & vbCrLf & vbCrLf & msg, vbCritical, "取得エラー"
+    MsgBox "�擾�𒆒f���܂����B" & vbCrLf & vbCrLf & msg, vbCritical, "�擾�G���["
 End Sub
 
 
 '==============================================================================
-' ③ 取得状況の確認
+' �B �擾�󋵂̊m�F
 '==============================================================================
-Public Sub OHLCV_取得状況を確認()
+Public Sub OHLCV_�擾�󋵂��m�F()
     Dim mws As Worksheet: Set mws = MustSheet(SH_MEI)
-    Dim cws As Worksheet: Set cws = MustSheet("終値")
+    Dim cws As Worksheet: Set cws = MustSheet("�I�l")
     Dim r As Long, n As Long, few As Long, none As Long, full As Long
     Dim minD As Long: minD = 99999
     Dim firstShort As String
@@ -237,7 +237,7 @@ Public Sub OHLCV_取得状況を確認()
             ElseIf d < 100 Then
                 few = few + 1
                 If firstShort = "" Then firstShort = CStr(mws.Cells(r, 2).Value) & _
-                                                     "(" & d & "日)"
+                                                     "(" & d & "��)"
             Else
                 full = full + 1
             End If
@@ -251,18 +251,18 @@ Public Sub OHLCV_取得状況を確認()
         If IsDate(cws.Cells(DATE_ROW, c).Value) Then axisN = axisN + 1
     Next c
 
-    MsgBox "登録銘柄:        " & n & vbCrLf & _
-           "  100日以上:     " & full & vbCrLf & _
-           "  100日未満:     " & few & IIf(firstShort <> "", "  例) " & firstShort, "") & vbCrLf & _
-           "  データなし:     " & none & vbCrLf & vbCrLf & _
-           "日付軸(3行目):   " & axisN & " 営業日分" & vbCrLf & _
-           "最少の銘柄:      " & IIf(minD = 99999, 0, minD) & " 日分" & vbCrLf & vbCrLf & _
-           "指標の計算には25日以上、検証には100日以上あると安心です。", _
-           vbInformation, "OHLCV 取得状況"
+    MsgBox "�o�^����:        " & n & vbCrLf & _
+           "  100���ȏ�:     " & full & vbCrLf & _
+           "  100������:     " & few & IIf(firstShort <> "", "  ��) " & firstShort, "") & vbCrLf & _
+           "  �f�[�^�Ȃ�:     " & none & vbCrLf & vbCrLf & _
+           "���t��(3�s��):   " & axisN & " �c�Ɠ���" & vbCrLf & _
+           "�ŏ��̖���:      " & IIf(minD = 99999, 0, minD) & " ����" & vbCrLf & vbCrLf & _
+           "�w�W�̌v�Z�ɂ�25���ȏ�A���؂ɂ�100���ȏ゠��ƈ��S�ł��B", _
+           vbInformation, "OHLCV �擾��"
 End Sub
 
 
-'------------------------------------------------------------------ 取得と書込
+'------------------------------------------------------------------ �擾�Ə���
 Private Function FetchAndWrite(ByVal dws As Worksheet, ByVal code As String, _
                                ByVal priceRow As Long) As Long
     Dim d() As Date, o() As Double, h() As Double, l() As Double
@@ -271,7 +271,7 @@ Private Function FetchAndWrite(ByVal dws As Worksheet, ByVal code As String, _
     n = FetchSeries(dws, code, d, o, h, l, c, v)
     If n = 0 Then Exit Function
 
-    ' 日付軸に合わせて 1×HIST_MAX の配列を作る（軸に無い日付は書かない）
+    ' ���t���ɍ��킹�� 1�~HIST_MAX �̔z������i���ɖ������t�͏����Ȃ��j
     Dim ao As Variant, ah As Variant, al As Variant, ac As Variant, av As Variant
     ReDim ao(1 To 1, 1 To HIST_MAX): ReDim ah(1 To 1, 1 To HIST_MAX)
     ReDim al(1 To 1, 1 To HIST_MAX): ReDim ac(1 To 1, 1 To HIST_MAX)
@@ -288,16 +288,16 @@ Private Function FetchAndWrite(ByVal dws As Worksheet, ByVal code As String, _
     Next i
     If placed = 0 Then Exit Function
 
-    PutRow "始値", priceRow, ao
-    PutRow "高値", priceRow, ah
-    PutRow "安値", priceRow, al
-    PutRow "終値", priceRow, ac
-    PutRow "出来高", priceRow, av
+    PutRow "�n�l", priceRow, ao
+    PutRow "���l", priceRow, ah
+    PutRow "���l", priceRow, al
+    PutRow "�I�l", priceRow, ac
+    PutRow "�o����", priceRow, av
     FetchAndWrite = placed
 End Function
 
 
-' RSS に銘柄を投げて、返ってきた日足を配列に読み取る
+' RSS �ɖ����𓊂��āA�Ԃ��Ă���������z��ɓǂݎ��
 Private Function FetchSeries(ByVal dws As Worksheet, ByVal code As String, _
                              ByRef d() As Date, ByRef o() As Double, ByRef h() As Double, _
                              ByRef l() As Double, ByRef c() As Double, _
@@ -310,23 +310,23 @@ Private Function FetchSeries(ByVal dws As Worksheet, ByVal code As String, _
     If Not WaitForRss(dws, ExpectedName(code)) Then Exit Function
 
     Dim lastRow As Long, i As Long, n As Long
-    lastRow = dws.Cells(dws.Rows.Count, cDate).End(xlUp).Row
+    lastRow = dws.Cells(dws.Rows.Count, colDate).End(xlUp).Row
     For i = hRow + 1 To lastRow
         If n >= HIST_MAX Then Exit For
-        Dim dv As Variant: dv = dws.Cells(i, cDate).Value
+        Dim dv As Variant: dv = dws.Cells(i, colDate).Value
         If IsDate(dv) Then
-            Dim cv As Variant: cv = dws.Cells(i, cClose).Value
-            Dim vv As Variant: vv = IIf(cVol > 0, dws.Cells(i, cVol).Value, 0)
-            ' 出来高0の日は休業・欠損として飛ばす
+            Dim cv As Variant: cv = dws.Cells(i, colClose).Value
+            Dim vv As Variant: vv = IIf(colVol > 0, dws.Cells(i, colVol).Value, 0)
+            ' �o����0�̓��͋x�ƁE�����Ƃ��Ĕ�΂�
             If IsNumeric(cv) And IsNumeric(vv) Then
                 If cv > 0 And vv > 0 Then
                     n = n + 1
                     d(n) = CDate(dv)
                     c(n) = CDbl(cv)
                     v(n) = CDbl(vv)
-                    o(n) = PickNum(dws, i, cOpen, c(n))
-                    h(n) = PickNum(dws, i, cHigh, c(n))
-                    l(n) = PickNum(dws, i, cLow, c(n))
+                    o(n) = PickNum(dws, i, colOpen, c(n))
+                    h(n) = PickNum(dws, i, colHigh, c(n))
+                    l(n) = PickNum(dws, i, colLow, c(n))
                 End If
             End If
         End If
@@ -335,31 +335,31 @@ Private Function FetchSeries(ByVal dws As Worksheet, ByVal code As String, _
 End Function
 
 
-' RSS は非同期なので、内容が落ち着くまで待つ。
+' RSS �͔񓯊��Ȃ̂ŁA���e�����������܂ő҂B
 '
-' 行数が安定しただけでは足りない。連続する2銘柄がたまたま同じ日数だと、
-' 前の銘柄の古いデータをそのまま読んでしまう。そこで
-'   ・銘柄名の列が目的の銘柄になっている
-'   ・かつ行数が STABLE_POLLS 回続けて同じ
-' の両方がそろって初めて受信完了とみなす。
+' �s�������肵�������ł͑���Ȃ��B�A������2���������܂��ܓ����������ƁA
+' �O�̖����̌Â��f�[�^�����̂܂ܓǂ�ł��܂��B������
+'   �E�������̗񂪖ړI�̖����ɂȂ��Ă���
+'   �E���s���� STABLE_POLLS �񑱂��ē���
+' �̗�����������ď��߂Ď�M�����Ƃ݂Ȃ��B
 Private Function WaitForRss(ByVal dws As Worksheet, ByVal wantName As String) As Boolean
     Dim t0 As Double: t0 = Timer
     Dim lastN As Long, same As Long
     lastN = -1
 
     Do
-        DoEvents                                  ' RSS に配信の機会を与える
-        Wait POLL_WAIT
+        DoEvents                                  ' RSS �ɔz�M�̋@���^����
+        PauseFor POLL_WAIT
 
         Dim n As Long
-        n = dws.Cells(dws.Rows.Count, cDate).End(xlUp).Row - hRow
+        n = dws.Cells(dws.Rows.Count, colDate).End(xlUp).Row - hRow
         If n < 0 Then n = 0
 
         Dim nameOK As Boolean
-        If wantName = "" Or cName = 0 Then
-            nameOK = True                         ' 名前で確認できない場合は行数だけで判断
+        If wantName = "" Or colName = 0 Then
+            nameOK = True                         ' ���O�Ŋm�F�ł��Ȃ��ꍇ�͍s�������Ŕ��f
         Else
-            nameOK = (Trim$(CStr(dws.Cells(hRow + 1, cName).Value)) = wantName)
+            nameOK = (Trim$(CStr(dws.Cells(hRow + 1, colName).Value)) = wantName)
         End If
 
         If n > 0 And n = lastN And nameOK Then
@@ -373,13 +373,13 @@ Private Function WaitForRss(ByVal dws As Worksheet, ByVal wantName As String) As
             lastN = n
         End If
 
-        If Timer - t0 > WAIT_LIMIT Then Exit Do   ' 応答なしで打ち切り
-        If Timer < t0 Then t0 = Timer             ' 日付をまたいだ場合の保険
+        If Timer - t0 > WAIT_LIMIT Then Exit Do   ' �����Ȃ��őł��؂�
+        If Timer < t0 Then t0 = Timer             ' ���t���܂������ꍇ�̕ی�
     Loop
 End Function
 
 
-' 銘柄管理に登録されている銘柄名を返す（受信完了の判定に使う）
+' �����Ǘ��ɓo�^����Ă����������Ԃ��i��M�����̔���Ɏg���j
 Private Function ExpectedName(ByVal code As String) As String
     Dim mws As Worksheet
     On Error Resume Next
@@ -387,7 +387,7 @@ Private Function ExpectedName(ByVal code As String) As String
     On Error GoTo 0
     If mws Is Nothing Then Exit Function
     Dim r As Long
-    For r = MEI_ROW1 - 1 To MEI_ROWN            ' TOPX は5行目にあるので1つ上から見る
+    For r = MEI_ROW1 - 1 To MEI_ROWN            ' TOPX ��5�s�ڂɂ���̂�1�ォ�猩��
         If UCase$(Trim$(CStr(mws.Cells(r, 2).Value))) = UCase$(Trim$(code)) Then
             ExpectedName = Trim$(CStr(mws.Cells(r, 3).Value))
             Exit Function
@@ -396,8 +396,8 @@ Private Function ExpectedName(ByVal code As String) As String
 End Function
 
 
-'------------------------------------------------------------------ 日付軸
-' 指定銘柄のデータから日付軸（新しい順）を作る
+'------------------------------------------------------------------ ���t��
+' �w������̃f�[�^������t���i�V�������j�����
 Private Function BuildAxisFrom(ByVal dws As Worksheet, ByVal code As String) As Boolean
     Dim d() As Date, o() As Double, h() As Double, l() As Double
     Dim c() As Double, v() As Double
@@ -415,9 +415,9 @@ Private Function BuildAxisFrom(ByVal dws As Worksheet, ByVal code As String) As 
 End Function
 
 
-' 既に価格シートにある日付軸を読み込む
+' ���ɉ��i�V�[�g�ɂ�����t����ǂݍ���
 Private Sub ReadAxis()
-    Dim ws As Worksheet: Set ws = MustSheet("終値")
+    Dim ws As Worksheet: Set ws = MustSheet("�I�l")
     ReDim gAxis(1 To HIST_MAX)
     gAxisN = 0
     Dim c As Long
@@ -432,7 +432,7 @@ Private Sub ReadAxis()
 End Sub
 
 
-' 日付軸を5シートの3行目へ書く
+' ���t����5�V�[�g��3�s�ڂ֏���
 Private Sub WriteAxis()
     Dim arr As Variant
     ReDim arr(1 To 1, 1 To HIST_MAX)
@@ -456,39 +456,39 @@ Private Sub WriteAxis()
 End Sub
 
 
-' 日付軸の中での位置（1起点）。無ければ 0
+' ���t���̒��ł̈ʒu�i1�N�_�j�B������� 0
 Private Function AxisIndex(ByVal dt As Date) As Long
-    Dim lo As Long, hi As Long, mid As Long
+    Dim lo As Long, hi As Long, midIdx As Long
     lo = 1: hi = gAxisN
-    Do While lo <= hi                        ' 軸は新しい順なので降順の二分探索
-        mid = (lo + hi) \ 2
-        If gAxis(mid) = dt Then
-            AxisIndex = mid
+    Do While lo <= hi                        ' ���͐V�������Ȃ̂ō~���̓񕪒T��
+        midIdx = (lo + hi) \ 2
+        If gAxis(midIdx) = dt Then
+            AxisIndex = midIdx
             Exit Function
-        ElseIf gAxis(mid) > dt Then
-            lo = mid + 1
+        ElseIf gAxis(midIdx) > dt Then
+            lo = midIdx + 1
         Else
-            hi = mid - 1
+            hi = midIdx - 1
         End If
     Loop
 End Function
 
 
-'------------------------------------------------------------------ 書き込み
-Private Sub PutRow(ByVal name As String, ByVal priceRow As Long, ByRef arr As Variant)
-    Dim ws As Worksheet: Set ws = MustSheet(name)
+'------------------------------------------------------------------ ��������
+Private Sub PutRow(ByVal shName As String, ByVal priceRow As Long, ByRef arr As Variant)
+    Dim ws As Worksheet: Set ws = MustSheet(shName)
     ws.Unprotect PWD
     With ws.Range(ws.Cells(priceRow, FIRST_COL), _
                   ws.Cells(priceRow, FIRST_COL + HIST_MAX - 1))
         .ClearContents
-        .Value = arr                          ' 1行まとめて書く（1セルずつより桁違いに速い）
+        .Value = arr                          ' 1�s�܂Ƃ߂ď����i1�Z������茅�Ⴂ�ɑ����j
     End With
     ws.Protect PWD, UserInterfaceOnly:=True
 End Sub
 
 
 Private Function FilledDays(ByVal priceRow As Long) As Long
-    Dim ws As Worksheet: Set ws = MustSheet("終値")
+    Dim ws As Worksheet: Set ws = MustSheet("�I�l")
     Dim arr As Variant
     arr = ws.Range(ws.Cells(priceRow, FIRST_COL), _
                    ws.Cells(priceRow, FIRST_COL + HIST_MAX - 1)).Value
@@ -502,16 +502,16 @@ Private Function FilledDays(ByVal priceRow As Long) As Long
 End Function
 
 
-'------------------------------------------------------------------ 補助
+'------------------------------------------------------------------ �⏕
 Private Sub PrepareDataSheet(ByVal dws As Worksheet)
-    dws.Range("K1").Value = HIST_MAX                    ' 本数
-    dws.Range("M1").Value = Format$(Date, "yyyymmdd")   ' 開始日＝今日
+    dws.Range("K1").Value = HIST_MAX                    ' �{��
+    dws.Range("M1").Value = Format$(Date, "yyyymmdd")   ' �J�n��������
 End Sub
 
 
 Private Sub FindHeader(ByVal dws As Worksheet)
-    hRow = 0: cName = 0: cDate = 0
-    cOpen = 0: cHigh = 0: cLow = 0: cClose = 0: cVol = 0
+    hRow = 0: colName = 0: colDate = 0
+    colOpen = 0: colHigh = 0: colLow = 0: colClose = 0: colVol = 0
 
     Dim r As Long, c As Long
     For r = 1 To 60
@@ -519,22 +519,22 @@ Private Sub FindHeader(ByVal dws As Worksheet)
         okD = False: okO = False: okC = False
         For c = 1 To 30
             Select Case Trim$(CStr(dws.Cells(r, c).Value))
-                Case "日付": okD = True
-                Case "始値": okO = True
-                Case "終値": okC = True
+                Case "���t": okD = True
+                Case "�n�l": okO = True
+                Case "�I�l": okC = True
             End Select
         Next c
         If okD And okO And okC Then
             hRow = r
             For c = 1 To 30
                 Select Case Trim$(CStr(dws.Cells(r, c).Value))
-                    Case "銘柄名称", "銘柄名":                    cName = c
-                    Case "日付":                                  cDate = c
-                    Case "始値":                                  cOpen = c
-                    Case "高値":                                  cHigh = c
-                    Case "安値":                                  cLow = c
-                    Case "終値":                                  cClose = c
-                    Case "出来高", "売買高", "出来高(株)", "出来高（株）": cVol = c
+                    Case "��������", "������":                    colName = c
+                    Case "���t":                                  colDate = c
+                    Case "�n�l":                                  colOpen = c
+                    Case "���l":                                  colHigh = c
+                    Case "���l":                                  colLow = c
+                    Case "�I�l":                                  colClose = c
+                    Case "�o����", "������", "�o����(��)", "�o�����i���j": colVol = c
                 End Select
             Next c
             Exit For
@@ -550,11 +550,11 @@ Private Function PickNum(ByVal dws As Worksheet, ByVal r As Long, _
     If IsNumeric(v) Then
         If CDbl(v) > 0 Then PickNum = CDbl(v): Exit Function
     End If
-    PickNum = fallback                        ' 欠損は終値で代用
+    PickNum = fallback                        ' �����͏I�l�ő�p
 End Function
 
 
-' 日付の新しい順に並べ替える（挿入ソート。250件なので十分速い）
+' ���t�̐V�������ɕ��בւ���i�}���\�[�g�B250���Ȃ̂ŏ\�������j
 Private Sub SortDesc(ByRef d() As Date, ByRef o() As Double, ByRef h() As Double, _
                      ByRef l() As Double, ByRef c() As Double, ByRef v() As Double, _
                      ByVal n As Long)
@@ -576,12 +576,12 @@ Private Sub SortDesc(ByRef d() As Date, ByRef o() As Double, ByRef h() As Double
 End Sub
 
 
-' Application.Wait は1秒未満を扱えないので Timer で待つ
-Private Sub Wait(ByVal sec As Double)
+' Application.Wait ��1�b�����������Ȃ��̂� Timer �Ŏ��O�ɑ҂�
+Private Sub PauseFor(ByVal sec As Double)
     Dim t As Double: t = Timer
     Do
         DoEvents
-        If Timer < t Then Exit Do             ' 日付をまたいだ
+        If Timer < t Then Exit Do             ' ���t���܂�����
     Loop While Timer - t < sec
 End Sub
 
@@ -590,13 +590,13 @@ Private Function MustSheet(ByVal nm As String) As Worksheet
     On Error Resume Next
     Set MustSheet = ThisWorkbook.Sheets(nm)
     On Error GoTo 0
-    If MustSheet Is Nothing Then Err.Raise 5, , "「" & nm & "」シートが見つかりません。"
+    If MustSheet Is Nothing Then Err.Raise 5, , "�u" & nm & "�v�V�[�g��������܂���B"
 End Function
 
 
-' 中断しても Calculation が Manual のまま残らないようにする。
-' V805 の抽出Sub4本はこれが無く、残ると現在値が更新されずに
-' 損切判定が完全に沈黙する状態になっていた。
+' ���f���Ă� Calculation �� Manual �̂܂܎c��Ȃ��悤�ɂ���B
+' V805 �̒��oSub4�{�͂��ꂪ�����A�c��ƌ��ݒl���X�V���ꂸ��
+' ���ؔ��肪���S�ɒ��ق����ԂɂȂ��Ă����B
 Private Sub Cleanup(ByVal prevCalc As XlCalculation, ByVal prevScr As Boolean)
     On Error Resume Next
     Application.StatusBar = False

@@ -6,6 +6,8 @@ Option Explicit
 '
 '   ボタンを設置する   … 厳選TOP2 シートに「再計算」ボタンを描く（1回だけ実行）
 '   厳選TOP2_再計算    … ボタンから呼ばれる。押すと計算し直して結果を表示する
+'   厳選TOP2_再計算_静か … 日次更新から呼ばれる。ダイアログを出さず、
+'                        結果を厳選TOP2 の H7 セルに書くだけ
 '
 '  F9 キーの代わりです。ボタンを押せば同じことをします。
 ' ==============================================================================
@@ -145,4 +147,68 @@ ErrHandler:
     Application.StatusBar = False
     On Error GoTo 0
     MsgBox "再計算を中断しました。" & vbCrLf & vbCrLf & e, vbCritical, "エラー"
+End Sub
+
+
+'==============================================================================
+' ③ 静かに再計算する（日次更新から呼ばれる。ダイアログを出さない）
+'
+'   15:35 / 15:50 / 16:10 の自動実行から呼ばれるので、
+'   MsgBox を出すと画面が止まってしまう。結果はセルに書く。
+'==============================================================================
+Public Sub 厳選TOP2_再計算_静か()
+    Dim prevCalc As XlCalculation
+    prevCalc = Application.Calculation
+    On Error GoTo Quiet
+
+    Dim ws As Worksheet
+    Set ws = Nothing
+    On Error Resume Next
+    Set ws = ThisWorkbook.Sheets(SH_TOP)
+    On Error GoTo Quiet
+    If ws Is Nothing Then GoTo Quiet
+
+    Application.Calculation = xlCalculationAutomatic
+    Application.CalculateFullRebuild
+    DoEvents
+    Dim t0 As Double: t0 = Timer
+    Do While Timer - t0 < 3
+        DoEvents
+    Loop
+    Application.Calculate
+    DoEvents
+
+    Dim nBuy As Long, nSell As Long
+    nBuy = Val(CStr(ws.Range("F5").Value))
+    nSell = Val(CStr(ws.Range("F6").Value))
+
+    Dim wasP As Boolean: wasP = ws.ProtectContents
+    On Error Resume Next
+    ws.Unprotect Password:=PWD
+    ws.Unprotect
+    Err.Clear
+    On Error GoTo Quiet
+
+    With ws.Range("H7")
+        .Value = "最終更新 " & Format$(Now, "m/d hh:nn") & _
+                 "   買い " & nBuy & " 件 / 売り " & nSell & " 件"
+        .Font.Bold = True
+        If nBuy > 0 Then
+            .Font.Color = RGB(0, 112, 192)
+        Else
+            .Font.Color = RGB(120, 120, 120)
+        End If
+    End With
+
+    If wasP Then
+        On Error Resume Next
+        ws.Protect Password:=PWD, UserInterfaceOnly:=True, _
+                   DrawingObjects:=False, Contents:=True, Scenarios:=True
+        On Error GoTo Quiet
+    End If
+
+Quiet:
+    On Error Resume Next
+    Application.Calculation = prevCalc
+    On Error GoTo 0
 End Sub

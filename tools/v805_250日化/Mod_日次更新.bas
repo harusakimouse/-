@@ -235,6 +235,14 @@ Cleanup:
     Application.ScreenUpdating = True
     Application.CalculateFull
 
+    ' ★ 厳選TOP2 を計算し直し、件数を H7 セルに書く。
+    '   これで大引け後に再計算ボタンを押さなくても候補が出揃う。
+    '   Mod_再計算ボタン が無くてもエラーにしない。
+    On Error Resume Next
+    Application.Run "厳選TOP2_再計算_静か"
+    Err.Clear
+    On Error GoTo 0
+
     If showMsg Then
         UI_Msg "【日次更新 完了】" & vbCrLf & _
                "業務日: " & Format(bizDate, "yyyy/m/d") & vbCrLf & _

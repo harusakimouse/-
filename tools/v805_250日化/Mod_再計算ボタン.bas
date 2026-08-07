@@ -5,6 +5,7 @@ Option Explicit
 '  再計算ボタン
 '
 '   ボタンを設置する   … 厳選TOP2 シートに「再計算」ボタンを描く（1回だけ実行）
+'   モード切替ボタンを設置 … 「大引け／場中」を切り替える大きなボタンを描く
 '   厳選TOP2_再計算    … ボタンから呼ばれる。押すと計算し直して結果を表示する
 '   厳選TOP2_再計算_静か … 日次更新から呼ばれる。ダイアログを出さず、
 '                        結果を厳選TOP2 の H7 セルに書くだけ
@@ -13,7 +14,9 @@ Option Explicit
 ' ==============================================================================
 
 Private Const SH_TOP   As String = "厳選TOP2"
-Private Const BTN_NAME As String = "btn再計算"
+Private Const BTN_NAME  As String = "btn再計算"
+Private Const MODE_NAME As String = "btnモード"
+Private Const MODE_CELL As String = "H10"
 Private Const PWD      As String = "ne19480314"
 
 
@@ -136,6 +139,11 @@ Public Sub 厳選TOP2_再計算()
         msg = msg & "候補は 16行目以降（買い）と 24行目以降（売り）に出ています。"
     End If
 
+    On Error Resume Next
+    モードボタン表示を更新
+    Err.Clear
+    On Error GoTo 0
+
     MsgBox msg, vbInformation, "再計算"
     Exit Sub
 
@@ -211,4 +219,152 @@ Quiet:
     On Error Resume Next
     Application.Calculation = prevCalc
     On Error GoTo 0
+End Sub
+
+
+'==============================================================================
+' ④ モード切替ボタンを設置する（最初に1回だけ実行してください）
+'
+'   「大引け」と「場中」を押すたびに切り替えます。
+'   色と文字で、いまどちらなのかが常に見えます。
+'==============================================================================
+Public Sub モード切替ボタンを設置()
+    Dim ws As Worksheet
+    Set ws = Nothing
+    On Error Resume Next
+    Set ws = ThisWorkbook.Sheets(SH_TOP)
+    On Error GoTo 0
+    If ws Is Nothing Then
+        MsgBox "「" & SH_TOP & "」シートが見つかりません。", vbExclamation
+        Exit Sub
+    End If
+
+    Dim wasP As Boolean: wasP = ws.ProtectContents
+    On Error Resume Next
+    ws.Unprotect Password:=PWD
+    ws.Unprotect
+    Err.Clear
+    On Error GoTo 0
+
+    Dim sh As Shape, i As Long
+    For i = ws.Shapes.Count To 1 Step -1
+        If ws.Shapes(i).Name = MODE_NAME Then ws.Shapes(i).Delete
+    Next i
+
+    ' 「再計算」ボタン(H4)の右どなり。再計算ボタンの約2倍の大きさ
+    Dim tl As Range: Set tl = ws.Range("K4")
+    Set sh = ws.Shapes.AddShape(msoShapeRoundedRectangle, tl.Left, tl.Top, 224, 62)
+    With sh
+        .Name = MODE_NAME
+        .Line.Weight = 2
+        With .TextFrame2
+            .TextRange.Font.Size = 18
+            .TextRange.Font.Bold = msoTrue
+            .TextRange.Font.Fill.ForeColor.RGB = RGB(255, 255, 255)
+            .VerticalAnchor = msoAnchorMiddle
+            .HorizontalAnchor = msoAnchorCenter
+            .MarginLeft = 0: .MarginRight = 0
+            .MarginTop = 0: .MarginBottom = 0
+        End With
+        .OnAction = "モードを切り替える"
+    End With
+
+    モードボタン表示を更新
+
+    If wasP Then
+        On Error Resume Next
+        ws.Protect Password:=PWD, UserInterfaceOnly:=True, _
+                   DrawingObjects:=False, Contents:=True, Scenarios:=True
+        On Error GoTo 0
+    End If
+
+    ws.Activate
+    MsgBox "モード切替ボタンを置きました。" & vbCrLf & vbCrLf & _
+           "押すたびに「大引け」⇔「場中」が切り替わります。" & vbCrLf & vbCrLf & _
+           "  青  = 大引けモード（15:35以降に使う）" & vbCrLf & _
+           "  橙  = 場中モード（15:00頃に使う。しきい値を下げる）", _
+           vbInformation, "設置完了"
+End Sub
+
+
+'==============================================================================
+' ⑤ モードを切り替える（ボタンから呼ばれる）
+'==============================================================================
+Public Sub モードを切り替える()
+    Dim ws As Worksheet
+    Set ws = Nothing
+    On Error Resume Next
+    Set ws = ThisWorkbook.Sheets(SH_TOP)
+    On Error GoTo 0
+    If ws Is Nothing Then Exit Sub
+
+    Dim wasP As Boolean: wasP = ws.ProtectContents
+    On Error Resume Next
+    ws.Unprotect Password:=PWD
+    ws.Unprotect
+    Err.Clear
+    On Error GoTo 0
+
+    If Trim$(CStr(ws.Range(MODE_CELL).Value)) = "場中" Then
+        ws.Range(MODE_CELL).Value = "大引け"
+    Else
+        ws.Range(MODE_CELL).Value = "場中"
+    End If
+
+    If wasP Then
+        On Error Resume Next
+        ws.Protect Password:=PWD, UserInterfaceOnly:=True, _
+                   DrawingObjects:=False, Contents:=True, Scenarios:=True
+        On Error GoTo 0
+    End If
+
+    モードボタン表示を更新
+    厳選TOP2_再計算
+End Sub
+
+
+'==============================================================================
+' ⑥ ボタンの文字と色を、いまのモードに合わせる
+'==============================================================================
+Public Sub モードボタン表示を更新()
+    On Error Resume Next
+    Dim ws As Worksheet: Set ws = ThisWorkbook.Sheets(SH_TOP)
+    If ws Is Nothing Then Exit Sub
+
+    Dim sh As Shape: Set sh = Nothing
+    Dim i As Long
+    For i = 1 To ws.Shapes.Count
+        If ws.Shapes(i).Name = MODE_NAME Then Set sh = ws.Shapes(i): Exit For
+    Next i
+    If sh Is Nothing Then Exit Sub
+
+    Dim isNaka As Boolean
+    isNaka = (Trim$(CStr(ws.Range(MODE_CELL).Value)) = "場中")
+
+    Dim sc As String, vo As String
+    sc = CStr(ws.Range("H12").Value)
+    vo = Format$(ws.Range("H13").Value, "0.0")
+
+    With sh
+        If isNaka Then
+            .Fill.ForeColor.RGB = RGB(230, 120, 0)      ' 橙
+            .Line.ForeColor.RGB = RGB(170, 85, 0)
+            .TextFrame2.TextRange.Text = "場中モード" & vbCrLf & _
+                "スコア" & sc & "以上 / 出来高" & vo & "倍以上"
+        Else
+            .Fill.ForeColor.RGB = RGB(0, 70, 130)       ' 濃紺
+            .Line.ForeColor.RGB = RGB(0, 40, 80)
+            .TextFrame2.TextRange.Text = "大引けモード" & vbCrLf & _
+                "スコア" & sc & "以上 / 出来高" & vo & "倍以上"
+        End If
+        With .TextFrame2.TextRange
+            .Font.Size = 18
+            .Font.Bold = msoTrue
+            .Font.Fill.ForeColor.RGB = RGB(255, 255, 255)
+            ' 2行目は小さく
+            .Paragraphs(2).Font.Size = 11
+            .Paragraphs(2).Font.Bold = msoFalse
+        End With
+    End With
+    Err.Clear
 End Sub

@@ -8,6 +8,8 @@ Option Explicit
 '                              （消す前に自動でバックアップシートを作ります）
 '   本日の候補を管理へ追加    … 厳選TOP2 の候補を管理シートに書き足す
 '   管理シート_成績          … いまの記録の成績を集計して表示する
+'   管理シートにボタンを置く  … 上の3つをボタンにして管理シートに並べる
+'                              （最初に1回だけ実行してください）
 '
 '  管理シートで手入力するのは次の9列だけです。ほかは全部数式です。
 '    B コード / C 売買 / E 購入日 / G 購入数量
@@ -316,4 +318,90 @@ NextR:
            "  最大DD:    " & Format$(dd, "#,##0") & " 円" & vbCrLf & _
            "  最大連敗:  " & maxLose & " 回", _
            vbInformation, "成績"
+End Sub
+
+
+'==============================================================================
+' ④ 管理シートにボタンを置く（最初に1回だけ実行してください）
+'==============================================================================
+Public Sub 管理シートにボタンを置く()
+    Dim ws As Worksheet
+    Set ws = Nothing
+    On Error Resume Next
+    Set ws = ThisWorkbook.Sheets(SH_KAN)
+    On Error GoTo 0
+    If ws Is Nothing Then
+        MsgBox "「" & SH_KAN & "」シートが見つかりません。", vbExclamation
+        Exit Sub
+    End If
+
+    Dim wasP As Boolean: wasP = ws.ProtectContents
+    On Error Resume Next
+    ws.Unprotect Password:=PWD
+    ws.Unprotect
+    Err.Clear
+    On Error GoTo 0
+
+    ' 同名のボタンがあれば消してから作り直す（押すたびに増えないように）
+    Dim i As Long
+    For i = ws.Shapes.Count To 1 Step -1
+        Select Case ws.Shapes(i).Name
+            Case "btn候補追加", "btn成績", "btn全消去": ws.Shapes(i).Delete
+        End Select
+    Next i
+
+    Dim tl As Range: Set tl = ws.Range("N2")
+    Dim x As Double: x = tl.Left
+    Dim y As Double: y = tl.Top + 6
+
+    MakeBtn ws, "btn候補追加", "本日の候補を追加", "本日の候補を管理へ追加", _
+            x, y, 210, 56, RGB(0, 112, 192), RGB(0, 70, 130), 16
+    x = x + 218
+    MakeBtn ws, "btn成績", "成績を見る", "管理シート_成績", _
+            x, y, 140, 56, RGB(0, 130, 90), RGB(0, 90, 60), 15
+    x = x + 148
+    MakeBtn ws, "btn全消去", "全消去", "管理シート_全消去", _
+            x, y, 110, 56, RGB(150, 150, 150), RGB(100, 100, 100), 14
+
+    If wasP Then
+        On Error Resume Next
+        ws.Protect Password:=PWD, UserInterfaceOnly:=True, _
+                   DrawingObjects:=False, Contents:=True, Scenarios:=True
+        On Error GoTo 0
+    End If
+
+    ws.Activate
+    MsgBox "管理シートにボタンを3つ置きました。（2行目のN列あたり）" & vbCrLf & vbCrLf & _
+           "  青  本日の候補を追加 … 毎日15:35以降に押す" & vbCrLf & _
+           "  緑  成績を見る       … 勝率・PF・最大DDを表示" & vbCrLf & _
+           "  灰  全消去           … 記録を消す（控えは自動で残ります）" & vbCrLf & vbCrLf & _
+           "位置は右クリックしてドラッグで動かせます。", _
+           vbInformation, "設置完了"
+End Sub
+
+
+Private Sub MakeBtn(ByVal ws As Worksheet, ByVal nm As String, ByVal cap As String, _
+                    ByVal act As String, ByVal x As Double, ByVal y As Double, _
+                    ByVal w As Double, ByVal h As Double, _
+                    ByVal fillRGB As Long, ByVal lineRGB As Long, ByVal fsize As Single)
+    Dim sh As Shape
+    Set sh = ws.Shapes.AddShape(msoShapeRoundedRectangle, x, y, w, h)
+    With sh
+        .Name = nm
+        .Fill.ForeColor.RGB = fillRGB
+        .Line.ForeColor.RGB = lineRGB
+        .Line.Weight = 1.5
+        With .TextFrame2
+            .TextRange.Text = cap
+            .TextRange.Font.Size = fsize
+            .TextRange.Font.Bold = msoTrue
+            .TextRange.Font.Fill.ForeColor.RGB = RGB(255, 255, 255)
+            .VerticalAnchor = msoAnchorMiddle
+            .HorizontalAnchor = msoAnchorCenter
+            .MarginLeft = 0: .MarginRight = 0
+            .MarginTop = 0: .MarginBottom = 0
+            .WordWrap = msoTrue
+        End With
+        .OnAction = act
+    End With
 End Sub

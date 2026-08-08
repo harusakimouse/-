@@ -9,7 +9,7 @@ BB816 ビルダー ― ボリンジャーバンド判定の独立ブック（ス
   スイングトレード用に組み直した単独ブック。V815/V816 が無くても単独で動く。
 
       BB816使い方   ルール・根拠・2人の分析官の意見・最終判断
-      BB816候補     明日の買い候補 TOP10（発注に必要な数字だけ）
+      BB816候補     明日の買い候補 TOP15（発注に必要な数字と必要資金）
       BB816判定     全銘柄の判定本体
       BB816設定     しきい値（青字セルで変更可）
       終値/高値/安値/出来高   判定に使う価格データ（250営業日・値のみ）
@@ -70,7 +70,7 @@ SRC = Path(sys.argv[1] if len(sys.argv) > 1 else "V815.xlsm")
 DST = Path(sys.argv[2] if len(sys.argv) > 2 else "BB816.xlsx")
 
 ROW1, ROWN = 6, 505          # 判定シートの銘柄行
-TOPN = 10                    # 候補シートに出す件数
+TOPN = 15                    # 候補シートに出す件数（資金で買えない分を飛ばせるよう多めに出す）
 PRICE = [("終値", "sheet14"), ("高値", "sheet12"), ("安値", "sheet13"), ("出来高", "sheet15")]
 
 log = []
@@ -259,6 +259,8 @@ SETTINGS = [
     ("攻め RSI下限", 60, "トレーダー分析官の条件（広め）"),
     ("攻め MFI下限", 60, "同上"),
     ("攻め 出来高倍率", 1.2, "同上"),
+    ("総資金（円）", 3000000, "運用に使う金額。1枠の金額＝総資金÷枠数 を出すために使う"),
+    ("1単元の株数", 100, "日本株は通常100株単位。1銘柄の必要資金＝株価×この株数"),
 ]
 SET_ROW = {name: 4 + i for i, name in enumerate(n for n, _v, _d in SETTINGS)}
 
@@ -284,7 +286,22 @@ def build_settings(S):
     rows.append(row(r + 1, [cell("A%d" % (r + 1), text="損切り% ÷ 枠数 = 総資金に対する1トレードの最大損失", s=S["TXT"]),
                             cell("B%d" % (r + 1), f="%s/%s" % (R("損切り %"), R("資金の枠数")), s=S["NUM1"]),
                             cell("C%d" % (r + 1), text="既定値なら 8 ÷ 8 = 1.0%。ここが1%を超える設定にはしないこと", s=S["TXT"])]))
-    cols = [col_def(1, 1, 26), col_def(2, 2, 10), col_def(3, 3, 78)]
+    rows.append(row(r + 2, [cell("A%d" % (r + 2), text="1枠の金額 = 総資金 ÷ 枠数", s=S["TXT"]),
+                            cell("B%d" % (r + 2), f="%s/%s" % (R("総資金（円）"), R("資金の枠数")), s=S["NUM0"]),
+                            cell("C%d" % (r + 2), text="1銘柄に入れる金額。株価×100株 がこれを超える銘柄は買えない（判定シートAA列で×になる）", s=S["TXT"])]))
+    rows.append(row(r + 4, [cell("A%d" % (r + 4), text="■ 資金が少ないときの枠数の目安（実測・開始日13通りの中央値）", s=S["SECTION"])]))
+    for i, t in enumerate([
+            "枠1 / 1日1件   中央値+17.8%  最大DD -61.0%   ← 分散がなく危険。採用しないこと",
+            "枠2 / 1日1件   中央値+11.5%  最大DD -41.2%   ← 同上",
+            "枠3 / 1日1件   中央値+87.4%  最大DD -19.6%   ← 資金が小さいならここが下限",
+            "枠4 / 1日1件   中央値+71.7%  最大DD -21.6%",
+            "枠6 / 1日2件   中央値+109.3% 最大DD -23.3%",
+            "枠8 / 1日3件   中央値+95.7%  最大DD -22.9%   ← 既定値",
+            "※ 枠が3〜4しか取れないときは「1日に建てるのは1件だけ」にすること。",
+            "   同じ日に2件入れると建玉が同じ日の地合いに偏り、枠3では中央値が+87.4%→+47.5%に落ちた。"]):
+        rows.append(row(r + 5 + i, [cell("A%d" % (r + 5 + i), text=t, s=S["NOTE"])]))
+    r = r + 5 + 8
+    cols = [col_def(1, 1, 30), col_def(2, 2, 12), col_def(3, 3, 78)]
     return sheet_xml("A1:C%d" % (r + 1), rows, cols)
 
 
@@ -369,10 +386,13 @@ def build_judge(S):
         c.append(cell("W%d" % r, f='IF($S{r}="◎買い",ROUND($D{r}*(1-{p}/100),1),"")'.format(r=r, p=R("損切り %")), s=S["NUM1"]))
         c.append(cell("X%d" % r, f='IF($S{r}="◎買い",{p}/{k},"")'.format(r=r, p=R("損切り %"), k=R("資金の枠数")), s=S["NUM1"]))
         c.append(cell("Y%d" % r, f=g.format(r=r, body="$Q{r}+(10000-ROW())/100000".format(r=r)), s=S["NUM1"]))
+        c.append(cell("Z%d" % r, f=g.format(r=r, body="$D{r}*{u}".format(r=r, u=R("1単元の株数"))), s=S["NUM0"]))
+        c.append(cell("AA%d" % r, f=g.format(r=r, body=(
+            'IF($Z{r}<={cap}/{k},"○","×（1枠に入らない）")'.format(r=r, cap=R("総資金（円）"), k=R("資金の枠数")))), s=S["CTR"]))
         rows.append(row(r, c))
 
     cols = [col_def(i + 1, i + 1, w) for i, (_c, _l, w, _s) in enumerate(HEAD)]
-    return sheet_xml("A1:Y%d" % ROWN, rows, cols, freeze=(3, 5))
+    return sheet_xml("A1:AA%d" % ROWN, rows, cols, freeze=(3, 5))
 
 
 # ---------------------------------------------------------------------------
@@ -393,7 +413,9 @@ TOP_COLS = [
     ("L", "20日\n騰落率", 9, "PCT", "P"),
     ("M", "エントリー\n(翌日寄付)", 12, "NUM1", "V"),
     ("N", "損切り\n価格", 11, "NUM1", "W"),
-    ("O", "株探", 7, "CTR", None),
+    ("O", "必要資金\n(100株)", 12, "NUM0", "Z"),
+    ("P", "資金枠に\n収まるか", 12, "CTR", "AA"),
+    ("Q", "株探", 7, "CTR", None),
 ]
 
 
@@ -423,17 +445,25 @@ def build_top(S):
             f = ('IFERROR(INDEX({j}!${s}${a}:${s}${b},MATCH(LARGE({j}!$Y${a}:$Y${b},$A{r}),'
                  '{j}!$Y${a}:$Y${b},0)),"")').format(j=J, s=src, a=ROW1, b=ROWN, r=r)
             c.append(cell("%s%d" % (col, r), f=f, s=S[st]))
-        c.append(cell("O%d" % r, f='IF($B{r}="","",HYPERLINK("https://kabutan.jp/stock/?code="&$B{r},"📈"))'.format(r=r), s=S["CTR"]))
+        c.append(cell("Q%d" % r, f='IF($B{r}="","",HYPERLINK("https://kabutan.jp/stock/?code="&$B{r},"📈"))'.format(r=r), s=S["CTR"]))
         rows.append(row(r, c))
 
     r = 5 + TOPN + 1
     notes = [
         "■ 発注の手順",
-        "1. 「総合判定」が ◎買い の銘柄を上から最大3件選ぶ（空き枠がある分だけ）。",
+        "1. 「総合判定」が ◎買い の銘柄を上から選ぶ。ただし",
+        "   ・空いている枠の数だけ（枠が埋まっていればその日は買わない）",
+        "   ・1日に建てるのは最大3件まで（枠が3〜4しかないときは1件まで）",
+        "   ・「資金枠に収まるか」が × の銘柄は飛ばして、次の候補を見る",
         "2. 翌営業日の寄付（始値）で買う。指値にせず寄成でよい。",
         "3. 買えたら、その場で損切り価格（N列）に逆指値を置く。",
         "4. 10営業日たったら、損益に関わらず引けで手仕舞う。",
         "5. 利確目標は置かない。含み益が伸びても途中で降りない（検証では利確を置くと期待値が6割落ちた）。",
+        "",
+        "■ 1日に何件買うことになるのか",
+        "実測では250営業日で248件、つまり1日あたり平均1.0件でした。",
+        "0件の日が39.6%、1件が30.0%、2件が22.0%、3件buyできた日は8.4%（21日）だけです。",
+        "平均保有7.6日なので、1日に空く枠はおよそ1つ。「最大3件」はその上限にすぎません。",
         "",
         "■ 守り分析官・攻め分析官の欄の読み方",
         "守り＝出来高2倍以上・MFI60以上・RSI75以下。厳しい代わりに1日1.5件しか出ない。",
@@ -447,7 +477,7 @@ def build_top(S):
         rows.append(row(r + i, [cell("A%d" % (r + i), text=t,
                                      s=S["SUB"] if t.startswith("■") else S["NOTE"])]))
     cols = [col_def(i + 1, i + 1, w) for i, (_c, _l, w, _s, _src) in enumerate(TOP_COLS)]
-    return sheet_xml("A1:O%d" % (r + len(notes)), rows, cols, tab_selected=True)
+    return sheet_xml("A1:Q%d" % (r + len(notes)), rows, cols, tab_selected=True)
 
 
 # ---------------------------------------------------------------------------

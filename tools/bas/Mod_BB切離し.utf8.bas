@@ -45,6 +45,7 @@ Private Sub 価格送信(ByVal silent As Boolean)
     Dim srcWs As Worksheet, dstWs As Worksheet
     Dim calcMode As XlCalculation, opened As Boolean
     Dim msg As String, hits As Variant
+    Dim 今のシート As String
 
     path = BB816のパス(silent)
     If path = "" Then Exit Sub
@@ -75,9 +76,25 @@ Private Sub 価格送信(ByVal silent As Boolean)
             MsgBox BB_FILE & " に「" & nm & "」シートがありません。", vbExclamation, "BB816連携"
             GoTo 後始末
         End If
+        ' 転送先が保護されていたら解除する（保護されたままだと実行時エラー1004になる）
+        If dstWs.ProtectContents Then
+            On Error Resume Next
+            dstWs.Unprotect
+            On Error GoTo 失敗
+            If dstWs.ProtectContents Then
+                MsgBox BB_FILE & " の「" & nm & "」シートに、パスワード付きのシート保護が" & vbCrLf & _
+                       "かかっているため書き込めません。" & vbCrLf & vbCrLf & _
+                       "校閲タブ → シート保護の解除 で外してから、もう一度実行してください。", _
+                       vbExclamation, "BB816連携"
+                GoTo 後始末
+            End If
+        End If
+
         ' 値だけを丸ごと転送する（RSSの数式は持ち込まない）
+        今のシート = CStr(nm)
         dstWs.Range(COPY_RANGE).Value = srcWs.Range(COPY_RANGE).Value
     Next nm
+    今のシート = ""
 
     Application.Calculation = xlCalculationAutomatic
     wb.Application.CalculateFullRebuild
@@ -112,8 +129,14 @@ Private Sub 価格送信(ByVal silent As Boolean)
     Application.EnableEvents = True
     Application.ScreenUpdating = True
     If Not silent Then
-        MsgBox "BB816への転送に失敗しました。" & vbCrLf & _
-               Err.Number & " : " & Err.Description, vbExclamation, "BB816 連携"
+        msg = "BB816への転送に失敗しました。" & vbCrLf
+        If 今のシート <> "" Then msg = msg & "（「" & 今のシート & "」シートの転送中）" & vbCrLf
+        msg = msg & Err.Number & " : " & Err.Description
+        If Err.Number = 1004 Then
+            msg = msg & vbCrLf & vbCrLf & _
+                  "BB816.xlsx を開いて、校閲タブ → シート保護の解除 を試してください。"
+        End If
+        MsgBox msg, vbExclamation, "BB816 連携"
     End If
 End Sub
 

@@ -86,6 +86,8 @@ log = []
 
 def strip_rel_parts(xml: str) -> str:
     """rel（別パーツ）を指す要素を落とす。独立版には図形もプリンタ設定も持ち込まない。"""
+    # パスワード付きのシート保護も外す。独立版に株価を書き込めなくなるため。
+    xml = re.sub(r"<sheetProtection[^>]*/>", "", xml)
     xml = re.sub(r'<drawing\s+r:id="[^"]*"\s*/>', "", xml)
     xml = re.sub(r'<legacyDrawing\s+r:id="[^"]*"\s*/>', "", xml)
     xml = re.sub(r'<picture\s+r:id="[^"]*"\s*/>', "", xml)

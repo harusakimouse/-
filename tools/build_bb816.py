@@ -215,6 +215,10 @@ def extend_styles(xml):
 # 価格シート（V815 からコピーして値に固定）
 # ---------------------------------------------------------------------------
 def flatten(xml):
+    # V815 の価格シートにはパスワード付きのシート保護がかかっている。
+    # そのまま持ち込むと BB816 側へ株価を書き込めない（実行時エラー1004）ので外す。
+    # BB816 は計算専用の派生ブックなので、保護しておく理由もない。
+    xml = re.sub(r"<sheetProtection[^>]*/>", "", xml)
     xml = re.sub(r'<drawing\s+r:id="[^"]*"\s*/>', "", xml)
     xml = re.sub(r'<legacyDrawing\s+r:id="[^"]*"\s*/>', "", xml)
     xml = re.sub(r"<controls>.*?</controls>", "", xml, flags=re.S)
@@ -661,6 +665,9 @@ def verify(names):
         if nm in [p[0] for p in PRICE]:
             price_f += z.read("xl/worksheets/sheet%d.xml" % i).decode("utf-8").count("<f")
     assert price_f == 0, "価格シートに数式が残っている"
+    for i in range(1, n_sheets + 1):
+        xml = z.read("xl/worksheets/sheet%d.xml" % i).decode("utf-8")
+        assert "<sheetProtection" not in xml, "%s にシート保護が残っている（株価を書き込めなくなる）" % names[i - 1]
 
     out = ["", "  自己点検",
            "    XML パース      : %d パート OK" % len(z.namelist()),

@@ -5,12 +5,14 @@ import re, math, shutil, zipfile, sys, os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from xmlcell import set_formula, set_number, set_text, set_cell, widen_dimension, esc
 import values as VAL
+import panel as PANEL
 
 _wbv, _S, _CODES = VAL.load()
 _K = _wbv['管理']
 def _kv(col, row):
     return _K[col + str(row)].value
 CACHE = {}          # 計算済みキャッシュ値（"シート!参照" -> 値）
+PANELV = {}         # 発注リスト用（発注No -> 値）
 
 SRC = '/tmp/claude-0/-home-user--/8b86e642-77b1-5b85-a6ca-fce6f257f782/scratchpad/v816/V816.xlsm'
 DST = '/tmp/claude-0/-home-user--/8b86e642-77b1-5b85-a6ca-fce6f257f782/scratchpad/v817/V817.xlsm'
@@ -108,6 +110,7 @@ m = set_text(m, 'N3', '損切ライン（V811設定連動）')
 m = set_text(m, 'P3', '建玉後 高値')
 m = set_text(m, 'Q3', '建玉後 安値')
 m = set_text(m, 'Y3', '推奨株数')
+m = set_text(m, 'AB3', '発注No')
 m = set_text(m, 'K1', '🔴損切推奨')
 
 # サマリー：ステータス文字列に依存しない集計へ
@@ -184,6 +187,20 @@ for r in range(4, 462):
                '⏱時間決済': '⏱時間STOP推奨', '⚠️損切接近': '⚠️損切注意'}.get(
             _O, '🟡利確直近' if (_wid != '' and _l >= _wid / 100 * B4v * 0.8) else '📌保有中')
     CACHE['S%d' % r] = _Sv
+    if _b not in (None, '') and _t_ in (None, ''):
+        _todo = ('（建値の確定待ち：まだ注文を出さない）' if not isinstance(_f, (int, float)) else
+                 '▶ 利確：成行で決済' if _O == '🟢利確' else
+                 '▶ 損切：成行で決済' if _O == '🔴損切' else
+                 '▶ トレーリング到達：成行で決済' if _O == '🟠TRAIL' else
+                 '▶ 期日到来：成行で決済' if _O == '⏱時間決済' else
+                 ('⬆ 逆指値を {:,.0f} に変更'.format(_R)
+                  if (_R != '' and _N != '' and ((_R < _N) if _sell else (_R > _N)))
+                  else 'そのまま'))
+        _g = _kv('G', r)
+        PANELV[len(PANELV) + 1] = dict(
+            row=r, B=_b, D=_kv('D', r), C=_c, F=_f, N=_N, M=_M,
+            AE=_AE, R=_R, O=_O, todo=_todo,
+            qty=(_g if isinstance(_g, (int, float)) and _g > 0 else (_q if _q != 0 else '')))
     _AE = VAL.workday(VAL._serial(_e), B6v) if _e else ''
     _Y = '' if _q == '' else ('⛔1単元でも超過' if _q == 0 else _q)
     m = set_formula(m, 'M%d' % r,
@@ -225,6 +242,12 @@ for r in range(4, 462):
         'IF($O{r}="⚠️損切接近","⚠️損切注意",'
         'IF($L{r}>={w}/100*V811設定!$B$4*0.8,"🟡利確直近","📌保有中")))))))))'.format(r=r, w=w), cached=_Sv)
     m = set_formula(m, 'AE%d' % r, 'IF($E{r}="","",WORKDAY($E{r},V811設定!$B$6))'.format(r=r), cached=_AE)
+    _no = (len([q for q in range(4, r + 1)
+                if _kv('B', q) not in (None, '') and _kv('T', q) in (None, '')])
+           if (_b not in (None, '') and _t_ in (None, '')) else '')
+    m = set_formula(m, 'AB%d' % r,
+        'IF(AND($B{r}<>"",$T{r}=""),COUNTIFS($B$4:$B{r},"<>",$T$4:$T{r},""),"")'.format(r=r),
+        cached=_no)
     m = set_formula(m, 'Y%d' % r,
         'IF(V811設定!$C{n}="","",IF(V811設定!$C{n}=0,"⛔1単元でも超過",V811設定!$C{n}))'.format(n=n), cached=_Y)
 m = set_formula(m, 'K2', 'COUNTIF($S:$S,"🔴損切推奨")&"件"',
@@ -443,10 +466,36 @@ X['変更履歴'] = (
 log.append('Sheet3 → 「V817変更履歴」にリネームし、変更内容と根拠を記載')
 
 # ============================================================
+# 6b. 発注リスト（旧 Sheet1）＋ ボタン5個
+# ============================================================
+parts['xl/worksheets/sheet21.xml'] = PANEL.build_sheet_xml(PANELV).encode('utf-8')
+parts['xl/worksheets/_rels/sheet21.xml.rels'] = PANEL.build_rels().encode('utf-8')
+parts['xl/drawings/vmlDrawing10.vml'] = PANEL.build_vml().encode('utf-8')
+if 'xl/drawings/vmlDrawing10.vml' not in order:
+    order.insert(order.index('xl/drawings/vmlDrawing9.vml') + 1, 'xl/drawings/vmlDrawing10.vml')
+ct = parts['[Content_Types].xml'].decode('utf-8')
+for i in range(len(PANEL.BUTTONS)):
+    name = 'xl/ctrlProps/ctrlProp%d.xml' % (17 + i)
+    parts[name] = PANEL.CTRLPROP.encode('utf-8')
+    if name not in order:
+        order.insert(order.index('xl/ctrlProps/ctrlProp16.xml') + 1 + i, name)
+    ov = ('<Override PartName="/%s" ContentType="application/vnd.ms-excel.controlproperties+xml"/>'
+          % name)
+    if ov not in ct:
+        ct = ct.replace('</Types>', ov + '</Types>')
+parts['[Content_Types].xml'] = ct.encode('utf-8')
+log.append('新シート「発注リスト」（旧Sheet1）を追加：保有中だけを詰めて表示し、'
+           'MS2に出す損切・利確・期日・トレーリングと「今日やること」を一覧化。'
+           '既存マクロを呼ぶボタン5個（損切りアラート／地合いチェック／勝率レポート／'
+           'データ更新／RSS接続チェック）を設置')
+
+# ============================================================
 # 7. workbook.xml
 # ============================================================
 w = X['workbook']
 w = w.replace('<sheet name="Sheet3" sheetId="28"', '<sheet name="V817変更履歴" sheetId="28"')
+w = w.replace('<sheet name="Sheet1" sheetId="18" state="hidden" r:id="rId21"/>',
+              '<sheet name="発注リスト" sheetId="18" r:id="rId21"/>')
 # fullCalcOnLoad は付けない：RSS未接続で開いたときにキャッシュ表示が消えるため
 X['workbook'] = w
 log.append('workbook.xml: シート名変更。fullCalcOnLoad は付けない（キャッシュ表示を保つ）')
@@ -457,8 +506,9 @@ log.append('workbook.xml: シート名変更。fullCalcOnLoad は付けない（
 parts['xl/workbook.xml'] = X['workbook'].encode('utf-8')
 for k, path in SH.items():
     parts[path] = X[k].encode('utf-8')
-app = parts['docProps/app.xml'].decode('utf-8').replace('<vt:lpstr>Sheet3</vt:lpstr>',
-                                                        '<vt:lpstr>V817変更履歴</vt:lpstr>')
+app = parts['docProps/app.xml'].decode('utf-8').replace(
+    '<vt:lpstr>Sheet3</vt:lpstr>', '<vt:lpstr>V817変更履歴</vt:lpstr>').replace(
+    '<vt:lpstr>Sheet1</vt:lpstr>', '<vt:lpstr>発注リスト</vt:lpstr>')
 parts['docProps/app.xml'] = app.encode('utf-8')
 
 # calcChain.xml は新規セルを含まないため削除。Excel が開いたときに作り直す。
@@ -476,9 +526,10 @@ if CHAIN in parts:
 
 zo = zipfile.ZipFile(DST, 'w', zipfile.ZIP_DEFLATED)
 for name in order:
-    zi = zipfile.ZipInfo(name, date_time=info[name].date_time)
-    zi.compress_type = info[name].compress_type
-    zi.external_attr = info[name].external_attr
+    src = info.get(name)
+    zi = zipfile.ZipInfo(name, date_time=src.date_time if src else (2026, 8, 9, 0, 0, 0))
+    zi.compress_type = src.compress_type if src else zipfile.ZIP_DEFLATED
+    zi.external_attr = src.external_attr if src else 0o600 << 16
     zo.writestr(zi, parts[name])
 zo.close()
 print('作成:', DST, os.path.getsize(DST), 'bytes  （元: %d bytes）' % os.path.getsize(SRC))

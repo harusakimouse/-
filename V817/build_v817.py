@@ -61,29 +61,35 @@ for gc, glab, hc, hval, ic, note in P:
 v = set_text(v, 'G12', '※ 損切幅は銘柄ごとに算出され、V811設定 F列（管理シート各行に対応）に出ます。')
 v = set_text(v, 'G13', '※ 利確幅 = 損切幅 × B4。抽出・分析・管理・自動注文決済の全シートがこの1組を参照します。')
 v = set_text(v, 'G14', '※ 数値の根拠は「V817変更履歴」シートを参照。')
+v = set_text(v, 'G15', '※ ATRは購入日時点で固定。建玉後にATRが変わっても損切・利確ラインは動きません（証券会社に置いた逆指値を出し直す必要なし）。')
 
 # ---- 補助テーブルに ATR / 損切幅 列を追加、推奨株数を修正 ----
-v = set_text(v, 'E16', 'ATR14(%)')
+v = set_text(v, 'E16', 'ATR14(%)【購入日時点で固定】')
 v = set_text(v, 'F16', '損切幅(%)')
 v = set_text(v, 'G16', '（推奨株数=0 は 100株でも B5 を超える＝見送り推奨）')
 v = set_text(v, 'I11', '← 1単元でも許容損失額を超え「見送り」になる行数')
 v = set_text(v, 'H11', '←')
 MROW = ('IFERROR(MATCH(管理!$B{k},銘柄管理!$B$6:$B$305,0),'
         'MATCH(TEXT(管理!$B{k},"0"),銘柄管理!$B$6:$B$305,0))')
-ATR = ('IF(管理!$B{k}="","",IFERROR((SUM(OFFSET(高値!$E$6,{mr}-1,0,1,$H$10))'
-       '-SUM(OFFSET(安値!$E$6,{mr}-1,0,1,$H$10)))'
-       '/SUM(OFFSET(終値!$E$6,{mr}-1,0,1,$H$10))*100,""))')
+# ATR は「購入日を最終日とする14日窓」で計算する。
+# 直近14日にすると建玉後もATRが毎日変わり、損切・利確ラインが日々動いてしまうため。
+ACOL = 'IFERROR(MATCH(管理!$E{k},高値!$E$3:$IT$3,0),1)-1'
+ATR = ('IF(管理!$B{k}="","",IFERROR((SUM(OFFSET(高値!$E$6,{mr}-1,{ac},1,$H$10))'
+       '-SUM(OFFSET(安値!$E$6,{mr}-1,{ac},1,$H$10)))'
+       '/SUM(OFFSET(終値!$E$6,{mr}-1,{ac},1,$H$10))*100,""))')
 WID = ('IF(管理!$B{k}="","",IF(AND($H$3=1,N(E{n})>0),MIN($H$6,MAX($H$5,E{n}*$H$4)),$B$3*100))')
 QTY = ('IF(OR(管理!$F{k}="",N(F{n})=0),"",ROUNDDOWN($B$5/(管理!$F{k}*(F{n}/100)*$H$7)/100,0)*100)')
 for n in range(17, 475):          # V811設定 行 n ↔ 管理 行 n-13
     k = n - 13
     code = _kv('B', k)
-    atr  = VAL.atr_pct(_S, _CODES, code) if code not in (None, '') else ''
+    atr  = (VAL.atr_pct(_S, _CODES, code, VAL._serial(_kv('E', k)))
+            if code not in (None, '') else '')
     wid  = VAL.stop_width(atr) if code not in (None, '') else ''
     ent  = _kv('F', k)
     qt   = VAL.qty(ent, wid) if (code not in (None, '') and wid != '') else ''
     CACHE['ATR%d' % k] = atr; CACHE['W%d' % k] = wid; CACHE['Q%d' % k] = qt
-    v = set_formula(v, 'E%d' % n, ATR.format(k=k, mr=MROW.format(k=k)), cached=atr)
+    v = set_formula(v, 'E%d' % n,
+                    ATR.format(k=k, mr=MROW.format(k=k), ac=ACOL.format(k=k)), cached=atr)
     v = set_formula(v, 'F%d' % n, WID.format(k=k, n=n), cached=wid)
     v = set_formula(v, 'C%d' % n, QTY.format(k=k, n=n), cached=qt)
 v = set_formula(v, 'G11', 'COUNTIF($C$17:$C$474,0)&"件"',
@@ -269,7 +275,8 @@ log.append('分析/売分析: R・S列 204行をV811設定連動に置換（3行
 o = X['自動注文決済']
 _ord = _wbv['自動注文決済']
 _c3 = _ord['C3'].value
-_c24 = VAL.atr_pct(_S, _CODES, _c3) if _c3 not in (None, '') else ''
+_c24 = (VAL.atr_pct(_S, _CODES, _c3, VAL._serial(_ord['C11'].value))
+        if _c3 not in (None, '') else '')
 _c17 = VAL.stop_width(_c24); _c18 = _c17 * VAL.B4
 _c19 = round(_c24 * VAL.H8, 2) if isinstance(_c24, (int, float)) and _c24 > 0 else _c17
 _c20 = round(_c24 * VAL.H9, 2) if isinstance(_c24, (int, float)) and _c24 > 0 else round(_c17 * 0.75, 2)
@@ -277,11 +284,12 @@ _c11 = _ord['C11'].value
 _c40 = VAL.workday(VAL._serial(_c11), VAL.B6) if _c11 else ''
 o = set_text(o, 'B24', 'ATR14(%)（自動）')
 o = set_formula(o, 'C24',
-    'IFERROR((SUM(OFFSET(高値!$E$6,MATCH(TEXT($C$3,"0"),TEXT(銘柄管理!$B$6:$B$305,"0"),0)-1,0,1,'
-    'V811設定!$H$10))-SUM(OFFSET(安値!$E$6,MATCH(TEXT($C$3,"0"),TEXT(銘柄管理!$B$6:$B$305,"0"),0)'
-    '-1,0,1,V811設定!$H$10)))/SUM(OFFSET(終値!$E$6,MATCH(TEXT($C$3,"0"),'
-    'TEXT(銘柄管理!$B$6:$B$305,"0"),0)-1,0,1,V811設定!$H$10))*100,"")', cached=_c24)
-o = set_text(o, 'D24', 'V811設定!H10 日間の平均レンジ率。損切幅の算出に使用')
+    'IFERROR((SUM(OFFSET(高値!$E$6,{mr}-1,{ac},1,V811設定!$H$10))'
+    '-SUM(OFFSET(安値!$E$6,{mr}-1,{ac},1,V811設定!$H$10)))'
+    '/SUM(OFFSET(終値!$E$6,{mr}-1,{ac},1,V811設定!$H$10))*100,"")'.format(
+        mr='IFERROR(MATCH($C$3,銘柄管理!$B$6:$B$305,0),MATCH(TEXT($C$3,"0"),銘柄管理!$B$6:$B$305,0))',
+        ac='IFERROR(MATCH($C$11,高値!$E$3:$IT$3,0),1)-1'), cached=_c24)
+o = set_text(o, 'D24', '建日(C11)を最終日とする H10 日間の平均レンジ率。建玉後は動きません')
 o = set_formula(o, 'C17', cached=_c17, formula='IF(AND(V811設定!$H$3=1,N(C24)>0),MIN(V811設定!$H$6,'
                           'MAX(V811設定!$H$5,C24*V811設定!$H$4)),V811設定!$B$3*100)')
 o = set_formula(o, 'C18', cached=_c18, formula='C17*V811設定!$B$4')
@@ -354,6 +362,10 @@ CH = [
  ('V811設定!E3','抽出ゲートの14日平均レンジ率 上限 2.2% → 3.5%（効率をほぼ保ったまま候補が26%→59%に）'),
  ('V811設定!E12','売りは 0（停止）のまま。売りは全設定で −0.16〜−0.18R'),
  ('V811設定!E17:F474','各行のATR14(%)と損切幅(%)を算出（管理シート4〜461行に対応）'),
+ ('★ ATRは購入日で固定','ATRの14日窓を「購入日を最終日」に固定。直近14日にすると建玉後もATRが毎日変わり、'),
+ ('','損切・利確ラインが日々動いてしまう（実測で5営業日に最大1.92%移動）。'),
+ ('','証券会社に置いた逆指値・指値は建玉時に1回出せばよく、出し直す必要はありません。'),
+ ('','動くのはトレーリング(管理R列)だけで、しかも有利方向へのラチェットのみです。'),
  ('V811設定!C17:C474','推奨株数を「許容損失額 ÷（建値×損切幅×窓抜け安全率）」に修正。'),
  ('','下限100株を撤廃：1単元でも許容損失を超える銘柄は0（＝見送り推奨）を返す'),
  ('',''),

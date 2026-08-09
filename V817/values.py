@@ -70,17 +70,25 @@ def code_row(codes, code):
     return codes.get(str(code).strip())
 
 
-def atr_pct(S, codes, code):
-    """V811指標C列と同じ定義：(Σ高値 − Σ安値) ÷ Σ終値 × 100（直近H10日）"""
+def atr_pct(S, codes, code, anchor_serial=None):
+    """(Σ高値 − Σ安値) ÷ Σ終値 × 100 を H10 日分。
+       anchor_serial を渡すと、その日を最新日とする14日窓で計算（＝建玉時点で固定）。"""
     r = code_row(codes, code)
     if r is None:
         return ''
+    off = 0
+    if anchor_serial is not None:
+        try:
+            off = S['高値']['dates'].index(anchor_serial)
+        except ValueError:
+            off = 0
     hi, lo, cl = S['高値']['rows'][r], S['安値']['rows'][r], S['終値']['rows'][r]
     sh = sl = sc = 0.0
-    for i in range(H10):
-        for src, acc in ((hi, 'h'), (lo, 'l'), (cl, 'c')):
-            v = src[i]
-            if not isinstance(v, (int, float)):
+    for i in range(off, off + H10):
+        if i >= len(hi):
+            return ''
+        for src in (hi, lo, cl):
+            if not isinstance(src[i], (int, float)):
                 return ''
         sh += hi[i]; sl += lo[i]; sc += cl[i]
     if sc <= 0:

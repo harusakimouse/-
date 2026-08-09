@@ -81,8 +81,9 @@ Sub MS2_Set_RssMarket_Formulas()
             ws.Cells(i, "G").Formula = "=RssMarket(""" & code & """,""安値"")"
             ws.Cells(i, "H").Formula = "=RssMarket(""" & code & """,""終値"")"
             ws.Cells(i, "I").Formula = "=RssMarket(""" & code & """,""出来高"")"
-            ws.Cells(i, "J").Formula = "=RssMarket(""" & code & """,""前日高値"")"
-            ws.Cells(i, "K").Formula = "=RssMarket(""" & code & """,""前日安値"")"
+            ' J:前日高値 / K:前日安値 はRSS非対応。MS2_Load_PrevDay で反映するためここでは消去
+            ws.Cells(i, "J").ClearContents
+            ws.Cells(i, "K").ClearContents
             ws.Cells(i, "L").Formula = "=RssMarket(""" & code & """,""前日終値"")"
         End If
     Next i
@@ -487,6 +488,96 @@ NextI:
 End Sub
 
 '============================================================
+' 前日高値・安値ストア（RSS非対応の代替）
+'   PREVDAY_MS2（隠し）: A=コード B=前日高値 C=前日安値 D=保存日時
+'   運用: 引け後に MS2_Save_PrevDay で当日高安を保存 →
+'         翌営業日に MS2_Load_PrevDay（または全自動）で J/K に反映
+'============================================================
+Private Function MS2_Get_PrevDay() As Worksheet
+    Dim ws As Worksheet
+    On Error Resume Next
+    Set ws = Sheets("PREVDAY_MS2")
+    On Error GoTo 0
+    If ws Is Nothing Then
+        Set ws = Sheets.Add(After:=Sheets(Sheets.Count))
+        ws.Name = "PREVDAY_MS2"
+        ws.Range("A1").Value = "銘柄コード"
+        ws.Range("B1").Value = "前日高値"
+        ws.Range("C1").Value = "前日安値"
+        ws.Range("D1").Value = "保存日時"
+        ws.Visible = xlSheetHidden
+    End If
+    Set MS2_Get_PrevDay = ws
+End Function
+
+'   引け後：DATA_MS2 の当日 高値(F)/安値(G) を PREVDAY_MS2 に保存
+Sub MS2_Save_PrevDay()
+    Dim wsD As Worksheet, wsP As Worksheet
+    Dim i As Long, lastRow As Long, pr As Long, hLast As Long, cnt As Long
+    Dim code As String, hi As Double, lo As Double
+    Dim dict As Object
+    Set wsD = Sheets("DATA_MS2")
+    Set wsP = MS2_Get_PrevDay()
+    Set dict = CreateObject("Scripting.Dictionary")
+    hLast = wsP.Cells(wsP.Rows.Count, "A").End(xlUp).Row
+    For pr = 2 To hLast
+        code = Trim(CStr(wsP.Cells(pr, "A").Value))
+        If code <> "" Then dict(code) = pr
+    Next pr
+    lastRow = wsD.Cells(wsD.Rows.Count, "C").End(xlUp).Row
+    cnt = 0
+    For i = DATA_FIRST To lastRow
+        code = Trim(CStr(wsD.Cells(i, "C").Value))
+        If code = "" Then GoTo NextI
+        hi = NzD(wsD.Cells(i, "F").Value)
+        lo = NzD(wsD.Cells(i, "G").Value)
+        If hi <= 0 And lo <= 0 Then GoTo NextI
+        If dict.Exists(code) Then
+            pr = dict(code)
+        Else
+            pr = wsP.Cells(wsP.Rows.Count, "A").End(xlUp).Row + 1
+            If pr < 2 Then pr = 2
+            wsP.Cells(pr, "A").Value = code
+            dict(code) = pr
+        End If
+        wsP.Cells(pr, "B").Value = hi
+        wsP.Cells(pr, "C").Value = lo
+        wsP.Cells(pr, "D").Value = Now
+        cnt = cnt + 1
+NextI:
+    Next i
+    MsgBox "本日の高値・安値を『前日値』として保存しました（" & cnt & "銘柄）。" & vbCrLf & _
+           "翌営業日に『前日値反映_MS2』または『全自動』で J:前日高値 / K:前日安値 に入ります。", vbInformation, "MS2"
+End Sub
+
+'   PREVDAY_MS2 の値を DATA_MS2 の J:前日高値 / K:前日安値 に反映（値）
+Sub MS2_Load_PrevDay()
+    Dim wsD As Worksheet, wsP As Worksheet
+    Dim i As Long, lastRow As Long, pr As Long, hLast As Long
+    Dim code As String
+    Dim dict As Object
+    Set wsD = Sheets("DATA_MS2")
+    Set wsP = MS2_Get_PrevDay()
+    Set dict = CreateObject("Scripting.Dictionary")
+    hLast = wsP.Cells(wsP.Rows.Count, "A").End(xlUp).Row
+    For pr = 2 To hLast
+        code = Trim(CStr(wsP.Cells(pr, "A").Value))
+        If code <> "" Then dict(code) = pr
+    Next pr
+    lastRow = wsD.Cells(wsD.Rows.Count, "C").End(xlUp).Row
+    For i = DATA_FIRST To lastRow
+        code = Trim(CStr(wsD.Cells(i, "C").Value))
+        If code = "" Then GoTo NextI
+        If dict.Exists(code) Then
+            pr = dict(code)
+            wsD.Cells(i, "J").Value = NzD(wsP.Cells(pr, "B").Value)
+            wsD.Cells(i, "K").Value = NzD(wsP.Cells(pr, "C").Value)
+        End If
+NextI:
+    Next i
+End Sub
+
+'============================================================
 ' ログ表示
 '============================================================
 Sub MS2_Show_Log()
@@ -552,6 +643,7 @@ End Sub
 '============================================================
 Sub MS2_Auto_All()
     MS2_Set_RssMarket_Formulas
+    MS2_Load_PrevDay
     MS2_Calc_ATR_5min_14
     MS2_Stock_Logic_Run
     MS2_Eval_Trades
@@ -593,6 +685,8 @@ Sub MS2_Build_Menu()
         "ランキング_MS2", "MS2_Update_Ranking", _
         "ヘッダー修復_MS2", "MS2_Fix_DATA_Header", _
         "ATR履歴リセット_MS2", "MS2_Reset_ATR_History", _
+        "前日値保存_MS2", "MS2_Save_PrevDay", _
+        "前日値反映_MS2", "MS2_Load_PrevDay", _
         "ログ_MS2", "MS2_Show_Log", _
         "全自動_MS2", "MS2_Auto_All")
 

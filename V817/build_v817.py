@@ -1,9 +1,16 @@
 # -*- coding: utf-8 -*-
 """V816.xlsm → V817.xlsm : 第2版レポートの訂正・修正を OOXML 直編集で反映する。
 VBA(vbaProject.bin)・図形・フォームコントロール等はバイト単位でそのまま引き継ぐ。"""
-import re, shutil, zipfile, sys, os
+import re, math, shutil, zipfile, sys, os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from xmlcell import set_formula, set_number, set_text, set_cell, widen_dimension, esc
+import values as VAL
+
+_wbv, _S, _CODES = VAL.load()
+_K = _wbv['管理']
+def _kv(col, row):
+    return _K[col + str(row)].value
+CACHE = {}          # 計算済みキャッシュ値（"シート!参照" -> 値）
 
 SRC = '/tmp/claude-0/-home-user--/8b86e642-77b1-5b85-a6ca-fce6f257f782/scratchpad/v816/V816.xlsm'
 DST = '/tmp/claude-0/-home-user--/8b86e642-77b1-5b85-a6ca-fce6f257f782/scratchpad/v817/V817.xlsm'
@@ -22,6 +29,7 @@ X = {k: parts[v].decode('utf-8') for k, v in SH.items()}
 X['workbook'] = parts['xl/workbook.xml'].decode('utf-8')
 log = []
 
+B4v, B6v, H8v, H9v = VAL.B4, VAL.B6, VAL.H8, VAL.H9
 TICK = ('IF($F{r}<=3000,1,IF($F{r}<=5000,5,IF($F{r}<=30000,10,'
         'IF($F{r}<=50000,50,IF($F{r}<=300000,100,500)))))')
 
@@ -59,20 +67,27 @@ v = set_text(v, 'E16', 'ATR14(%)')
 v = set_text(v, 'F16', '損切幅(%)')
 v = set_text(v, 'G16', '（推奨株数=0 は 100株でも B5 を超える＝見送り推奨）')
 v = set_text(v, 'I11', '← 1単元でも許容損失額を超え「見送り」になる行数')
-v = set_formula(v, 'G11', 'COUNTIF($C$17:$C$474,0)&"件"')
 v = set_text(v, 'H11', '←')
-ATR = ('IF(管理!$B{k}="","",IFERROR((SUM(OFFSET(高値!$E$6,MATCH(TEXT(管理!$B{k},"0"),'
-       'TEXT(銘柄管理!$B$6:$B$305,"0"),0)-1,0,1,$H$10))-SUM(OFFSET(安値!$E$6,'
-       'MATCH(TEXT(管理!$B{k},"0"),TEXT(銘柄管理!$B$6:$B$305,"0"),0)-1,0,1,$H$10)))'
-       '/SUM(OFFSET(終値!$E$6,MATCH(TEXT(管理!$B{k},"0"),TEXT(銘柄管理!$B$6:$B$305,"0"),0)'
-       '-1,0,1,$H$10))*100,""))')
+MROW = ('IFERROR(MATCH(管理!$B{k},銘柄管理!$B$6:$B$305,0),'
+        'MATCH(TEXT(管理!$B{k},"0"),銘柄管理!$B$6:$B$305,0))')
+ATR = ('IF(管理!$B{k}="","",IFERROR((SUM(OFFSET(高値!$E$6,{mr}-1,0,1,$H$10))'
+       '-SUM(OFFSET(安値!$E$6,{mr}-1,0,1,$H$10)))'
+       '/SUM(OFFSET(終値!$E$6,{mr}-1,0,1,$H$10))*100,""))')
 WID = ('IF(管理!$B{k}="","",IF(AND($H$3=1,N(E{n})>0),MIN($H$6,MAX($H$5,E{n}*$H$4)),$B$3*100))')
 QTY = ('IF(OR(管理!$F{k}="",N(F{n})=0),"",ROUNDDOWN($B$5/(管理!$F{k}*(F{n}/100)*$H$7)/100,0)*100)')
 for n in range(17, 475):          # V811設定 行 n ↔ 管理 行 n-13
     k = n - 13
-    v = set_formula(v, 'E%d' % n, ATR.format(k=k))
-    v = set_formula(v, 'F%d' % n, WID.format(k=k, n=n))
-    v = set_formula(v, 'C%d' % n, QTY.format(k=k, n=n))
+    code = _kv('B', k)
+    atr  = VAL.atr_pct(_S, _CODES, code) if code not in (None, '') else ''
+    wid  = VAL.stop_width(atr) if code not in (None, '') else ''
+    ent  = _kv('F', k)
+    qt   = VAL.qty(ent, wid) if (code not in (None, '') and wid != '') else ''
+    CACHE['ATR%d' % k] = atr; CACHE['W%d' % k] = wid; CACHE['Q%d' % k] = qt
+    v = set_formula(v, 'E%d' % n, ATR.format(k=k, mr=MROW.format(k=k)), cached=atr)
+    v = set_formula(v, 'F%d' % n, WID.format(k=k, n=n), cached=wid)
+    v = set_formula(v, 'C%d' % n, QTY.format(k=k, n=n), cached=qt)
+v = set_formula(v, 'G11', 'COUNTIF($C$17:$C$474,0)&"件"',
+                cached='%d件' % sum(1 for kk in range(4, 462) if CACHE.get('Q%d' % kk) == 0))
 v = widen_dimension(v, 'I474')
 X['V811設定'] = v
 log.append('V811設定: B3/B4 再定義、E3=3.5、出口ルール詳細ブロック(G2:I14)追加、'
@@ -90,11 +105,19 @@ m = set_text(m, 'Y3', '推奨株数')
 m = set_text(m, 'K1', '🔴損切推奨')
 
 # サマリー：ステータス文字列に依存しない集計へ
-m = set_formula(m, 'B2', 'COUNTIFS($B$4:$B$461,"<>",$T$4:$T$461,"")&"件"')
-m = set_formula(m, 'E2', 'SUMIFS($K$4:$K$461,$B$4:$B$461,"<>",$T$4:$T$461,"")')
-m = set_formula(m, 'K2', 'COUNTIF($S:$S,"🔴損切推奨")&"件"')
+_open = [r for r in range(4, 462)
+         if _kv('B', r) not in (None, '') and _kv('T', r) in (None, '')]
+_unreal = sum(_kv('K', r) for r in _open if isinstance(_kv('K', r), (int, float)))
+m = set_formula(m, 'B2', 'COUNTIFS($B$4:$B$461,"<>",$T$4:$T$461,"")&"件"',
+                cached='%d件' % len(_open))
+# E2 は V816 から書式が m/d;@（日付）で、含み損益が日付として表示されていた。
+# D2（確定損益）と同じ #,##0 の書式に付け替える。
+m = re.sub(r'<c r="E2" s="\d+"', '<c r="E2" s="549"', m, count=1)
+m = set_formula(m, 'E2', 'SUMIFS($K$4:$K$461,$B$4:$B$461,"<>",$T$4:$T$461,"")', cached=_unreal)
+_K2 = 'PLACEHOLDER_K2'
 
-ROWOFF = 'MATCH(TEXT($B{r},"0"),TEXT(銘柄管理!$B$6:$B$305,"0"),0)-1'
+ROWOFF = ('IFERROR(MATCH($B{r},銘柄管理!$B$6:$B$305,0),'
+          'MATCH(TEXT($B{r},"0"),銘柄管理!$B$6:$B$305,0))-1')
 WIN    = 'MAX(1,IFERROR(MATCH($E{r},高値!$E$3:$IT$3,0),10)-1)'
 W_     = 'V811設定!$F{n}'      # その行の損切幅(%)
 A_     = 'V811設定!$E{n}'      # その行のATR(%)
@@ -102,18 +125,73 @@ A_     = 'V811設定!$E{n}'      # その行のATR(%)
 for r in range(4, 462):
     n = r + 13
     t = TICK.format(r=r); w = W_.format(n=n); a = A_.format(n=n)
+    # ---- キャッシュ値の再現 ----
+    _b, _c, _e = _kv('B', r), _kv('C', r), _kv('E', r)
+    _f, _h, _l = _kv('F', r), _kv('H', r), _kv('L', r)
+    _t_, _w_ = _kv('T', r), _kv('W', r)
+    _wid, _atr, _q = CACHE.get('W%d' % r, ''), CACHE.get('ATR%d' % r, ''), CACHE.get('Q%d' % r, '')
+    _has = isinstance(_f, (int, float)) and _wid != ''
+    _sell = (_c == '売')
+    if _has:
+        _tk = VAL.tick(_f)
+        _M = (VAL.CEILING(_f * (1 - _wid / 100 * B4v), _tk) if _sell
+              else VAL.FLOOR(_f * (1 + _wid / 100 * B4v), _tk))
+        _N = (VAL.CEILING(_f * (1 + _wid / 100), _tk) if _sell
+              else VAL.FLOOR(_f * (1 - _wid / 100), _tk))
+    else:
+        _M = _N = ''
+    _P = VAL.post_entry_extreme(_S, _CODES, _b, VAL._serial(_e), True) if _b not in (None, '') and _e else ''
+    _Q = VAL.post_entry_extreme(_S, _CODES, _b, VAL._serial(_e), False) if _b not in (None, '') and _e else ''
+    # R（トレーリング）
+    if not _has or not isinstance(_h, (int, float)) or _N == '':
+        _R = ''
+    elif _t_ not in (None, ''):
+        _R = ''
+    elif _sell:
+        _R = _N if (_Q == '' or _Q > _f * (1 - _atr / 100 * H8v)) else min(_N, _Q * (1 + _atr / 100 * H9v))
+    else:
+        _R = _N if (_P == '' or _P < _f * (1 + _atr / 100 * H8v)) else max(_N, _P * (1 - _atr / 100 * H9v))
+    # O（判断）
+    if _b in (None, '') or not isinstance(_f, (int, float)) or not isinstance(_h, (int, float)):
+        _O = ''
+    elif _t_ not in (None, ''):
+        _O = '―決済済―'
+    else:
+        _wd = _w_ if isinstance(_w_, (int, float)) else 0
+        if _sell:
+            _O = ('🟢利確' if _h <= _M else '🟠TRAIL' if (_R != '' and _h >= _R)
+                  else '🔴損切' if _h >= _N else '⏱時間決済' if _wd >= B6v
+                  else '⚠️損切接近' if _h >= _f * (1 + _wid / 100 * 0.7) else '保持継続')
+        else:
+            _O = ('🟢利確' if _h >= _M else '🟠TRAIL' if (_R != '' and _h <= _R)
+                  else '🔴損切' if _h <= _N else '⏱時間決済' if _wd >= B6v
+                  else '⚠️損切接近' if _h <= _f * (1 - _wid / 100 * 0.7) else '保持継続')
+    # S（ステータス）
+    if _b in (None, ''):
+        _Sv = ''
+    elif _t_ not in (None, ''):
+        _Sv = '✅売却済'
+    elif not isinstance(_h, (int, float)) or not isinstance(_l, (int, float)):
+        _Sv = '📌保有中'
+    else:
+        _Sv = {'🟢利確': '🟢利確推奨', '🟠TRAIL': '🟠TRAIL STOP推奨', '🔴損切': '🔴損切推奨',
+               '⏱時間決済': '⏱時間STOP推奨', '⚠️損切接近': '⚠️損切注意'}.get(
+            _O, '🟡利確直近' if (_wid != '' and _l >= _wid / 100 * B4v * 0.8) else '📌保有中')
+    CACHE['S%d' % r] = _Sv
+    _AE = VAL.workday(VAL._serial(_e), B6v) if _e else ''
+    _Y = '' if _q == '' else ('⛔1単元でも超過' if _q == 0 else _q)
     m = set_formula(m, 'M%d' % r,
         'IF($F{r}="","",IF($C{r}="売",CEILING($F{r}*(1-{w}/100*V811設定!$B$4),{t}),'
-        'FLOOR($F{r}*(1+{w}/100*V811設定!$B$4),{t})))'.format(r=r, w=w, t=t))
+        'FLOOR($F{r}*(1+{w}/100*V811設定!$B$4),{t})))'.format(r=r, w=w, t=t), cached=_M)
     m = set_formula(m, 'N%d' % r,
         'IF($F{r}="","",IF($C{r}="売",CEILING($F{r}*(1+{w}/100),{t}),'
-        'FLOOR($F{r}*(1-{w}/100),{t})))'.format(r=r, w=w, t=t))
+        'FLOOR($F{r}*(1-{w}/100),{t})))'.format(r=r, w=w, t=t), cached=_N)
     m = set_formula(m, 'P%d' % r,
         'IF(OR($B{r}="",$E{r}=""),"",IFERROR(MAX(OFFSET(高値!$E$6,{o},0,1,{win})),""))'
-        .format(r=r, o=ROWOFF.format(r=r), win=WIN.format(r=r)))
+        .format(r=r, o=ROWOFF.format(r=r), win=WIN.format(r=r)), cached=_P)
     m = set_formula(m, 'Q%d' % r,
         'IF(OR($B{r}="",$E{r}=""),"",IFERROR(MIN(OFFSET(安値!$E$6,{o},0,1,{win})),""))'
-        .format(r=r, o=ROWOFF.format(r=r), win=WIN.format(r=r)))
+        .format(r=r, o=ROWOFF.format(r=r), win=WIN.format(r=r)), cached=_Q)
     # 判断（S列への参照をやめて循環参照を断つ）
     m = set_formula(m, 'O%d' % r,
         'IF(OR($B{r}="",$F{r}="",$H{r}=""),"",IF($T{r}<>"","―決済済―",'
@@ -124,7 +202,7 @@ for r in range(4, 462):
         'IF($H{r}>=$M{r},"🟢利確",IF(AND($R{r}<>"",$H{r}<=$R{r}),"🟠TRAIL",'
         'IF($H{r}<=$N{r},"🔴損切",IF($W{r}>=V811設定!$B$6,"⏱時間決済",'
         'IF($H{r}<=$F{r}*(1-{w}/100*0.7),"⚠️損切接近","保持継続")))))'
-        ')))'.format(r=r, w=w))
+        ')))'.format(r=r, w=w), cached=_O)
     # トレーリング：建玉日起点の高安値／発動・幅は V811設定 H8・H9
     m = set_formula(m, 'R%d' % r,
         'IF(OR($F{r}="",$H{r}="",$N{r}=""),"",IF($T{r}<>"","",'
@@ -132,18 +210,21 @@ for r in range(4, 462):
         'IF(OR($Q{r}="",$Q{r}>$F{r}*(1-{a}/100*V811設定!$H$8)),$N{r},'
         'MIN($N{r},$Q{r}*(1+{a}/100*V811設定!$H$9))),'
         'IF(OR($P{r}="",$P{r}<$F{r}*(1+{a}/100*V811設定!$H$8)),$N{r},'
-        'MAX($N{r},$P{r}*(1-{a}/100*V811設定!$H$9))))))'.format(r=r, a=a))
+        'MAX($N{r},$P{r}*(1-{a}/100*V811設定!$H$9))))))'.format(r=r, a=a), cached=_R)
     # ステータス：判断列から導出し、既存VBA(損切りアラート)が拾える文字列を出す
     m = set_formula(m, 'S%d' % r,
         'IF($B{r}="","",IF($T{r}<>"","✅売却済",IF(OR($H{r}="",$L{r}=""),"📌保有中",'
         'IF($O{r}="🟢利確","🟢利確推奨",IF($O{r}="🟠TRAIL","🟠TRAIL STOP推奨",'
         'IF($O{r}="🔴損切","🔴損切推奨",IF($O{r}="⏱時間決済","⏱時間STOP推奨",'
         'IF($O{r}="⚠️損切接近","⚠️損切注意",'
-        'IF($L{r}>={w}/100*V811設定!$B$4*0.8,"🟡利確直近","📌保有中")))))))))'.format(r=r, w=w))
-    m = set_formula(m, 'AE%d' % r, 'IF($E{r}="","",WORKDAY($E{r},V811設定!$B$6))'.format(r=r))
+        'IF($L{r}>={w}/100*V811設定!$B$4*0.8,"🟡利確直近","📌保有中")))))))))'.format(r=r, w=w), cached=_Sv)
+    m = set_formula(m, 'AE%d' % r, 'IF($E{r}="","",WORKDAY($E{r},V811設定!$B$6))'.format(r=r), cached=_AE)
     m = set_formula(m, 'Y%d' % r,
-        'IF(V811設定!$C{n}="","",IF(V811設定!$C{n}=0,"⛔1単元でも超過",V811設定!$C{n}))'.format(n=n))
+        'IF(V811設定!$C{n}="","",IF(V811設定!$C{n}=0,"⛔1単元でも超過",V811設定!$C{n}))'.format(n=n), cached=_Y)
+m = set_formula(m, 'K2', 'COUNTIF($S:$S,"🔴損切推奨")&"件"',
+                cached='%d件' % sum(1 for r in range(4, 462) if CACHE.get('S%d' % r) == '🔴損切推奨'))
 X['管理'] = m
+log.append('管理: E2の書式を日付(m/d;@)から#,##0に修正（V816からの既存バグ）')
 log.append('管理: M/N(V811設定連動＋呼値丸め)、P/Q(建玉日起点)、O(循環参照解消)、'
            'R(建玉後高安値＋H8/H9)、S(O列から導出＋"損切推奨"/"STOP推奨"を出力)、'
            'AE(B6参照)、Y列 推奨株数を458行に適用。1〜2行目の集計をステータス非依存に変更')
@@ -154,17 +235,31 @@ log.append('管理: M/N(V811設定連動＋呼値丸め)、P/Q(建玉日起点)�
 def width_expr(atr_ref):
     return ('IF(AND(V811設定!$H$3=1,N(%s)>0),MIN(V811設定!$H$6,MAX(V811設定!$H$5,%s*V811設定!$H$4)),'
             'V811設定!$B$3*100)' % (atr_ref, atr_ref))
-a = X['分析']
+_IND = _wbv['V811指標']
+def _w_from(atr):
+    return VAL.stop_width(atr if isinstance(atr, (int, float)) else '')
+def _xlround(x):
+    return math.floor(x + 0.5) if x >= 0 else -math.floor(-x + 0.5)
+
+a = X['分析']; _AN = _wbv['分析']
 for r in range(3, 207):
     w = width_expr('V811指標!$C%d' % r)
-    a = set_formula(a, 'R%d' % r, 'IF($E{r}="","",ROUND($E{r}*(1+{w}/100*V811設定!$B$4),0))'.format(r=r, w=w))
-    a = set_formula(a, 'S%d' % r, 'IF($E{r}="","",ROUND($E{r}*(1-{w}/100),0))'.format(r=r, w=w))
+    _e = _AN['E%d' % r].value
+    _ww = _w_from(_IND['C%d' % r].value)
+    _R = _xlround(_e * (1 + _ww / 100 * VAL.B4)) if isinstance(_e, (int, float)) else ''
+    _Sx = _xlround(_e * (1 - _ww / 100)) if isinstance(_e, (int, float)) else ''
+    a = set_formula(a, 'R%d' % r, 'IF($E{r}="","",ROUND($E{r}*(1+{w}/100*V811設定!$B$4),0))'.format(r=r, w=w), cached=_R)
+    a = set_formula(a, 'S%d' % r, 'IF($E{r}="","",ROUND($E{r}*(1-{w}/100),0))'.format(r=r, w=w), cached=_Sx)
 X['分析'] = a
-s = X['売分析']
+s = X['売分析']; _SN = _wbv['売分析']
 for r in range(3, 207):
     w = width_expr('V811指標!$M%d' % r)
-    s = set_formula(s, 'R%d' % r, 'IF($E{r}="","",ROUND($E{r}*(1-{w}/100*V811設定!$B$4),0))'.format(r=r, w=w))
-    s = set_formula(s, 'S%d' % r, 'IF($E{r}="","",ROUND($E{r}*(1+{w}/100),0))'.format(r=r, w=w))
+    _e = _SN['E%d' % r].value
+    _ww = _w_from(_IND['M%d' % r].value)
+    _R = _xlround(_e * (1 - _ww / 100 * VAL.B4)) if isinstance(_e, (int, float)) else ''
+    _Sx = _xlround(_e * (1 + _ww / 100)) if isinstance(_e, (int, float)) else ''
+    s = set_formula(s, 'R%d' % r, 'IF($E{r}="","",ROUND($E{r}*(1-{w}/100*V811設定!$B$4),0))'.format(r=r, w=w), cached=_R)
+    s = set_formula(s, 'S%d' % r, 'IF($E{r}="","",ROUND($E{r}*(1+{w}/100),0))'.format(r=r, w=w), cached=_Sx)
 X['売分析'] = s
 log.append('分析/売分析: R・S列 204行をV811設定連動に置換（3行目に残っていた×1.05/×0.95も解消）')
 
@@ -172,20 +267,28 @@ log.append('分析/売分析: R・S列 204行をV811設定連動に置換（3行
 # 4. 自動注文決済
 # ============================================================
 o = X['自動注文決済']
+_ord = _wbv['自動注文決済']
+_c3 = _ord['C3'].value
+_c24 = VAL.atr_pct(_S, _CODES, _c3) if _c3 not in (None, '') else ''
+_c17 = VAL.stop_width(_c24); _c18 = _c17 * VAL.B4
+_c19 = round(_c24 * VAL.H8, 2) if isinstance(_c24, (int, float)) and _c24 > 0 else _c17
+_c20 = round(_c24 * VAL.H9, 2) if isinstance(_c24, (int, float)) and _c24 > 0 else round(_c17 * 0.75, 2)
+_c11 = _ord['C11'].value
+_c40 = VAL.workday(VAL._serial(_c11), VAL.B6) if _c11 else ''
 o = set_text(o, 'B24', 'ATR14(%)（自動）')
 o = set_formula(o, 'C24',
     'IFERROR((SUM(OFFSET(高値!$E$6,MATCH(TEXT($C$3,"0"),TEXT(銘柄管理!$B$6:$B$305,"0"),0)-1,0,1,'
     'V811設定!$H$10))-SUM(OFFSET(安値!$E$6,MATCH(TEXT($C$3,"0"),TEXT(銘柄管理!$B$6:$B$305,"0"),0)'
     '-1,0,1,V811設定!$H$10)))/SUM(OFFSET(終値!$E$6,MATCH(TEXT($C$3,"0"),'
-    'TEXT(銘柄管理!$B$6:$B$305,"0"),0)-1,0,1,V811設定!$H$10))*100,"")')
+    'TEXT(銘柄管理!$B$6:$B$305,"0"),0)-1,0,1,V811設定!$H$10))*100,"")', cached=_c24)
 o = set_text(o, 'D24', 'V811設定!H10 日間の平均レンジ率。損切幅の算出に使用')
-o = set_formula(o, 'C17', 'IF(AND(V811設定!$H$3=1,N(C24)>0),MIN(V811設定!$H$6,'
+o = set_formula(o, 'C17', cached=_c17, formula='IF(AND(V811設定!$H$3=1,N(C24)>0),MIN(V811設定!$H$6,'
                           'MAX(V811設定!$H$5,C24*V811設定!$H$4)),V811設定!$B$3*100)')
-o = set_formula(o, 'C18', 'C17*V811設定!$B$4')
-o = set_formula(o, 'C19', 'IF(AND(V811設定!$H$3=1,N(C24)>0),ROUND(C24*V811設定!$H$8,2),C17)')
-o = set_formula(o, 'C20', 'IF(AND(V811設定!$H$3=1,N(C24)>0),ROUND(C24*V811設定!$H$9,2),ROUND(C17*0.75,2))')
-o = set_formula(o, 'C21', 'V811設定!$B$6')
-o = set_formula(o, 'C40', 'IFERROR(IF(C11="","",WORKDAY(C11,C21)),"")')
+o = set_formula(o, 'C18', cached=_c18, formula='C17*V811設定!$B$4')
+o = set_formula(o, 'C19', cached=_c19, formula='IF(AND(V811設定!$H$3=1,N(C24)>0),ROUND(C24*V811設定!$H$8,2),C17)')
+o = set_formula(o, 'C20', cached=_c20, formula='IF(AND(V811設定!$H$3=1,N(C24)>0),ROUND(C24*V811設定!$H$9,2),ROUND(C17*0.75,2))')
+o = set_formula(o, 'C21', 'V811設定!$B$6', cached=VAL.B6)
+o = set_formula(o, 'C40', 'IFERROR(IF(C11="","",WORKDAY(C11,C21)),"")', cached=_c40)
 for ref, txt in [('D17','V811設定から自動算出（H3=1でATR連動）'),
                  ('D18','損切幅 × V811設定!B4（利確倍率）'),
                  ('D19','ATR × V811設定!H8'),
@@ -332,9 +435,9 @@ log.append('Sheet3 → 「V817変更履歴」にリネームし、変更内容�
 # ============================================================
 w = X['workbook']
 w = w.replace('<sheet name="Sheet3" sheetId="28"', '<sheet name="V817変更履歴" sheetId="28"')
-w = w.replace('<calcPr calcId="191029"/>', '<calcPr calcId="191029" fullCalcOnLoad="1"/>')
+# fullCalcOnLoad は付けない：RSS未接続で開いたときにキャッシュ表示が消えるため
 X['workbook'] = w
-log.append('workbook.xml: シート名変更＋fullCalcOnLoad=1（起動時に全再計算）')
+log.append('workbook.xml: シート名変更。fullCalcOnLoad は付けない（キャッシュ表示を保つ）')
 
 # ============================================================
 # 書き出し
@@ -345,6 +448,19 @@ for k, path in SH.items():
 app = parts['docProps/app.xml'].decode('utf-8').replace('<vt:lpstr>Sheet3</vt:lpstr>',
                                                         '<vt:lpstr>V817変更履歴</vt:lpstr>')
 parts['docProps/app.xml'] = app.encode('utf-8')
+
+# calcChain.xml は新規セルを含まないため削除。Excel が開いたときに作り直す。
+CHAIN = 'xl/calcChain.xml'
+if CHAIN in parts:
+    del parts[CHAIN]
+    order = [n for n in order if n != CHAIN]
+    ct = parts['[Content_Types].xml'].decode('utf-8')
+    ct = re.sub(r'<Override[^>]*calcChain[^>]*/>', '', ct)
+    parts['[Content_Types].xml'] = ct.encode('utf-8')
+    wr = parts['xl/_rels/workbook.xml.rels'].decode('utf-8')
+    wr = re.sub(r'<Relationship[^>]*calcChain\.xml"[^>]*/>', '', wr)
+    parts['xl/_rels/workbook.xml.rels'] = wr.encode('utf-8')
+    log.append('calcChain.xml を削除（新規数式セルを含まないため。Excel が再構築します）')
 
 zo = zipfile.ZipFile(DST, 'w', zipfile.ZIP_DEFLATED)
 for name in order:

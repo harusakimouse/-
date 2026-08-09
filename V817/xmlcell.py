@@ -15,9 +15,21 @@ def split_ref(ref):
 def esc(s):
     return s.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
-def f_body(formula):
-    """数式セルの中身。キャッシュ値は載せない（fullCalcOnLoad で再計算させる）。"""
-    return '<f>%s</f>' % esc(formula)
+SENTINEL = object()
+
+def f_body(formula, cached=SENTINEL):
+    """数式セル。cached を渡すと計算結果もキャッシュする（RSS未接続でも表示が壊れない）。"""
+    f = '<f>%s</f>' % esc(formula)
+    if cached is SENTINEL:
+        return f, ''
+    if cached is None or cached == '':
+        return f + '<v/>', ' t="str"'
+    if isinstance(cached, bool):
+        return f + '<v>%d</v>' % int(cached), ' t="b"'
+    if isinstance(cached, (int, float)):
+        v = int(cached) if float(cached).is_integer() and abs(cached) < 1e15 else cached
+        return f + '<v>%s</v>' % repr(v).rstrip('0').rstrip('.') if isinstance(v, float) else f + '<v>%d</v>' % v, ''
+    return f + '<v>%s</v>' % esc(str(cached)), ' t="str"' 
 
 def num_body(v):
     return '<v>%s</v>' % v
@@ -68,8 +80,9 @@ def set_cell(xml, ref, body, keep_style=True, extra_attr='', drop_attrs=('t',)):
         pos = em.start()
     return xml[:pos] + newrow + xml[pos:], True
 
-def set_formula(xml, ref, formula, extra_attr=''):
-    return set_cell(xml, ref, f_body(formula), extra_attr=extra_attr)[0]
+def set_formula(xml, ref, formula, extra_attr='', cached=SENTINEL):
+    body, tattr = f_body(formula, cached)
+    return set_cell(xml, ref, body, extra_attr=tattr + extra_attr)[0]
 
 def set_number(xml, ref, v, extra_attr=''):
     return set_cell(xml, ref, num_body(v), extra_attr=extra_attr)[0]

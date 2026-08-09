@@ -22,6 +22,8 @@ Private Const DATA_FIRST As Long = 3
 Private Const STOCK_MAX As Long = 350
 Private Const HIST As String = "ATRHIST_MS2"
 Private Const ATR_N As Long = 14
+Public gPrevDaySaveTime As Date
+Private Const SAVE_HHMM As String = "15:45"   ' 前日値の自動保存時刻（引け後・混雑回避／変更可）
 
 '============================================================
 ' 数値安全読み取り：数値なら値、そうでなければ 0
@@ -511,7 +513,7 @@ Private Function MS2_Get_PrevDay() As Worksheet
 End Function
 
 '   引け後：DATA_MS2 の当日 高値(F)/安値(G) を PREVDAY_MS2 に保存
-Sub MS2_Save_PrevDay()
+Public Function MS2_Save_PrevDay_Core() As Long
     Dim wsD As Worksheet, wsP As Worksheet
     Dim i As Long, lastRow As Long, pr As Long, hLast As Long, cnt As Long
     Dim code As String, hi As Double, lo As Double
@@ -546,8 +548,15 @@ Sub MS2_Save_PrevDay()
         cnt = cnt + 1
 NextI:
     Next i
-    MsgBox "本日の高値・安値を『前日値』として保存しました（" & cnt & "銘柄）。" & vbCrLf & _
-           "翌営業日に『前日値反映_MS2』または『全自動』で J:前日高値 / K:前日安値 に入ります。", vbInformation, "MS2"
+    MS2_Save_PrevDay_Core = cnt
+End Function
+
+'   手動保存（メッセージ表示あり）
+Sub MS2_Save_PrevDay()
+    Dim n As Long
+    n = MS2_Save_PrevDay_Core()
+    MsgBox "本日の高値・安値を『前日値』として保存しました（" & n & "銘柄）。" & vbCrLf & _
+           "翌営業日に反映されます（起動時に自動反映）。", vbInformation, "MS2"
 End Sub
 
 '   PREVDAY_MS2 の値を DATA_MS2 の J:前日高値 / K:前日安値 に反映（値）
@@ -575,6 +584,66 @@ Sub MS2_Load_PrevDay()
         End If
 NextI:
     Next i
+End Sub
+
+'============================================================
+' 前日値の自動保存/反映（Application.OnTime）
+'   ・引け(15:30)後の混雑を避け、既定 15:45 に自動保存
+'   ・OnTimeはExcelがアイドルになるまで待って発火＝他マクロに割り込まない
+'   ・保存後に翌営業日ぶんを自動再予約（土日はスキップ）
+'   ※Excelを開いたままにしてください（閉じていると発火しません）
+'============================================================
+Public Sub MS2_Enable_AutoPrevDay()
+    MS2_Load_PrevDay
+    MS2_Schedule_AutoSave
+    MsgBox "前日値の自動化をONにしました。" & vbCrLf & _
+           "・起動時に前日値をJ/Kへ自動反映" & vbCrLf & _
+           "・毎営業日 " & SAVE_HHMM & " 頃に自動保存（他マクロ実行中は待機）", vbInformation, "MS2"
+End Sub
+
+Public Sub MS2_Disable_AutoPrevDay()
+    MS2_Cancel_AutoSave
+    MsgBox "前日値の自動保存を停止しました。", vbInformation, "MS2"
+End Sub
+
+Public Sub MS2_Schedule_AutoSave()
+    On Error Resume Next
+    If gPrevDaySaveTime > 0 Then
+        Application.OnTime EarliestTime:=gPrevDaySaveTime, Procedure:="MS2_AutoSave_PrevDay", Schedule:=False
+    End If
+    On Error GoTo 0
+    gPrevDaySaveTime = MS2_NextSaveTime()
+    Application.OnTime EarliestTime:=gPrevDaySaveTime, Procedure:="MS2_AutoSave_PrevDay", Schedule:=True
+End Sub
+
+Public Sub MS2_Cancel_AutoSave()
+    On Error Resume Next
+    If gPrevDaySaveTime > 0 Then
+        Application.OnTime EarliestTime:=gPrevDaySaveTime, Procedure:="MS2_AutoSave_PrevDay", Schedule:=False
+        gPrevDaySaveTime = 0
+    End If
+    On Error GoTo 0
+End Sub
+
+Private Function MS2_NextSaveTime() As Date
+    Dim d As Date
+    d = Int(Now) + TimeValue(SAVE_HHMM)
+    If Now >= d Then d = d + 1
+    Do While Weekday(d, vbMonday) >= 6      ' 6=土, 7=日 はスキップ
+        d = d + 1
+    Loop
+    MS2_NextSaveTime = d
+End Function
+
+Public Sub MS2_AutoSave_PrevDay()
+    Static runningFlag As Boolean
+    If runningFlag Then Exit Sub
+    runningFlag = True
+    On Error Resume Next
+    MS2_Save_PrevDay_Core
+    On Error GoTo 0
+    runningFlag = False
+    MS2_Schedule_AutoSave
 End Sub
 
 '============================================================
@@ -687,6 +756,8 @@ Sub MS2_Build_Menu()
         "ATR履歴リセット_MS2", "MS2_Reset_ATR_History", _
         "前日値保存_MS2", "MS2_Save_PrevDay", _
         "前日値反映_MS2", "MS2_Load_PrevDay", _
+        "前日値_自動ON", "MS2_Enable_AutoPrevDay", _
+        "前日値_自動OFF", "MS2_Disable_AutoPrevDay", _
         "ログ_MS2", "MS2_Show_Log", _
         "全自動_MS2", "MS2_Auto_All")
 

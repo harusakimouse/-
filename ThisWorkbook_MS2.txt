@@ -1,0 +1,35 @@
+【ThisWorkbook に貼り付けるコード】
+
+VBE（Alt+F11）左のツリーで「ThisWorkbook」をダブルクリックし、
+表示されたコード領域に下記をそのまま貼り付けてください。
+（標準モジュールではなく "ThisWorkbook" に入れるのがポイント）
+
+------------------------------------------------------------
+Private Sub Workbook_Open()
+    On Error Resume Next
+    MS2_Load_PrevDay          ' 起動時：前日値を J/K に自動反映
+    MS2_Schedule_AutoSave     ' 引け後の自動保存を予約（既定15:45）
+    On Error GoTo 0
+End Sub
+
+Private Sub Workbook_BeforeClose(Cancel As Boolean)
+    On Error Resume Next
+    MS2_Cancel_AutoSave       ' 予約を解除
+    On Error GoTo 0
+End Sub
+------------------------------------------------------------
+
+これで：
+  ・ブックを開くたびに、前日値が自動で J:前日高値 / K:前日安値 に入る
+  ・毎営業日 15:45 頃に、その日の高安が自動保存される（翌日の前日値になる）
+
+補足：
+  ・保存時刻を変えたい場合は、MS2_Core 冒頭の
+      Private Const SAVE_HHMM As String = "15:45"
+    を書き換えてください（例 "16:00"）。
+  ・Application.OnTime は Excel がアイドルになるまで待って実行するため、
+    15:30台に他のVBAが動いていても割り込みません（終わってから実行）。
+  ・PC と Excel（このブック）を開いたままにしてください。閉じていると
+    予約時刻が来ても発火しません。
+  ・手動で使いたいときは、操作パネルの「前日値保存」「前日値反映」、
+    または「前日値_自動ON / 自動OFF」ボタンでも操作できます。

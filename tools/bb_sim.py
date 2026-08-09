@@ -18,7 +18,8 @@ import numpy as np
 
 
 def simulate(d, mask, rank, hold=10, slots=5, topk=2, stop_pct=None, target_pct=None,
-             trail_pct=None, regime=None, exit_line=None, ind=None):
+             trail_pct=None, regime=None, exit_line=None, ind=None, cost=0.0):
+    """cost: 往復の売買コスト(%)。逆指値は窓開けを考慮し、寄値がストップ以下なら寄値で約定させる。"""
     o, h, l, c = d["open"], d["high"], d["low"], d["close"]
     N, T = c.shape
     cash = 1.0
@@ -36,7 +37,10 @@ def simulate(d, mask, rank, hold=10, slots=5, topk=2, stop_pct=None, target_pct=
             lo, hi = l[i, t], h[i, t]
             held = t - pos["day_open"]
             exit_px, reason = None, None
-            if pos["stop"] is not None and np.isfinite(lo) and lo <= pos["stop"]:
+            op = o[i, t]
+            if pos["stop"] is not None and np.isfinite(op) and op <= pos["stop"]:
+                exit_px, reason = op, "窓開け"
+            elif pos["stop"] is not None and np.isfinite(lo) and lo <= pos["stop"]:
                 exit_px, reason = pos["stop"], "損切り"
             elif pos["target"] is not None and np.isfinite(hi) and hi >= pos["target"]:
                 exit_px, reason = pos["target"], "利確"
@@ -53,7 +57,7 @@ def simulate(d, mask, rank, hold=10, slots=5, topk=2, stop_pct=None, target_pct=
                     if np.isfinite(lo) and lo <= ts and exit_px is None:
                         exit_px, reason = ts, "トレール"
             if exit_px is not None and np.isfinite(exit_px):
-                cash += pos["value"] * exit_px / pos["entry_px"]
+                cash += pos["value"] * (exit_px / pos["entry_px"]) * (1 - cost / 100)
                 trades.append({"i": i, "in": pos["day_open"], "out": t,
                                "ret": (exit_px / pos["entry_px"] - 1) * 100, "reason": reason})
             else:

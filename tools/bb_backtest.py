@@ -256,7 +256,7 @@ def scores(d, ind):
 # トレード実行
 # ----------------------------------------------------------------------------
 def run_trades(d, entries, hold_max=10, stop_pct=None, target_pct=None,
-               exit_below=None, ind=None, trail_after=None):
+               exit_below=None, ind=None, trail_after=None, cost=0.0):
     """
     entries: (N,T) bool  … その日の引け後にシグナルが出た
     翌営業日の始値で買い、以下のいずれかで手仕舞う。
@@ -289,6 +289,11 @@ def run_trades(d, entries, hold_max=10, stop_pct=None, target_pct=None,
             if not np.isfinite(cl):
                 continue
             peak = max(peak, hi if np.isfinite(hi) else cl)
+            # 寄り付きが逆指値より下なら、その値段では約定しない。寄値で成立する（窓開け）
+            op = o[i, day]
+            if stop is not None and np.isfinite(op) and op <= stop:
+                exit_px, exit_day, reason = op, day, "窓開け"
+                break
             if stop is not None and np.isfinite(lo) and lo <= stop:
                 exit_px, exit_day, reason = stop, day, "損切り"
                 break
@@ -316,7 +321,7 @@ def run_trades(d, entries, hold_max=10, stop_pct=None, target_pct=None,
         mfe = (np.nanmax(h[i, e:exit_day + 1]) / ep - 1) * 100
         trades.append({
             "i": int(i), "t": int(t), "entry_day": int(e), "exit_day": int(exit_day),
-            "ret": (exit_px / ep - 1) * 100, "days": int(exit_day - e + 1),
+            "ret": (exit_px / ep - 1) * 100 - cost, "days": int(exit_day - e + 1),
             "reason": reason, "mae": mae, "mfe": mfe,
         })
     return trades

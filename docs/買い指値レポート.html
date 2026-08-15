@@ -1,0 +1,512 @@
+<title>買い指値の板</title>
+<style>
+:root{
+  --ground:#eef0f3; --surface:#fbfcfd; --surface-2:#f4f6f8;
+  --ink:#161a20; --ink-2:#3b4351; --muted:#6d7688; --rule:#d7dce3; --rule-soft:#e6eaef;
+  --up:#c2372c; --up-soft:#f6e3e0; --down:#2a5f9e; --down-soft:#e2eaf5;
+  --mark:#4b5566;
+  --serif:"Hiragino Mincho ProN","Yu Mincho","YuMincho","MS PMincho",serif;
+  --sans:"Hiragino Kaku Gothic ProN","Yu Gothic","YuGothic",Meiryo,"Helvetica Neue",Arial,sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,"Courier New",monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#101215; --surface:#181b20; --surface-2:#1e222a;
+    --ink:#e7eaef; --ink-2:#b9c1cd; --muted:#8b95a6; --rule:#2c323c; --rule-soft:#242932;
+    --up:#e0685c; --up-soft:#3a2320; --down:#5b93d4; --down-soft:#1b2836;
+    --mark:#98a2b3;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#101215; --surface:#181b20; --surface-2:#1e222a;
+  --ink:#e7eaef; --ink-2:#b9c1cd; --muted:#8b95a6; --rule:#2c323c; --rule-soft:#242932;
+  --up:#e0685c; --up-soft:#3a2320; --down:#5b93d4; --down-soft:#1b2836;
+  --mark:#98a2b3;
+}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);font-family:var(--sans);
+  font-size:16px;line-height:1.85;margin:0;padding:0;
+  -webkit-font-smoothing:antialiased;font-feature-settings:"palt" 1}
+.wrap{max-width:1000px;margin:0 auto;padding:0 24px 96px}
+.col{max-width:660px}
+h1,h2,h3{font-family:var(--serif);font-weight:600;text-wrap:balance;line-height:1.4;margin:0}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.eyebrow{font-size:11px;letter-spacing:.22em;color:var(--muted);text-transform:uppercase;
+  font-family:var(--mono);margin:0}
+
+/* ---- masthead ---- */
+header{border-bottom:1px solid var(--rule);background:var(--surface);margin-bottom:56px}
+.mast{max-width:1000px;margin:0 auto;padding:52px 24px 40px;display:flex;flex-direction:column;gap:20px}
+h1{font-size:clamp(30px,5vw,46px);letter-spacing:.02em}
+.dek{color:var(--ink-2);font-size:17px;max-width:640px;margin:0}
+.meta{display:flex;flex-wrap:wrap;gap:8px 26px;font-family:var(--mono);font-size:12px;color:var(--muted);
+  border-top:1px solid var(--rule-soft);padding-top:16px}
+
+/* ---- verdict ---- */
+.verdict{background:var(--surface);border:1px solid var(--rule);border-top:3px solid var(--up);
+  padding:32px 34px;display:flex;flex-direction:column;gap:26px;margin-bottom:64px}
+.rule-line{font-family:var(--serif);font-size:clamp(22px,3.6vw,32px);line-height:1.5;margin:0}
+.rule-line em{font-style:normal;color:var(--up);border-bottom:2px solid var(--up);padding-bottom:2px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;background:var(--rule-soft);
+  border:1px solid var(--rule-soft)}
+.kpi{background:var(--surface);padding:16px 18px;display:flex;flex-direction:column;gap:5px}
+.kpi .k{font-size:11px;color:var(--muted);letter-spacing:.06em}
+.kpi .v{font-family:var(--mono);font-size:26px;font-variant-numeric:tabular-nums;line-height:1.1}
+.kpi .was{font-size:12px;color:var(--muted);font-family:var(--mono)}
+.kpi.hi .v{color:var(--up)}
+
+section{margin-bottom:72px}
+.head{display:flex;flex-direction:column;gap:8px;margin-bottom:26px;
+  border-bottom:1px solid var(--rule);padding-bottom:14px}
+h2{font-size:24px}
+h3{font-size:17px;margin:34px 0 12px}
+p{margin:0 0 16px}
+.col p{max-width:64ch}
+strong{font-weight:700}
+.hl{background:linear-gradient(transparent 62%,var(--up-soft) 62%);font-weight:700}
+
+/* ---- tables ---- */
+.tw{overflow-x:auto;border:1px solid var(--rule);background:var(--surface);margin:20px 0}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{padding:9px 14px;text-align:right;border-bottom:1px solid var(--rule-soft);white-space:nowrap}
+th{font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.05em;background:var(--surface-2)}
+th:first-child,td:first-child{text-align:left}
+td.n{font-family:var(--mono);font-variant-numeric:tabular-nums}
+tbody tr:last-child td{border-bottom:0}
+tr.best td{background:var(--up-soft)}
+tr.best td:first-child{font-weight:700}
+.pos{color:var(--up)}.neg{color:var(--down)}
+caption{caption-side:bottom;text-align:left;padding:10px 14px;font-size:12px;color:var(--muted);line-height:1.7}
+
+/* ---- charts ---- */
+figure{margin:28px 0 0;background:var(--surface);border:1px solid var(--rule);padding:22px 22px 16px}
+figcaption{font-size:12.5px;color:var(--muted);line-height:1.7;margin-top:14px;border-top:1px solid var(--rule-soft);padding-top:12px}
+.fig-title{font-family:var(--serif);font-size:15px;margin:0 0 4px}
+.fig-sub{font-size:12px;color:var(--muted);margin:0 0 16px;font-family:var(--mono)}
+.charts2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media(max-width:720px){.charts2{grid-template-columns:1fr}}
+svg{display:block;width:100%;height:auto;overflow:visible}
+.tip{position:fixed;pointer-events:none;background:var(--ink);color:var(--ground);
+  font-family:var(--mono);font-size:11.5px;line-height:1.6;padding:7px 10px;border-radius:3px;
+  opacity:0;transition:opacity .12s;z-index:50;white-space:pre}
+
+/* ---- ladder ---- */
+.ladders{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:18px}
+.lad{background:var(--surface);border:1px solid var(--rule);padding:18px 20px 16px}
+.lad-h{display:flex;justify-content:space-between;align-items:baseline;gap:10px;
+  border-bottom:1px solid var(--rule-soft);padding-bottom:10px;margin-bottom:4px}
+.lad-h .nm{font-family:var(--serif);font-size:16px}
+.lad-h .cd{font-family:var(--mono);font-size:11px;color:var(--muted)}
+.lad-h .px{font-family:var(--mono);font-size:15px}
+.row{display:grid;grid-template-columns:74px 1fr 62px;gap:10px;align-items:center;
+  padding:7px 0;border-bottom:1px solid var(--rule-soft)}
+.row:last-child{border-bottom:0}
+.row .lab{font-size:10.5px;color:var(--muted);letter-spacing:.03em}
+.row .prc{font-family:var(--mono);font-size:15px;font-variant-numeric:tabular-nums;text-align:right}
+.row .bar{height:7px;background:var(--surface-2);position:relative;border:1px solid var(--rule-soft)}
+.row .bar i{position:absolute;inset:0 auto 0 0;background:var(--mark);display:block}
+.row.main{background:var(--up-soft);margin:0 -20px;padding:9px 20px}
+.row.main .lab{color:var(--up);font-weight:700}
+.row.main .prc{font-size:17px;font-weight:700;color:var(--up)}
+.row.main .bar i{background:var(--up)}
+.row.top .prc{color:var(--ink-2)}
+.lad-f{font-size:11.5px;color:var(--muted);line-height:1.7;margin-top:12px;
+  border-top:1px solid var(--rule-soft);padding-top:10px}
+.warn{color:var(--up);font-weight:700}
+
+/* ---- steps ---- */
+ol.steps{counter-reset:s;list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:2px}
+ol.steps li{counter-increment:s;display:grid;grid-template-columns:34px 1fr;gap:16px;
+  background:var(--surface);border:1px solid var(--rule);padding:16px 20px}
+ol.steps li::before{content:counter(s);font-family:var(--mono);font-size:13px;color:var(--up);
+  border:1px solid var(--rule);width:30px;height:30px;display:grid;place-items:center}
+ol.steps li p{margin:0;font-size:15px}
+ol.steps li p+p{margin-top:6px;color:var(--muted);font-size:13.5px}
+ul.plain{padding-left:1.2em;margin:0 0 16px}
+ul.plain li{margin-bottom:8px;max-width:62ch}
+code{font-family:var(--mono);font-size:.9em;background:var(--surface-2);padding:1px 5px;border:1px solid var(--rule-soft)}
+.note{border-left:2px solid var(--rule);padding:2px 0 2px 18px;color:var(--ink-2);font-size:14.5px;margin:20px 0}
+footer{border-top:1px solid var(--rule);padding-top:20px;font-size:12.5px;color:var(--muted);line-height:1.8}
+</style>
+
+<header>
+  <div class="mast">
+    <p class="eyebrow">打ち出のこづち V8.17 ／ 買いタイミング検証</p>
+    <h1>買い候補に、いくらの指値を置くか</h1>
+    <p class="dek">「買うとその日は下がる」を 300銘柄×250営業日で数えた。下がるのは事実で、しかも下がり方には規則がある。値段を決めてから買えば、同じ銘柄・同じ決済ルールのまま期待値は 2.3倍になった。</p>
+    <div class="meta">
+      <span>分析日 2026/08/15</span>
+      <span>標本 300銘柄 × 250営業日</span>
+      <span>2025/07/31 – 2026/08/14</span>
+      <span>延べ 50,671 銘柄日</span>
+      <span>シグナル再現 6,975件</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="verdict">
+    <p class="eyebrow">結論</p>
+    <p class="rule-line">指値 ＝ 当日終値 − <em>0.75 × ATR(14)</em>。<br>3営業日有効、刺さらなければ見送り。</p>
+    <div class="kpis">
+      <div class="kpi hi"><span class="k">1取引あたり期待値</span><span class="v">+0.413R</span><span class="was">現行の寄付成行 +0.179R</span></div>
+      <div class="kpi hi"><span class="k">勝率</span><span class="v">53.1%</span><span class="was">現行 46.2%</span></div>
+      <div class="kpi"><span class="k">年間取引数</span><span class="v">477</span><span class="was">現行 494 ／ ほぼ変わらない</span></div>
+      <div class="kpi"><span class="k">約定率</span><span class="v">56.2%</span><span class="was">翌日64% 2日目21% 3日目15%</span></div>
+      <div class="kpi hi"><span class="k">年間合計（1R=4万円）</span><span class="v">+787万</span><span class="was">現行 +353万</span></div>
+    </div>
+  </div>
+
+  <section>
+    <div class="head"><p class="eyebrow">症状</p><h2>「買うと下がる」は、気のせいではない</h2></div>
+    <div class="col">
+      <p>v13 のシグナルが出た翌日、寄り付きで買った場合の値動きを 6,975件で数えた。</p>
+    </div>
+    <div class="tw">
+      <table>
+        <thead><tr><th>翌日の値動き（対 シグナル日終値／始値）</th><th>平均</th><th>P10</th><th>P25</th><th>中央</th><th>P75</th><th>P90</th></tr></thead>
+        <tbody>
+          <tr><td>ギャップ（翌日始値 / 当日終値）</td><td class="n">+0.38%</td><td class="n">-1.84%</td><td class="n">-0.69%</td><td class="n">+0.05%</td><td class="n">+0.94%</td><td class="n">+2.41%</td></tr>
+          <tr class="best"><td>翌日安値 / 翌日始値 ＝ 買った日の含み損</td><td class="n">-2.19%</td><td class="n">-4.99%</td><td class="n">-2.67%</td><td class="n">-1.33%</td><td class="n">-0.58%</td><td class="n">-0.19%</td></tr>
+          <tr><td>翌日高値 / 翌日始値</td><td class="n">+2.30%</td><td class="n">+0.10%</td><td class="n">+0.49%</td><td class="n">+1.23%</td><td class="n">+2.64%</td><td class="n">+5.26%</td></tr>
+          <tr><td>翌日終値 / 翌日始値</td><td class="n">+0.00%</td><td class="n">-3.39%</td><td class="n">-1.40%</td><td class="n">-0.02%</td><td class="n">+1.26%</td><td class="n">+3.12%</td></tr>
+        </tbody>
+        <caption>スコア11以上のシグナル日 n=6,975。P10 は「下位10%はこれより悪い」の意。</caption>
+      </table>
+    </div>
+    <div class="col">
+      <p>寄り付きで買って<span class="hl">当日一度でも含み損になる確率は 95.8%</span>。−1%以上下げる確率 60.2%、−2%以上 35.7%。高精度シグナル（スコア16以上）はさらに荒く、中央 −2.14%、−2%超えが 52.3%。<strong>スコアが高い銘柄ほど買った直後の下げは大きい。</strong></p>
+      <p>ただし比較対象が要る。母集団（全銘柄・全日）でも同じ数字は 95.2%、中央 −1.21%。つまり「買った瞬間に含み損」はシグナルの欠陥ではなく、日中に値幅がある以上、寄り付きが当日の最安値になることはまずない、という当たり前の事実にすぎない。</p>
+      <p>問題は下がること自体ではなく、<span class="hl">下がる分を最初から値段に織り込んでいないこと</span>だった。</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="head"><p class="eyebrow">原因</p><h2>%で見ると暴れる下落幅が、ATRで割ると動かなくなる</h2></div>
+    <div class="col">
+      <p>翌日の含み損を条件別に分けると、%では 10倍の差が出る。ボラティリティの高い銘柄、急騰した翌日、出来高が爆発した翌日ほど深く沈む ── ここまでは直感どおり。</p>
+      <p>ところが同じデータを <strong>k ＝（当日終値 − 翌日安値）÷ ATR14</strong> というATR倍数に置き換えると、その差はほとんど消える。</p>
+    </div>
+    <div class="charts2">
+      <figure>
+        <p class="fig-title">%で見た翌日の含み損（中央値）</p>
+        <p class="fig-sub">ATR率で6分割 ／ 10倍の開き</p>
+        <div id="c-pct"></div>
+      </figure>
+      <figure>
+        <p class="fig-title">ATR倍数で見た同じ下落（中央 k）</p>
+        <p class="fig-sub">同じ6分割 ／ 0.42〜0.55 に収束</p>
+        <div id="c-atr"></div>
+      </figure>
+    </div>
+    <div class="col">
+      <p class="note">「急騰銘柄に飛びつくと痛い」は事実だが、その正体は<strong>ボラティリティが高いこと</strong>であって、銘柄の性格ではない。ATRに比例した指値を置けば自動的に補正される。だから銘柄を選り好みする必要はない ── これは後で検証でも裏づけられた。</p>
+      <h3>では、どこまで落ちるのか</h3>
+      <p>k の分布は驚くほど素直だった。中央値 +0.46ATR、終値割れ（k&gt;0）は 78.2%。</p>
+    </div>
+    <figure>
+      <p class="fig-title">翌日の安値は、当日終値から何ATR下まで来るか</p>
+      <p class="fig-sub">k =（当日終値 − 翌日安値）÷ ATR14 ／ n=6,975</p>
+      <div id="c-hist"></div>
+      <figcaption>右へ行くほど深い押し目。0.75ATR より右の面積が、推奨指値が刺さる確率（32.4%）にあたる。1銘柄で見れば3回に1回だが、毎日出る候補すべてに置けば十分な数が刺さる。</figcaption>
+    </figure>
+    <div class="tw">
+      <table>
+        <thead><tr><th>支持線の候補</th><th>終値比</th><th>翌日安値が到達する率</th></tr></thead>
+        <tbody>
+          <tr><td>当日終値</td><td class="n">±0%</td><td class="n">80.2%</td></tr>
+          <tr class="best"><td>終値 −0.5ATR</td><td class="n">-1.50%</td><td class="n">47.3%</td></tr>
+          <tr><td>5日EMA</td><td class="n">-2.25%</td><td class="n">34.2%</td></tr>
+          <tr><td>当日安値</td><td class="n">-2.26%</td><td class="n">31.7%</td></tr>
+          <tr><td>5日VWAP</td><td class="n">-2.53%</td><td class="n">32.6%</td></tr>
+          <tr class="best"><td>終値 −1.0ATR</td><td class="n">-3.01%</td><td class="n">21.2%</td></tr>
+          <tr><td>25日EMA</td><td class="n">-6.26%</td><td class="n">8.8%</td></tr>
+          <tr><td>25日VWAP</td><td class="n">-6.26%</td><td class="n">12.1%</td></tr>
+        </tbody>
+        <caption>5日EMA・5日VWAP・当日安値はほぼ同じ水準（終値−2.3%前後）に集まる。25日線まで待つと年に数回しか買えない。実用的な押し目待ちの射程は −0.5ATR 〜 −1.25ATR。</caption>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="head"><p class="eyebrow">検証</p><h2>毎日、上位10候補すべてに指値を置く</h2></div>
+    <div class="col">
+      <p>1銘柄だけを追いかけるなら、深い指値は「刺さらないほど有利だが、ほとんど刺さらない」という当然の結論になる。だが実際の使い方は違う。毎日10前後の候補が出て、建てられるのは2銘柄。<strong>候補全部に指値を出して、刺さったものだけ買う</strong>と、約定率の低下は候補数で埋め合わされる。</p>
+      <p>決済は現行ルールのまま（損切 2ATR ＝ 3〜10%に制限、利確 2R、10営業日で時間決済）。</p>
+    </div>
+    <div class="charts2">
+      <figure>
+        <p class="fig-title">1取引あたりの期待値</p>
+        <p class="fig-sub">上位10候補から最大2銘柄 ／ 単位 R</p>
+        <div id="c-r"></div>
+      </figure>
+      <figure>
+        <p class="fig-title">年間の取引数</p>
+        <p class="fig-sub">同じ条件 ／ 250営業日換算</p>
+        <div id="c-n"></div>
+      </figure>
+    </div>
+    <div class="col">
+      <p>最良は <span class="hl">−0.75ATR / 3営業日有効</span>。0.5〜1.0ATR の広い範囲で +0.36〜0.42R のプラトーになっていて、特定の値に過剰最適化した結果ではない。取引数もほとんど落ちない。</p>
+      <h3>約定の中身</h3>
+      <ul class="plain">
+        <li>約定率 <span class="num">56.2%</span>（翌日 64% ／ 2日目 21% ／ 3日目 15%）</li>
+        <li><span class="num">22.0%</span> はギャップダウンで指値より安く約定した（平均 <span class="num pos">−1.99%</span> お得）</li>
+        <li>未約定に終わった銘柄は、その後8日で中央 <span class="num">+3.51%</span>、<span class="num">71.6%</span> が上昇 ── <strong>強い銘柄を取り逃がすコストは実在する</strong>。それでも総合で上回るのは、決済が2R利確で頭打ちになるルールだから</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <div class="head"><p class="eyebrow">不採用</p><h2>効かなかった工夫</h2></div>
+    <div class="col">
+      <p>「急騰した銘柄はもっと深く指す」「過熱した銘柄は見送る」── 直感的に正しそうな調整を試したが、いずれも成績が下がった。</p>
+    </div>
+    <div class="tw">
+      <table>
+        <thead><tr><th>ルール</th><th>取引数</th><th>平均R</th><th>勝率</th><th>年間合計R</th></tr></thead>
+        <tbody>
+          <tr class="best"><td>一律 −0.75ATR</td><td class="n">309</td><td class="n">+0.408</td><td class="n">53.1%</td><td class="n">+199.5</td></tr>
+          <tr><td>過熱度連動 −0.75〜−1.25ATR</td><td class="n">301</td><td class="n">+0.357</td><td class="n">52.5%</td><td class="n">+170.2</td></tr>
+          <tr><td>過熱度連動 ＋ 過熱銘柄は見送り</td><td class="n">268</td><td class="n">+0.296</td><td class="n">51.9%</td><td class="n">+125.7</td></tr>
+        </tbody>
+        <caption>過熱度 = 対前日比6%以上 / 出来高倍率2.2倍以上 / 25日EMA乖離15%以上。</caption>
+      </table>
+    </div>
+    <div class="col">
+      <p>理由は前章のとおり。ATRがすでに過熱度を織り込んでいるので、上乗せは「深すぎる指値」になって、いちばん伸びる銘柄を取り逃がすだけになる。<strong>ルールは単純なまま置いておくのが最良だった。</strong></p>
+    </div>
+  </section>
+
+  <section>
+    <div class="head"><p class="eyebrow">頑健性</p><h2>条件を変えても順位は入れ替わらない</h2></div>
+    <div class="tw">
+      <table>
+        <thead><tr><th>検証軸</th><th>翌日寄付で成行（現行）</th><th>指値 −0.75ATR / 3日</th></tr></thead>
+        <tbody>
+          <tr><td>期間 前半</td><td class="n">+0.265</td><td class="n pos">+0.591</td></tr>
+          <tr><td>期間 後半</td><td class="n">+0.092</td><td class="n pos">+0.219</td></tr>
+          <tr><td>建玉 1銘柄</td><td class="n">+0.167</td><td class="n pos">+0.429</td></tr>
+          <tr><td>建玉 2銘柄</td><td class="n">+0.179</td><td class="n pos">+0.408</td></tr>
+          <tr><td>建玉 3銘柄</td><td class="n">+0.139</td><td class="n pos">+0.387</td></tr>
+          <tr><td>建玉 5銘柄</td><td class="n">+0.207</td><td class="n pos">+0.355</td></tr>
+          <tr><td>高精度シグナル（16以上）のみ</td><td class="n">+0.193</td><td class="n pos">+0.458</td></tr>
+        </tbody>
+        <caption>単位は平均R。後半は相場環境が悪く全戦略の成績が落ちるが、優劣は不変。高精度シグナルは元々ボラが高いので −1.00ATR まで引いてよい（+0.535R / 勝率57.3%）。</caption>
+      </table>
+    </div>
+    <div class="col">
+      <p class="note"><strong>心臓に悪いのは治るのか。</strong>正直に言うと、部分的にしか治らない。「買った当日をプラスで終える確率」は 48.4% → 51.5%、平均含み損は −6.46% → −5.91%。<strong>含み損そのものは消えない。</strong>変わるのは、その含み損が高値掴みによるものではなくなること、そして勝率が 46% → 53% になること。</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="head"><p class="eyebrow">2026/08/14 終値基準</p><h2>今の候補6銘柄の板</h2></div>
+    <div class="col">
+      <p>バーの長さは、その銘柄自身の過去実績（翌日安値がその水準に届いた割合）。★の値段を3営業日有効で出すのが基本形。</p>
+    </div>
+    <div class="ladders" id="ladders"></div>
+    <div class="col">
+      <p class="note"><strong>6027 弁護士ドットコム</strong>は 8/14 に <span class="warn">+19.0%</span> 急騰し、25日EMAから <span class="warn">+50.9%</span> 離れている。抽出シートの現在値 3,150円 は 8/13 の終値で、実際は 3,750円。<strong>ここから成行で入るのは統計上もっとも不利な形</strong>。買うなら深押し 3,530円以下、または 5日VWAP 3,284円まで待つ。<br><strong>6330 東洋エンジニア</strong>は ATR率 5.9% の高ボラ、25日EMA乖離 +25.9%。株数を絞ること。<strong>8103 明和産業</strong>は出来高16万株と薄く、指値幅も −1.65% と狭い。</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="head"><p class="eyebrow">運用</p><h2>明日からの手順</h2></div>
+    <ol class="steps">
+      <li><p>引け後（または翌朝8:59）に v13 で候補を抽出する。</p></li>
+      <li><p>各候補の <strong>指値 ＝ 当日終値 − 0.75 × ATR14</strong> を計算する。</p><p><code>vba/Mod_買い指値.bas</code> をVBEにインポートして <code>指値ラダー計算</code> を実行すると、買抽出v13 の U〜AB列に自動で出る。</p></li>
+      <li><p>上位候補<strong>すべて</strong>に、その指値で買い注文を出す（期間指定・3営業日有効）。</p><p>1銘柄に絞らないことが前提。絞ると約定率の低下がそのまま機会損失になる。</p></li>
+      <li><p>刺さった銘柄だけ建てる。刺さらなければ追いかけない。</p><p>取り消して翌日の候補に回す。「押し目待ちの押し目なし」で取り逃がす銘柄は必ず出るが、それも織り込んだ上での数字。</p></li>
+      <li><p>建玉後は現行どおり。損切 ＝ 約定値 − 2ATR（3〜10%に制限）、利確 ＝ 損切幅×2、10営業日で時間決済。</p><p>損切・利確は<strong>約定値基準で引き直す</strong>こと。現行の O列／P列は現在値基準なので、指値で安く買えた分ズレる。</p></li>
+    </ol>
+  </section>
+
+  <section>
+    <div class="head"><p class="eyebrow">留保</p><h2>この分析の限界</h2></div>
+    <div class="col">
+      <ul class="plain">
+        <li><strong>約定の仮定が楽観的。</strong>安値が指値にタッチすれば約定したものとして計算している。実際は板の順番で約定しないことがあり、実効約定率は試算の 56% より低くなる。</li>
+        <li><strong>手数料・スリッページ未計上。</strong>片道0.05%×2 ≒ 0.1%。損切幅3〜10%に対して 0.01〜0.03R 程度の目減り。</li>
+        <li><strong>検証期間は1年のみ。</strong>この期間の市場は +16.2%（300銘柄の日次リターン中央値ベース）の上昇相場、年率ボラティリティ 18.9%。下落相場での挙動は検証できていない。</li>
+        <li><strong>TOPIX行にデータの断層がある。</strong>終値シート5行目が直近2日だけ 4,197、それ以前は 896前後。市場全体の指標は300銘柄の日次リターン中央値で代用した。<span class="warn">この行は要修正</span>。</li>
+        <li>売買代金・板の厚みは考慮していない。過去の統計であり、将来の値動きを保証するものではない。</li>
+      </ul>
+    </div>
+  </section>
+
+  <footer>
+    検証コード一式は <code>analysis/</code>、全出力ログは <code>analysis/results_2026-08-14.txt</code>、レポート本体は <code>docs/買いタイミング分析_2026-08.md</code>。<br>
+    シグナルは <code>Mod_買抽出v13</code> のスコアロジック（RSI・EMAトレンド・押し目・出来高倍率・MACD・GC・パーフェクトオーダー・ADX・対TOPIX相対力・当日/前日のローソク足形）をPythonで再現したもの。
+  </footer>
+</div>
+
+<div class="tip" id="tip"></div>
+
+<script>
+const tip=document.getElementById('tip');
+const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+function bindTip(el,text){
+  el.addEventListener('pointerenter',e=>{tip.textContent=text;tip.style.opacity='1';});
+  el.addEventListener('pointermove',e=>{
+    const w=tip.offsetWidth,h=tip.offsetHeight;
+    tip.style.left=Math.min(e.clientX+14,innerWidth-w-8)+'px';
+    tip.style.top=Math.max(e.clientY-h-12,8)+'px';});
+  el.addEventListener('pointerleave',()=>{tip.style.opacity='0';});
+}
+const NS='http://www.w3.org/2000/svg';
+const mk=(t,a)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);return e;};
+
+/* ---- horizontal bar chart ---- */
+function hbar(host,rows,opt){
+  const W=440,rowH=opt.rowH||30,padL=opt.padL||78,padR=64,padT=6,padB=22;
+  const H=padT+rows.length*rowH+padB;
+  const svg=mk('svg',{viewBox:`0 0 ${W} ${H}`,role:'img'});
+  const max=Math.max(...rows.map(r=>Math.abs(r.v)))*1.02||1;
+  const x=v=>padL+Math.abs(v)/max*(W-padL-padR);
+  svg.appendChild(mk('line',{x1:padL,x2:padL,y1:padT,y2:padT+rows.length*rowH,
+    stroke:css('--rule'),'stroke-width':1}));
+  rows.forEach((r,i)=>{
+    const y=padT+i*rowH, bh=13, col=r.hi?css('--up'):css('--mark');
+    const g=mk('g',{});
+    g.appendChild(mk('rect',{x:padL,y:y+(rowH-bh)/2,width:Math.max(x(r.v)-padL,1.5),height:bh,
+      fill:col,rx:3,ry:3}));
+    const lb=mk('text',{x:padL-9,y:y+rowH/2+4,'text-anchor':'end','font-size':11,
+      fill:r.hi?css('--ink'):css('--muted'),'font-family':css('--sans'),
+      'font-weight':r.hi?700:400});
+    lb.textContent=r.k; g.appendChild(lb);
+    const vl=mk('text',{x:x(r.v)+8,y:y+rowH/2+4,'font-size':11.5,fill:r.hi?css('--up'):css('--ink-2'),
+      'font-family':css('--mono'),'font-weight':r.hi?700:400});
+    vl.textContent=r.t; g.appendChild(vl);
+    const hit=mk('rect',{x:0,y:y,width:W,height:rowH,fill:'transparent'});
+    bindTip(hit,r.tip||`${r.k}  ${r.t}`); g.appendChild(hit);
+    svg.appendChild(g);
+  });
+  if(opt.axis){
+    const t=mk('text',{x:padL,y:H-6,'font-size':10,fill:css('--muted'),'font-family':css('--mono')});
+    t.textContent=opt.axis; svg.appendChild(t);
+  }
+  host.appendChild(svg);
+}
+
+hbar(document.getElementById('c-pct'),[
+ {k:'ATR率 〜1.5%',v:0.51,t:'-0.51%'},
+ {k:'1.5〜2.5%',v:0.88,t:'-0.88%'},
+ {k:'2.5〜3.5%',v:1.28,t:'-1.28%'},
+ {k:'3.5〜5%',v:1.99,t:'-1.99%'},
+ {k:'5〜8%',v:3.11,t:'-3.11%'},
+ {k:'8%〜',v:5.20,t:'-5.20%',hi:true}],
+ {axis:'翌日安値 / 翌日始値 の中央値',padL:86});
+
+hbar(document.getElementById('c-atr'),[
+ {k:'ATR率 〜2%',v:0.42,t:'0.42'},
+ {k:'2〜3%',v:0.44,t:'0.44'},
+ {k:'3〜4%',v:0.44,t:'0.44'},
+ {k:'4〜6%',v:0.50,t:'0.50'},
+ {k:'6%〜',v:0.55,t:'0.55',hi:true}],
+ {axis:'中央 k（ATR倍数）',padL:86,rowH:36});
+
+hbar(document.getElementById('c-r'),[
+ {k:'寄付成行（現行）',v:0.179,t:'+0.179R',tip:'翌日寄付で成行\n平均 +0.179R ／ 勝率 46.2%'},
+ {k:'−0.25ATR',v:0.186,t:'+0.186R',tip:'指値 −0.25ATR 当日限り\n平均 +0.186R ／ 勝率 47.3%'},
+ {k:'−0.50ATR 3日',v:0.360,t:'+0.360R',tip:'指値 −0.50ATR 3営業日有効\n平均 +0.360R ／ 勝率 52.7%'},
+ {k:'−0.75ATR 3日',v:0.413,t:'+0.413R',hi:true,tip:'指値 −0.75ATR 3営業日有効 ★推奨\n平均 +0.413R ／ 勝率 53.1%'},
+ {k:'−1.00ATR 3日',v:0.404,t:'+0.404R',tip:'指値 −1.00ATR 3営業日有効\n平均 +0.404R ／ 勝率 52.9%'},
+ {k:'−1.50ATR 当日',v:0.512,t:'+0.512R',tip:'指値 −1.50ATR 当日限り\n平均 +0.512R ／ 勝率 58.3%\n※ 取引数が半分以下になる'}],
+ {axis:'平均R',padL:104});
+
+hbar(document.getElementById('c-n'),[
+ {k:'寄付成行（現行）',v:494,t:'494'},
+ {k:'−0.25ATR',v:489,t:'489'},
+ {k:'−0.50ATR 3日',v:486,t:'486'},
+ {k:'−0.75ATR 3日',v:477,t:'477',hi:true},
+ {k:'−1.00ATR 3日',v:452,t:'452'},
+ {k:'−1.50ATR 当日',v:217,t:'217'}],
+ {axis:'年間取引数',padL:104});
+
+/* ---- histogram ---- */
+(function(){
+  const bins=[-1,-0.875,-0.75,-0.625,-0.5,-0.375,-0.25,-0.125,0,0.125,0.25,0.375,0.5,0.625,0.75,0.875,1,1.125,1.25,1.375,1.5,1.625,1.75,1.875,2,2.125,2.25,2.375,2.5,2.625,2.75,2.875];
+  const cnt=[177,37,60,96,122,199,292,396,570,550,585,590,537,502,419,366,281,239,199,156,128,97,75,71,51,38,27,19,22,10,6,58];
+  const W=880,H=250,padL=44,padR=16,padT=18,padB=34;
+  const svg=mk('svg',{viewBox:`0 0 ${W} ${H}`,role:'img'});
+  const max=Math.max(...cnt);
+  const x=v=>padL+(v+1)/4*(W-padL-padR);
+  const y=v=>H-padB-v/max*(H-padT-padB);
+  [0,200,400,600].forEach(g=>{
+    svg.appendChild(mk('line',{x1:padL,x2:W-padR,y1:y(g),y2:y(g),stroke:css('--rule-soft'),'stroke-width':1}));
+    const t=mk('text',{x:padL-8,y:y(g)+4,'text-anchor':'end','font-size':10,fill:css('--muted'),'font-family':css('--mono')});
+    t.textContent=g;svg.appendChild(t);
+  });
+  const bw=(x(0.125)-x(0))-2;
+  bins.forEach((b,i)=>{
+    const deep=b>=0.75;
+    const r=mk('rect',{x:x(b)+1,y:y(cnt[i]),width:bw,height:H-padB-y(cnt[i]),
+      fill:deep?css('--up'):css('--mark'),opacity:deep?0.92:0.5,rx:2,ry:2});
+    bindTip(r,`k ${b.toFixed(3)} 〜 ${(b+0.125).toFixed(3)}\n${cnt[i]} 件`);
+    svg.appendChild(r);
+  });
+  [[0,'終値','80.2%が到達'],[0.46,'中央値',''],[0.75,'★推奨指値','32.4%が到達'],[1.25,'深押し','13.7%']].forEach(([v,lab,sub])=>{
+    const isMain=v===0.75;
+    svg.appendChild(mk('line',{x1:x(v),x2:x(v),y1:padT-6,y2:H-padB,
+      stroke:isMain?css('--up'):css('--ink-2'),'stroke-width':isMain?2:1,
+      'stroke-dasharray':isMain?'':'3 3'}));
+    const t=mk('text',{x:x(v)+5,y:padT+2,'font-size':11,fill:isMain?css('--up'):css('--ink-2'),
+      'font-family':css('--sans'),'font-weight':isMain?700:400});
+    t.textContent=lab;svg.appendChild(t);
+    if(sub){const s=mk('text',{x:x(v)+5,y:padT+16,'font-size':10,fill:css('--muted'),'font-family':css('--mono')});
+      s.textContent=sub;svg.appendChild(s);}
+  });
+  [-1,-0.5,0,0.5,1,1.5,2,2.5,3].forEach(v=>{
+    const t=mk('text',{x:x(v),y:H-12,'text-anchor':'middle','font-size':10,fill:css('--muted'),'font-family':css('--mono')});
+    t.textContent=v.toFixed(1);svg.appendChild(t);
+  });
+  const ax=mk('text',{x:W-padR,y:H-12,'text-anchor':'end','font-size':10,fill:css('--muted'),'font-family':css('--mono')});
+  ax.textContent='k = (当日終値 − 翌日安値) ÷ ATR14';svg.appendChild(ax);
+  document.getElementById('c-hist').appendChild(svg);
+})();
+
+/* ---- ladders ---- */
+const CANDS=[
+ {c:'6330',n:'東洋エンジニア',px:2590,atr:153,atrp:5.9,
+  L:[[2513,-2.97,34.1],[2474,-4.48,15.7],[2398,-7.41,5.2]],e25:2057,
+  note:'25日EMA乖離 +25.9% ／ ATR率 5.9% の高ボラ。株数を絞る。'},
+ {c:'5844',n:'京都フィナンシャルＧ',px:5073,atr:149,atrp:2.9,
+  L:[[4995,-1.54,37.3],[4960,-2.23,26.1],[4885,-3.71,10.0]],e25:4658,
+  note:'乖離 +8.9%、ATR率 2.9%。素直な形。'},
+ {c:'6027',n:'弁護士ドットコム',px:3750,atr:172,atrp:4.6,
+  L:[[3660,-2.40,39.4],[3620,-3.47,26.5],[3530,-5.87,9.2]],e25:2485,
+  note:'8/14に +19.0% 急騰、乖離 +50.9%。深押し3,530以下か5日VWAP3,284まで待つ。',warn:true},
+ {c:'8103',n:'明和産業',px:971,atr:21,atrp:2.2,
+  L:[[960,-1.13,30.5],[955,-1.65,18.9],[944,-2.78,6.0]],e25:911,
+  note:'低ボラ・出来高16万株と薄い。指値幅が狭く約定は運任せ。'},
+ {c:'9101',n:'日本郵船',px:6400,atr:174,atrp:2.7,
+  L:[[6310,-1.41,39.0],[6260,-2.19,24.5],[6180,-3.44,9.2]],e25:5853,
+  note:'乖離 +9.3%、ATR率 2.7%。流動性も厚い。'},
+ {c:'6918',n:'アバールデータ',px:3930,atr:188,atrp:4.8,
+  L:[[3835,-2.42,42.2],[3785,-3.69,26.5],[3695,-5.98,8.8]],e25:3278,
+  note:'8/14に +12.8% 上昇、乖離 +19.9%。ATR率 4.8%。'}];
+const jp=n=>n.toLocaleString('ja-JP');
+document.getElementById('ladders').innerHTML=CANDS.map(s=>{
+  const labs=['第1 −0.5ATR','★本命 −0.75ATR','深押し −1.25ATR'];
+  const rows=s.L.map((r,i)=>`
+    <div class="row${i===1?' main':''}">
+      <span class="lab">${labs[i]}</span>
+      <span class="bar"><i style="width:${Math.min(r[2]*2,100)}%"></i></span>
+      <span class="prc">${jp(r[0])}</span>
+    </div>
+    <div class="row" style="border:0;padding:0 0 4px;grid-template-columns:74px 1fr 62px">
+      <span></span><span class="lab num">到達率 ${r[2].toFixed(1)}%</span><span class="lab num" style="text-align:right">${r[1].toFixed(2)}%</span>
+    </div>`).join('');
+  return `<div class="lad">
+    <div class="lad-h">
+      <span><span class="nm">${s.n}</span> <span class="cd">${s.c}</span></span>
+      <span class="px">${jp(s.px)}</span>
+    </div>
+    <div class="row top"><span class="lab">8/14 終値</span><span class="bar"><i style="width:100%"></i></span><span class="prc">${jp(s.px)}</span></div>
+    ${rows}
+    <div class="row"><span class="lab">撤退 25日EMA</span><span class="bar"></span><span class="prc" style="color:var(--muted)">${jp(s.e25)}</span></div>
+    <p class="lad-f">ATR14 ${jp(s.atr)}円（${s.atrp}%）／ <span class="${s.warn?'warn':''}">${s.note}</span></p>
+  </div>`;}).join('');
+</script>

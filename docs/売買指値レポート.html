@@ -1,4 +1,4 @@
-<title>買い指値の板</title>
+<title>売買指値の板</title>
 <style>
 :root{
   --ground:#eef0f3; --surface:#fbfcfd; --surface-2:#f4f6f8;
@@ -131,15 +131,15 @@ footer{border-top:1px solid var(--rule);padding-top:20px;font-size:12.5px;color:
 
 <header>
   <div class="mast">
-    <p class="eyebrow">打ち出のこづち V8.17 ／ 買いタイミング検証</p>
-    <h1>買い候補に、いくらの指値を置くか</h1>
-    <p class="dek">「買うとその日は下がる」を 300銘柄×250営業日で数えた。下がるのは事実で、しかも下がり方には規則がある。値段を決めてから買えば、同じ銘柄・同じ決済ルールのまま期待値は 2.3倍になった。</p>
+    <p class="eyebrow">総合売買抽出BOOK V8.17 ／ 売買タイミング検証</p>
+    <h1>候補に、いくらの指値を置くか</h1>
+    <p class="dek">「買うとその日は下がる」を 300銘柄×250営業日で数えた。下がるのは事実で、しかも下がり方には規則がある。値段を決めてから買えば、同じ銘柄・同じ決済ルールのまま期待値は 2.3倍になった。売りは同じ手が通用しない ── そこも数字で確かめてある。</p>
     <div class="meta">
       <span>分析日 2026/08/15</span>
       <span>標本 300銘柄 × 250営業日</span>
       <span>2025/07/31 – 2026/08/14</span>
       <span>延べ 50,671 銘柄日</span>
-      <span>シグナル再現 6,975件</span>
+      <span>買シグナル 6,975件 ／ 売 3,571件</span>
     </div>
   </div>
 </header>
@@ -301,25 +301,84 @@ footer{border-top:1px solid var(--rule);padding-top:20px;font-size:12.5px;color:
     </div>
   </section>
 
+
   <section>
-    <div class="head"><p class="eyebrow">2026/08/14 終値基準</p><h2>今の候補6銘柄の板</h2></div>
+    <div class="head"><p class="eyebrow">売り</p><h2>空売りは、買いの鏡像ではなかった</h2></div>
     <div class="col">
-      <p>バーの長さは、その銘柄自身の過去実績（翌日安値がその水準に届いた割合）。★の値段を3営業日有効で出すのが基本形。</p>
+      <p>売抽出v13 のシグナルも同じ手順で再現して（3,571件）、同じ検証をかけた。翌日高値は当日終値から <strong>中央 +0.39ATR</strong> 上まで戻り（終値超え率 84.0%）、寄付で空売りすると 92.9% が当日一度は含み損。ここまではきれいな鏡像になっている。</p>
+      <p>ところが<span class="hl">「戻りを待って高く売る」は成績が落ちた</span>。下抜けを待つ逆指値売りも、試したすべての水準でマイナスだった。</p>
+    </div>
+    <div class="tw">
+      <table>
+        <thead><tr><th>売りのエントリー方法</th><th>年間取引</th><th>平均R</th><th>勝率</th><th>年間合計R</th></tr></thead>
+        <tbody>
+          <tr class="best"><td>翌日寄付で成行売り（現行）</td><td class="n">500</td><td class="n">+0.062</td><td class="n">48.1%</td><td class="n">+31.1</td></tr>
+          <tr><td>指値売り +0.25ATR（3日有効）</td><td class="n">498</td><td class="n">+0.031</td><td class="n">49.8%</td><td class="n">+15.6</td></tr>
+          <tr><td>指値売り +0.50ATR（3日有効）</td><td class="n">489</td><td class="n">+0.010</td><td class="n">48.5%</td><td class="n">+5.0</td></tr>
+          <tr><td>指値売り +0.75ATR（3日有効）</td><td class="n">456</td><td class="n neg">-0.044</td><td class="n">46.5%</td><td class="n neg">-20.0</td></tr>
+          <tr><td>指値売り +1.25ATR（3日有効）</td><td class="n">351</td><td class="n neg">-0.157</td><td class="n">40.1%</td><td class="n neg">-55.2</td></tr>
+          <tr><td>逆指値売り −0.25ATR（3日有効）</td><td class="n">497</td><td class="n neg">-0.056</td><td class="n">45.2%</td><td class="n neg">-27.6</td></tr>
+          <tr><td>逆指値売り −0.50ATR（3日有効）</td><td class="n">470</td><td class="n neg">-0.049</td><td class="n">44.8%</td><td class="n neg">-23.2</td></tr>
+        </tbody>
+        <caption>決済ルールは買いと同じ（損切 建値+2ATR、利確 2R、10営業日で時間決済）。</caption>
+      </table>
+    </div>
+    <div class="col">
+      <p class="note"><strong>売りは寄付成行のまま。</strong>ただしこの結論は信頼度が低い。検証期間は +16.2% の上昇相場1年のみで、空売りには構造的に不利。寄付成行ですら +0.062R（ほぼ損益ゼロ）で、前半 +0.143R / 後半 −0.019R と安定していない。下落相場のデータが貯まったら再検証が要る。<br>そのため売抽出v13 には「戻り目安 +0.39ATR」「戻り上限 +0.70ATR」を<strong>参考値として</strong>出し、★エントリーは寄付成行と明示している。</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="head"><p class="eyebrow">2026/08/14 終値基準</p><h2>モジュールが実際に出す値</h2></div>
+    <div class="col">
+      <p>買抽出v13 の6銘柄。バーの長さは、その銘柄自身の<strong>直近120営業日</strong>の実績（翌日安値がその水準に届いた割合）。★の値段を3営業日有効で出すのが基本形。</p>
     </div>
     <div class="ladders" id="ladders"></div>
+    <div class="tw" style="margin-top:22px">
+      <table>
+        <thead><tr><th>売抽出v13（U〜AC列）</th><th>基準終値</th><th>ATR14</th><th>戻り目安 +0.39ATR</th><th>戻り上限 +0.70ATR</th><th>★エントリー</th><th>到達率</th><th>建値時損切</th><th>建値時利確</th></tr></thead>
+        <tbody>
+          <tr><td>4980 デクセリアルズ</td><td class="n">3,191</td><td class="n">220</td><td class="n">3,275</td><td class="n">3,345</td><td class="n">3,191 寄付成行</td><td class="n">55.5%</td><td class="n">3,510</td><td class="n">2,552</td></tr>
+          <tr><td>1812 鹿島建設</td><td class="n">4,937</td><td class="n">200</td><td class="n">5,010</td><td class="n">5,070</td><td class="n">4,937 寄付成行</td><td class="n">47.1%</td><td class="n">5,330</td><td class="n">4,135</td></tr>
+        </tbody>
+        <caption>戻り目安の列は「そこまで戻る可能性が高い水準」を示すだけで、待つことは推奨していない。厳選TOP2 は 8/14 時点で買い・売りとも条件通過ゼロ件のため空欄（候補が出た日に自動で埋まる）。</caption>
+      </table>
+    </div>
     <div class="col">
       <p class="note"><strong>6027 弁護士ドットコム</strong>は 8/14 に <span class="warn">+19.0%</span> 急騰し、25日EMAから <span class="warn">+50.9%</span> 離れている。抽出シートの現在値 3,150円 は 8/13 の終値で、実際は 3,750円。<strong>ここから成行で入るのは統計上もっとも不利な形</strong>。買うなら深押し 3,530円以下、または 5日VWAP 3,284円まで待つ。<br><strong>6330 東洋エンジニア</strong>は ATR率 5.9% の高ボラ、25日EMA乖離 +25.9%。株数を絞ること。<strong>8103 明和産業</strong>は出来高16万株と薄く、指値幅も −1.65% と狭い。</p>
+    </div>
+  </section>
+
+
+  <section>
+    <div class="head"><p class="eyebrow">配置</p><h2>4シートのどこに出るか</h2></div>
+    <div class="col"><p>既存の列は一切書き換えない。空いている右側と下側にだけ書き込む。</p></div>
+    <div class="tw">
+      <table>
+        <thead><tr><th>シート</th><th>出力位置</th><th>内容</th></tr></thead>
+        <tbody>
+          <tr><td>買抽出v13</td><td class="n">U〜AC列</td><td style="text-align:left">基準終値／ATR14／第1指値 −0.5ATR／<strong>★本命指値 −0.75ATR</strong>／深押し −1.25ATR／本命到達率／約定時損切／約定時利確／ひとこと</td></tr>
+          <tr><td>売抽出v13</td><td class="n">U〜AC列</td><td style="text-align:left">基準終値／ATR14／戻り目安 +0.39ATR／戻り上限 +0.70ATR／<strong>★エントリー（寄付成行）</strong>／戻り到達率／建値時損切／建値時利確／ひとこと</td></tr>
+          <tr><td>厳選TOP2</td><td class="n">N〜Q列<br>買 18–22行／売 26–30行</td><td style="text-align:left">ATR14／★本命指値（売は★エントリー）／到達率（売は戻り目安）／約定時損切</td></tr>
+          <tr><td>個別銘柄</td><td class="n">A24〜C29</td><td style="text-align:left">基準終値／ATR14／買の3水準（第1・★本命・深押し）と各到達率</td></tr>
+        </tbody>
+        <caption>到達率はその銘柄自身の直近120営業日の実績（翌日安値がその水準に届いた割合）。全体統計ではない。</caption>
+      </table>
+    </div>
+    <div class="col">
+      <p class="note"><strong>基準終値は終値シートE列（直近の確定終値）を使う。</strong>抽出シートの現在値は抽出を回した時刻のRSS値で、古いことがあるため使わない。実例：8/14 の 6027 は抽出シートに 3,150円（＝8/13終値）と出ているが、実際の 8/14 終値は 3,750円。<br><strong>高精度シグナル（スコア16以上）は自動で −1.00ATR に切り替わる</strong>（平均+0.535R、勝率57.3%）。「ひとこと」列に理由が出る。</p>
     </div>
   </section>
 
   <section>
     <div class="head"><p class="eyebrow">運用</p><h2>明日からの手順</h2></div>
     <ol class="steps">
-      <li><p>引け後（または翌朝8:59）に v13 で候補を抽出する。</p></li>
-      <li><p>各候補の <strong>指値 ＝ 当日終値 − 0.75 × ATR14</strong> を計算する。</p><p><code>vba/Mod_買い指値.bas</code> をVBEにインポートして <code>指値ラダー計算</code> を実行すると、買抽出v13 の U〜AB列に自動で出る。</p></li>
-      <li><p>上位候補<strong>すべて</strong>に、その指値で買い注文を出す（期間指定・3営業日有効）。</p><p>1銘柄に絞らないことが前提。絞ると約定率の低下がそのまま機会損失になる。</p></li>
-      <li><p>刺さった銘柄だけ建てる。刺さらなければ追いかけない。</p><p>取り消して翌日の候補に回す。「押し目待ちの押し目なし」で取り逃がす銘柄は必ず出るが、それも織り込んだ上での数字。</p></li>
-      <li><p>建玉後は現行どおり。損切 ＝ 約定値 − 2ATR（3〜10%に制限）、利確 ＝ 損切幅×2、10営業日で時間決済。</p><p>損切・利確は<strong>約定値基準で引き直す</strong>こと。現行の O列／P列は現在値基準なので、指値で安く買えた分ズレる。</p></li>
+      <li><p><strong>導入は1回だけ。</strong>VBEを開き（Alt+F11）→[ファイル]→[ファイルのインポート]→ <code>Mod_推奨指値.bas</code> を読み込む。</p><p>必要なら <code>推奨指値ボタン設置</code> を1回実行すると、買抽出v13・売抽出v13・個別銘柄にボタンが付く。</p></li>
+      <li><p>毎日、データ取込後に <code>推奨指値_全シート更新</code> を実行する。4シートすべてが更新される。</p></li>
+      <li><p><strong>買い</strong>：候補<strong>すべて</strong>に ★本命指値の列の値で買い注文を出す（期間指定・3営業日有効）。</p><p>1銘柄に絞らないことが前提。絞ると約定率の低下がそのまま機会損失になる。</p></li>
+      <li><p>刺さった銘柄だけ建てる。刺さらなければ追いかけない。取り消して翌日の候補に回す。</p><p>「押し目待ちの押し目なし」で取り逃がす銘柄は必ず出るが、それも織り込んだ上での数字。</p></li>
+      <li><p><strong>売り</strong>：寄付成行のまま。戻りを待たない。</p></li>
+      <li><p>建玉後は現行どおり。損切 ＝ 建値 ∓ 2ATR（3〜10%に制限）、利確 ＝ 損切幅×2、10営業日で時間決済。</p><p>損切・利確は<strong>約定値基準で引き直す</strong>こと。現行の O列／P列は現在値基準なので、指値で安く買えた分ズレる。モジュールの「約定時損切」「約定時利確」列がその値。</p></li>
     </ol>
   </section>
 
@@ -337,8 +396,8 @@ footer{border-top:1px solid var(--rule);padding-top:20px;font-size:12.5px;color:
   </section>
 
   <footer>
-    検証コード一式は <code>analysis/</code>、全出力ログは <code>analysis/results_2026-08-14.txt</code>、レポート本体は <code>docs/買いタイミング分析_2026-08.md</code>。<br>
-    シグナルは <code>Mod_買抽出v13</code> のスコアロジック（RSI・EMAトレンド・押し目・出来高倍率・MACD・GC・パーフェクトオーダー・ADX・対TOPIX相対力・当日/前日のローソク足形）をPythonで再現したもの。
+    モジュールは <code>vba/Mod_推奨指値.bas</code>、検証コード一式は <code>analysis/</code>、全出力ログは <code>analysis/results_2026-08-14.txt</code> と <code>analysis/results_売り_4シート.txt</code>、レポート本体は <code>docs/買いタイミング分析_2026-08.md</code>。<br>
+    シグナルは <code>Mod_買抽出v13</code> と <code>Mod_SellExtrac</code> のスコアロジック（RSI・EMAトレンド・押し目・出来高倍率・MACD・GC・パーフェクトオーダー・ADX・対TOPIX相対力・当日/前日のローソク足形）をPythonで再現したもの。
   </footer>
 </div>
 
@@ -470,23 +529,23 @@ hbar(document.getElementById('c-n'),[
 /* ---- ladders ---- */
 const CANDS=[
  {c:'6330',n:'東洋エンジニア',px:2590,atr:153,atrp:5.9,
-  L:[[2513,-2.97,34.1],[2474,-4.48,15.7],[2398,-7.41,5.2]],e25:2057,
-  note:'25日EMA乖離 +25.9% ／ ATR率 5.9% の高ボラ。株数を絞る。'},
+  L:[[2513,-2.97,32.8],[2474,-4.48,12.6],[2398,-7.41,2.5]],e25:2057,
+  note:'25日EMA乖離 +25.9% 高値警戒／高ボラ(ATR5.9%) 株数を絞る。到達率12.6%と低く3日で刺さらない公算。',warn:true},
  {c:'5844',n:'京都フィナンシャルＧ',px:5073,atr:149,atrp:2.9,
-  L:[[4995,-1.54,37.3],[4960,-2.23,26.1],[4885,-3.71,10.0]],e25:4658,
-  note:'乖離 +8.9%、ATR率 2.9%。素直な形。'},
+  L:[[4995,-1.54,42.9],[4960,-2.23,28.6],[4885,-3.71,9.2]],e25:4658,
+  note:'乖離 +8.9%、ATR率 2.9%。素直な形。ひとこと欄は「標準」。'},
  {c:'6027',n:'弁護士ドットコム',px:3750,atr:172,atrp:4.6,
-  L:[[3660,-2.40,39.4],[3620,-3.47,26.5],[3530,-5.87,9.2]],e25:2485,
-  note:'8/14に +19.0% 急騰、乖離 +50.9%。深押し3,530以下か5日VWAP3,284まで待つ。',warn:true},
+  L:[[3660,-2.40,37.8],[3620,-3.47,24.4],[3530,-5.87,6.7]],e25:2485,
+  note:'前日比 +19.0% 急騰直後／乖離 +51% 高値警戒。抽出シートの3,150円は8/13終値。',warn:true},
  {c:'8103',n:'明和産業',px:971,atr:21,atrp:2.2,
-  L:[[960,-1.13,30.5],[955,-1.65,18.9],[944,-2.78,6.0]],e25:911,
-  note:'低ボラ・出来高16万株と薄い。指値幅が狭く約定は運任せ。'},
+  L:[[960,-1.13,34.5],[955,-1.65,21.8],[944,-2.78,7.6]],e25:911,
+  note:'低ボラ・出来高16万株と薄い。指値幅が狭く約定は板次第。'},
  {c:'9101',n:'日本郵船',px:6400,atr:174,atrp:2.7,
-  L:[[6310,-1.41,39.0],[6260,-2.19,24.5],[6180,-3.44,9.2]],e25:5853,
+  L:[[6310,-1.41,39.5],[6260,-2.19,23.5],[6180,-3.44,8.4]],e25:5853,
   note:'乖離 +9.3%、ATR率 2.7%。流動性も厚い。'},
  {c:'6918',n:'アバールデータ',px:3930,atr:188,atrp:4.8,
-  L:[[3835,-2.42,42.2],[3785,-3.69,26.5],[3695,-5.98,8.8]],e25:3278,
-  note:'8/14に +12.8% 上昇、乖離 +19.9%。ATR率 4.8%。'}];
+  L:[[3835,-2.42,45.4],[3785,-3.69,27.7],[3695,-5.98,10.1]],e25:3278,
+  note:'前日比 +12.8% 急騰直後／乖離 +19.9%。ATR率 4.8%。',warn:true}];
 const jp=n=>n.toLocaleString('ja-JP');
 document.getElementById('ladders').innerHTML=CANDS.map(s=>{
   const labs=['第1 −0.5ATR','★本命 −0.75ATR','深押し −1.25ATR'];

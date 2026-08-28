@@ -70,6 +70,8 @@ Public Function JudgeSheet(ws As Worksheet) As TickJudgeResult
     Dim upScore As Double, dnScore As Double
     Dim buyBid As Long, sellAsk As Long
     Dim havePrev As Boolean
+    Dim dirTick As Long
+    Dim lastBid As Double, lastAsk As Double
 
     r.SheetName = ws.Name
     r.Code = CStr(ws.Cells(ROW_CODE, COL_CODE).Value)
@@ -89,8 +91,9 @@ Public Function JudgeSheet(ws As Worksheet) As TickJudgeResult
     End If
 
     n = lastRow - TICK_FIRST_ROW + 1
-    src = ws.Range(ws.Cells(TICK_FIRST_ROW, COL_TIME), ws.Cells(lastRow, COL_ASK)).Value
-    ' src の列 : 1=D時刻 2=E約定値 3=F出来高 4=G重み 5=H 6=I 7=J買気配 8=K売気配
+    src = ws.Range(ws.Cells(TICK_FIRST_ROW, COL_TIME), ws.Cells(lastRow, COL_MARK)).Value
+    ' src の列 : 1=D時刻 2=E約定値 3=F出来高 4=G重み 5=H 6=I
+    '            7=J買気配 8=K売気配 9=L方向 10=M秒内 11=Nティック記号
 
     ReDim outCalc(1 To n, 1 To 3)
     ReDim outDir(1 To n, 1 To 2)
@@ -136,27 +139,39 @@ Public Function JudgeSheet(ws As Worksheet) As TickJudgeResult
         w = VolWeight(vol)
         outCalc(i, 1) = w
 
-        '--- ① 方向判定：前ティック比の連続上昇／連続下落 -----------------
-        If Not havePrev Then
+        '--- ① 方向判定：ティック記号（↑↓）優先、無ければ前ティック比 -----
+        dirTick = 0
+        If USE_TICK_MARK Then dirTick = MarkDir(src(i, 11))
+
+        If dirTick = 0 And havePrev Then
+            If price > prevPrice Then
+                dirTick = 1
+            ElseIf price < prevPrice Then
+                dirTick = -1
+            End If
+        End If
+
+        If Not havePrev And dirTick = 0 Then
             outDir(i, 1) = "-"
         Else
-            If price > prevPrice Then
-                upRun = upRun + 1
-                dnRun = 0
-                upScore = upScore + w
-                outDir(i, 1) = ChrW(&H2191)                    ' ↑
-            ElseIf price < prevPrice Then
-                dnRun = dnRun + 1
-                upRun = 0
-                dnScore = dnScore + w
-                outDir(i, 1) = ChrW(&H2193)                    ' ↓
-            Else
-                If RESET_ON_FLAT Then
-                    upRun = 0
+            Select Case dirTick
+                Case 1
+                    upRun = upRun + 1
                     dnRun = 0
-                End If
-                outDir(i, 1) = ChrW(&H2192)                    ' →
-            End If
+                    upScore = upScore + w
+                    outDir(i, 1) = ChrW(&H2191)                ' ↑
+                Case -1
+                    dnRun = dnRun + 1
+                    upRun = 0
+                    dnScore = dnScore + w
+                    outDir(i, 1) = ChrW(&H2193)                ' ↓
+                Case Else
+                    If RESET_ON_FLAT Then
+                        upRun = 0
+                        dnRun = 0
+                    End If
+                    outDir(i, 1) = ChrW(&H2192)                ' →
+            End Select
 
             If upRun > r.UpSeqMax Then r.UpSeqMax = upRun
             If dnRun > r.DnSeqMax Then r.DnSeqMax = dnRun
@@ -169,6 +184,9 @@ Public Function JudgeSheet(ws As Worksheet) As TickJudgeResult
                 If ask < prevAsk Then sellAsk = sellAsk + 1
             End If
         End If
+
+        If bid > 0 Then lastBid = bid
+        If ask > 0 Then lastAsk = ask
 
         outCalc(i, 2) = upScore
         outCalc(i, 3) = dnScore
@@ -203,6 +221,13 @@ NextI:
     r.BuyTotal = upScore + buyBid
     r.SellTotal = dnScore + sellAsk
 
+    '--- 最良気配（RSS のライブ値優先。取れなければ最後のティック時点） ---
+    r.BestBid = NumOrZero(ws.Range(LIVE_BID).Value)
+    r.BestAsk = NumOrZero(ws.Range(LIVE_ASK).Value)
+    If r.BestBid <= 0 Then r.BestBid = lastBid
+    If r.BestAsk <= 0 Then r.BestAsk = lastAsk
+    If r.BestBid > 0 And r.BestAsk > 0 Then r.Spread = r.BestAsk - r.BestBid
+
     '--- ④ 総合ジャッジ ----------------------------------------------
     If r.Direction = 1 And r.VolDominant Then
         r.Judge = "買い"
@@ -229,19 +254,22 @@ Public Sub WriteSheetResult(ws As Worksheet, r As TickJudgeResult)
 
     top.Offset(0, 1).Value = r.Judge
     top.Offset(1, 1).Value = r.Confidence
-    top.Offset(2, 1).Value = r.DirText
-    top.Offset(3, 1).Value = r.UpSeqMax
-    top.Offset(4, 1).Value = r.DnSeqMax
-    top.Offset(5, 1).Value = r.Vol1
-    top.Offset(6, 1).Value = r.Vol2
-    top.Offset(7, 1).Value = r.Vol3
-    top.Offset(8, 1).Value = r.Vol4
-    top.Offset(9, 1).Value = IIf(r.VolDominant, "○ 終盤に大口集中", "×")
-    top.Offset(10, 1).Value = r.SpeedMax
-    top.Offset(11, 1).Value = r.TickCount
-    top.Offset(12, 1).Value = r.BuyTotal
-    top.Offset(13, 1).Value = r.SellTotal
-    top.Offset(14, 1).Value = Format$(Now, "hh:mm:ss")
+    top.Offset(2, 1).Value = r.BestBid
+    top.Offset(3, 1).Value = r.BestAsk
+    top.Offset(4, 1).Value = r.Spread
+    top.Offset(5, 1).Value = r.DirText
+    top.Offset(6, 1).Value = r.UpSeqMax
+    top.Offset(7, 1).Value = r.DnSeqMax
+    top.Offset(8, 1).Value = r.Vol1
+    top.Offset(9, 1).Value = r.Vol2
+    top.Offset(10, 1).Value = r.Vol3
+    top.Offset(11, 1).Value = r.Vol4
+    top.Offset(12, 1).Value = IIf(r.VolDominant, "○ 終盤に大口集中", "×")
+    top.Offset(13, 1).Value = r.SpeedMax
+    top.Offset(14, 1).Value = r.TickCount
+    top.Offset(15, 1).Value = r.BuyTotal
+    top.Offset(16, 1).Value = r.SellTotal
+    top.Offset(17, 1).Value = Format$(Now, "hh:mm:ss")
 
     PaintJudge top.Offset(0, 1), r.Judge
 End Sub
@@ -257,8 +285,8 @@ Public Sub WriteSummary(res() As TickJudgeResult)
 
     Set ws = ResultSheet()
 
-    ws.Range(ws.Cells(ROW_HEADER + 1, 2), ws.Cells(ROW_HEADER + 200, 18)).ClearContents
-    ws.Range(ws.Cells(ROW_HEADER + 1, 2), ws.Cells(ROW_HEADER + 200, 18)).Interior.Pattern = xlNone
+    ws.Range(ws.Cells(ROW_HEADER + 1, 2), ws.Cells(ROW_HEADER + 200, 21)).ClearContents
+    ws.Range(ws.Cells(ROW_HEADER + 1, 2), ws.Cells(ROW_HEADER + 200, 21)).Interior.Pattern = xlNone
 
     rw = ROW_HEADER + 1
 
@@ -281,6 +309,9 @@ Public Sub WriteSummary(res() As TickJudgeResult)
             .Cells(rw, 16).Value = res(i).BuyTotal
             .Cells(rw, 17).Value = res(i).SellTotal
             .Cells(rw, 18).Value = Format$(Now, "hh:mm:ss")
+            .Cells(rw, 19).Value = res(i).BestBid
+            .Cells(rw, 20).Value = res(i).BestAsk
+            .Cells(rw, 21).Value = res(i).Spread
         End With
 
         PaintJudge ws.Cells(rw, 4), res(i).Judge
@@ -294,9 +325,70 @@ Public Sub WriteSummary(res() As TickJudgeResult)
         rw = rw + 1
     Next i
 
-    ws.Range("U1").Value = "判定完了 " & Format$(Now, "hh:mm:ss")
-    ws.Range("U3").Value = "買い " & nBuy & " / 売り " & nSell & " / 中立 " & nNeutral
+    ws.Range("X1").Value = "判定完了 " & Format$(Now, "hh:mm:ss")
+    ws.Range("X3").Value = "買い " & nBuy & " / 売り " & nSell & " / 中立 " & nNeutral
 End Sub
+
+'------------------------------------------------------------------
+' 最良気配のリアルタイム表示
+'   記録中に Judge_Results の S:U 列を1秒ごとに更新します。
+'------------------------------------------------------------------
+Public Sub RefreshQuotes(shts As Collection)
+
+    Dim ws As Worksheet, res As Worksheet
+    Dim i As Long, rw As Long
+    Dim bid As Double, ask As Double
+
+    Set res = ResultSheet()
+
+    For i = 1 To shts.Count
+        Set ws = shts(i)
+        rw = ROW_HEADER + i
+
+        bid = NumOrZero(ws.Range(LIVE_BID).Value)
+        ask = NumOrZero(ws.Range(LIVE_ASK).Value)
+
+        If Len(res.Cells(rw, 2).Value & "") = 0 Then
+            res.Cells(rw, 2).Value = ws.Cells(ROW_CODE, COL_CODE).Value
+            res.Cells(rw, 3).Value = ws.Cells(ROW_CODE, COL_NAME).Value
+        End If
+
+        res.Cells(rw, 19).Value = bid
+        res.Cells(rw, 20).Value = ask
+        If bid > 0 And ask > 0 Then
+            res.Cells(rw, 21).Value = ask - bid
+        Else
+            res.Cells(rw, 21).Value = ""
+        End If
+    Next i
+End Sub
+
+'------------------------------------------------------------------
+' ティック記号（↑↓）を方向に変換  1=上 / -1=下 / 0=不明・変わらず
+'------------------------------------------------------------------
+Public Function MarkDir(ByVal v As Variant) As Long
+
+    Dim s As String
+
+    On Error GoTo Done
+    If IsError(v) Then Exit Function
+    If IsEmpty(v) Then Exit Function
+
+    s = Trim$(CStr(v))
+    If Len(s) = 0 Then Exit Function
+
+    Select Case True
+        Case InStr(s, ChrW(&H2191)) > 0, InStr(s, "+") > 0, _
+             UCase$(s) = "U", s = "上", s = "買", InStr(s, ChrW(&HFF0B)) > 0
+            MarkDir = 1
+        Case InStr(s, ChrW(&H2193)) > 0, InStr(s, "-") > 0, _
+             UCase$(s) = "D", s = "下", s = "売", InStr(s, ChrW(&HFF0D)) > 0
+            MarkDir = -1
+    End Select
+
+Done:
+End Function
+
 
 '------------------------------------------------------------------
 ' 判定セルの色付け

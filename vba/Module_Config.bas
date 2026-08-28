@@ -37,13 +37,45 @@ Public Const VOL_RATIO As Double = 1.5
 Public Const SPEED_MIN As Long = 3
 
 '------------------------------------------------------------------
-' ティック記録の設定
+' ティックの取込方式
 '------------------------------------------------------------------
-' RSS のポーリング間隔（ミリ秒）
-'   Application.OnTime は 1 秒刻みしか扱えないため Sleep + DoEvents で刻みます。
-'   200ms = 1秒あたり最大5ティックまで分離できる → SpeedMax >= 3 の判定が成立します。
-'   重い場合は 250〜500 に上げてください（そのぶん SpeedMax の分解能は落ちます）。
-Public Const POLL_MS As Long = 200
+'   1 = 歩み値（TICK）ブロック追従   ← RSS が歩み値を配信する場合はこちら（既定）
+'       RSS の歩み値をシート上のブロックに出しておき、増えた行だけを追記します。
+'       約定1本ずつのデータなので SpeedMax（③約定速度）が正確に出ます。
+'   2 = 現在値・出来高ポーリング     ← 歩み値が使えない環境向けフォールバック
+'       出来高（当日累計）の増分を1ティックとみなします。
+Public Const LOG_MODE As Long = 1
+
+' ポーリング間隔（ミリ秒）
+'   モード1 : 歩み値ブロックが履歴を保持するので 300〜1000 で十分（分解能は落ちません）
+'   モード2 : 200 で 1秒あたり最大5ティックまで分離（ここが SpeedMax の上限になります）
+Public Const POLL_MS As Long = 300
+
+'------------------------------------------------------------------
+' 歩み値（TICK）ブロックの設定  ※ LOG_MODE = 1 のとき使用
+'------------------------------------------------------------------
+' RSS の歩み値数式を置くブロックの左上セル
+Public Const TICK_BLOCK_CELL As String = "AB3"
+
+' 読み取る行数（RSS が返す歩み値の行数に合わせてください）
+Public Const TICK_BLOCK_ROWS As Long = 300
+
+' ブロック内の列オフセット（左上セルから何列目か）
+'   お使いの RSS の並びが違う場合はここだけ直してください。
+Public Const TB_OFF_TIME  As Long = 0    ' 時刻
+Public Const TB_OFF_PRICE As Long = 1    ' 約定値
+Public Const TB_OFF_VOL   As Long = 2    ' 出来高
+Public Const TB_OFF_MARK  As Long = 3    ' ティック記号（↑↓）。無い場合は -1
+
+' 歩み値の並び順
+'   0 = 自動判定（既定） / 1 = 新しい順（上が最新） / 2 = 古い順
+Public Const TICK_BLOCK_ORDER As Long = 0
+
+' ① の方向をティック記号（↑↓）で判定する
+'   True  = 記号があればそれを使う（取引所の呼値そのものなので正確）
+'           記号が空欄の行は前ティック比で判定します
+'   False = 常に前ティック比で判定
+Public Const USE_TICK_MARK As Boolean = True
 
 ' 記録終了（15:20）と同時に自動で判定まで走らせる
 Public Const AUTO_JUDGE_ON_STOP As Boolean = True
@@ -79,6 +111,7 @@ Public Const COL_BID   As Long = 10  ' J  最良買気配値
 Public Const COL_ASK   As Long = 11  ' K  最良売気配値
 Public Const COL_DIR   As Long = 12  ' L  方向（↑↓→）
 Public Const COL_SPD   As Long = 13  ' M  同一秒内の約定連番
+Public Const COL_MARK  As Long = 14  ' N  ティック記号（RSSの歩み値そのまま）
 
 ' 銘柄シートの RSS ライブ取得セル（S列=ラベル / T列=値）
 Public Const LIVE_PRICE As String = "T1"   ' 現在値
@@ -91,7 +124,7 @@ Public Const LIVE_TIME  As String = "T5"   ' 現在値時刻
 Public Const RES_TOP As String = "O1"
 
 ' Judge_Results のボタン設置基準セル
-Public Const BTN_ANCHOR As String = "T5"
+Public Const BTN_ANCHOR As String = "W5"
 Public Const BTN_W As Double = 190
 Public Const BTN_H As Double = 34
 
@@ -116,6 +149,9 @@ Public Type TickJudgeResult
     SpeedFast    As Boolean
     BuyTotal     As Double    ' 参考：重み付きスコア＋気配スコア
     SellTotal    As Double
+    BestBid      As Double    ' 判定時点の最良買気配値
+    BestAsk      As Double    ' 判定時点の最良売気配値
+    Spread       As Double    ' 最良売 − 最良買
     Judge        As String    ' 買い / 売り / 中立
     Confidence   As String    ' 高（アルゴ/大口） / 通常
 End Type

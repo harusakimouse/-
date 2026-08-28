@@ -11,6 +11,7 @@ Option Explicit
 '       3列目 : 出来高    ティック単体 でも 当日累計 でも可（取込時に選択）
 '       4列目 : 最良買気配値（任意）
 '       5列目 : 最良売気配値（任意）
+'       6列目 : ティック記号 ↑↓（任意）
 '==================================================================
 
 Public Sub ImportTickCsv()
@@ -46,7 +47,7 @@ Public Sub ImportTickCsv()
     rw = LastTickRow(ws)
     If rw >= TICK_FIRST_ROW Then
         If MsgBox("既存のティックログを消してから取り込みますか？", vbYesNo + vbQuestion, "CSV取込") = vbYes Then
-            ws.Range(ws.Cells(TICK_FIRST_ROW, COL_TIME), ws.Cells(rw, COL_SPD)).ClearContents
+            ws.Range(ws.Cells(TICK_FIRST_ROW, COL_TIME), ws.Cells(rw, COL_MARK)).ClearContents
         End If
     End If
     rw = LastTickRow(ws) + 1
@@ -89,6 +90,7 @@ Public Sub ImportTickCsv()
         ws.Cells(rw, COL_VOL).Value = dv
         If UBound(parts) >= 3 Then ws.Cells(rw, COL_BID).Value = Val(CleanCell(parts(3)))
         If UBound(parts) >= 4 Then ws.Cells(rw, COL_ASK).Value = Val(CleanCell(parts(4)))
+        If UBound(parts) >= 5 Then ws.Cells(rw, COL_MARK).Value = CleanCell(parts(5))
 
         rw = rw + 1
         nRead = nRead + 1

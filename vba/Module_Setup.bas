@@ -65,8 +65,9 @@ Public Sub SetupStockSheet(ws As Worksheet)
         .Cells(ROW_HEADER, COL_ASK).Value = "最良売気配値"
         .Cells(ROW_HEADER, COL_DIR).Value = "方向"
         .Cells(ROW_HEADER, COL_SPD).Value = "秒内約定数"
+        .Cells(ROW_HEADER, COL_MARK).Value = "ティック"
 
-        With .Range(.Cells(ROW_HEADER, COL_CODE), .Cells(ROW_HEADER, COL_SPD))
+        With .Range(.Cells(ROW_HEADER, COL_CODE), .Cells(ROW_HEADER, COL_MARK))
             .Font.Bold = True
             .Interior.Color = RGB(221, 235, 247)
             .HorizontalAlignment = xlCenter
@@ -83,7 +84,9 @@ Public Sub SetupStockSheet(ws As Worksheet)
         .Range("S3").Value = "最良買気配値"
         .Range("S4").Value = "最良売気配値"
         .Range("S5").Value = "現在値時刻"
-        .Range("S6").Value = "※このブロックを RSS が更新します"
+        .Range("S6").Value = "スプレッド"
+        .Range("S7").Value = "※このブロックを RSS が更新します"
+        .Range("T6").Formula = "=IF(COUNT(T3:T4)=2,T4-T3,"""")"
 
         .Range(LIVE_PRICE).Formula = "=RssMarket($B$3,""現在値"")"
         .Range(LIVE_VOL).Formula = "=RssMarket($B$3,""出来高"")"
@@ -92,12 +95,14 @@ Public Sub SetupStockSheet(ws As Worksheet)
         .Range(LIVE_TIME).Formula = "=RssMarket($B$3,""現在値時刻"")"
         .Range(LIVE_TIME).NumberFormatLocal = "hh:mm:ss"
 
-        .Range("S1:S6").Font.Color = RGB(120, 120, 120)
-        .Range("S6").Font.Italic = True
+        .Range("S1:S7").Font.Color = RGB(120, 120, 120)
+        .Range("S7").Font.Italic = True
+        .Range("S3:T4").Font.Bold = True
 
         '--- 判定結果ブロック（O列ラベル / P列値） ------------------
-        labels = Array("判定", "信頼度", "方向判定①", _
-                       "UpSeqMax", "DnSeqMax", _
+        labels = Array("判定", "信頼度", _
+                       "最良買気配値", "最良売気配値", "スプレッド", _
+                       "方向判定①", "UpSeqMax", "DnSeqMax", _
                        "Vol1 (15:00-05)", "Vol2 (15:05-10)", "Vol3 (15:10-15)", "Vol4 (15:15-20)", _
                        "Vol4優勢②", "SpeedMax③", "ティック数", _
                        "BuyTotal(参考)", "SellTotal(参考)", "判定時刻")
@@ -116,6 +121,20 @@ Public Sub SetupStockSheet(ws As Worksheet)
         End With
         .Range(RES_TOP).Offset(0, 0).Resize(UBound(labels) + 1, 1).Interior.Color = RGB(242, 242, 242)
 
+        '--- 歩み値（TICK）ブロック ----------------------------------
+        .Range("AA1").Value = "歩み値（TICK）ブロック"
+        .Range("AA1").Font.Bold = True
+        .Range("AA2").Value = "→ " & TICK_BLOCK_CELL & " にお使いのRSSの歩み値数式を入れてください"
+        .Range("AA2").Font.Color = RGB(120, 120, 120)
+        .Range("AB2").Value = "時刻"
+        .Range("AC2").Value = "約定値"
+        .Range("AD2").Value = "出来高"
+        .Range("AE2").Value = "ティック"
+        .Range("AB2:AE2").Font.Bold = True
+        .Range("AB2:AE2").Interior.Color = RGB(226, 239, 218)
+        .Columns("AA").ColumnWidth = 32
+        .Columns("AB:AE").ColumnWidth = 11
+
         '--- 書式・幅 ------------------------------------------------
         .Columns(COL_TIME).NumberFormatLocal = "hh:mm:ss"
         .Columns(COL_TIME).ColumnWidth = 10
@@ -128,6 +147,7 @@ Public Sub SetupStockSheet(ws As Worksheet)
         .Columns(COL_ASK).ColumnWidth = 13
         .Columns(COL_DIR).ColumnWidth = 6
         .Columns(COL_SPD).ColumnWidth = 10
+        .Columns(COL_MARK).ColumnWidth = 8
         .Columns("O").ColumnWidth = 18
         .Columns("P").ColumnWidth = 20
         .Columns("S").ColumnWidth = 20
@@ -157,7 +177,8 @@ Public Sub SetupResultSheet()
     head = Array("コード", "銘柄名", "判定", "信頼度", _
                  "UpSeqMax", "DnSeqMax", "方向判定①", _
                  "Vol1", "Vol2", "Vol3", "Vol4", "Vol4優勢②", _
-                 "SpeedMax③", "ティック数", "BuyTotal", "SellTotal", "更新時刻")
+                 "SpeedMax③", "ティック数", "BuyTotal", "SellTotal", "更新時刻", _
+                 "最良買気配", "最良売気配", "スプレッド")
 
     With ws
         .Range("B1").Value = "引け判定サマリー（15:00〜15:20 のティックで判定）"
@@ -168,7 +189,7 @@ Public Sub SetupResultSheet()
             .Cells(ROW_HEADER, 2 + i).Value = head(i)
         Next i
 
-        With .Range(.Cells(ROW_HEADER, 2), .Cells(ROW_HEADER, 18))
+        With .Range(.Cells(ROW_HEADER, 2), .Cells(ROW_HEADER, 21))
             .Font.Bold = True
             .Interior.Color = RGB(221, 235, 247)
             .HorizontalAlignment = xlCenter
@@ -179,18 +200,27 @@ Public Sub SetupResultSheet()
         .Columns("B:C").ColumnWidth = 14
         .Columns("D:E").ColumnWidth = 16
         .Columns("F:R").ColumnWidth = 11
-        .Columns("T").ColumnWidth = 4
-        .Columns("U").ColumnWidth = 40
+        .Columns("S:U").ColumnWidth = 12
+        .Columns("V").ColumnWidth = 3
+        .Columns("W").ColumnWidth = 6
+        .Columns("X").ColumnWidth = 46
+
+        With .Range(.Cells(ROW_HEADER, 19), .Cells(ROW_HEADER, 21))
+            .Interior.Color = RGB(255, 242, 204)
+        End With
 
         '--- 状態表示 ------------------------------------------------
-        .Range("T1").Value = "状態"
-        .Range("T2").Value = "件数"
-        .Range("T3").Value = "内訳"
-        .Range("T1:T3").Font.Bold = True
+        .Range("W1").Value = "状態"
+        .Range("W2").Value = "件数"
+        .Range("W3").Value = "内訳"
+        .Range("W1:W3").Font.Bold = True
 
         '--- 旧レイアウトの残骸を掃除 -------------------------------
         .Range("O1:O3").ClearContents
+        .Range("T1:U3").ClearContents
     End With
+
+    SeedResultRows ws
 
     BuildButtons ws
 End Sub
@@ -208,8 +238,30 @@ Private Sub BuildButtons(ws As Worksheet)
     AddButton ws, 3, "④ 判定 実行", "JudgeAll"
     AddButton ws, 4, "⑤ ティックログ消去", "ClearAllTicks"
     AddButton ws, 5, "自動開始を予約（14:59:30）", "ArmAutoRun"
-    AddButton ws, 6, "CSV（歩み値）取込", "ImportTickCsv"
-    AddButton ws, 7, "銘柄シートを追加", "AddTickSheet"
+    AddButton ws, 6, "歩み値を今すぐ取込", "ImportTickBlockNow"
+    AddButton ws, 7, "歩み値ブロックの確認", "ShowTickBlockInfo"
+    AddButton ws, 8, "CSV（歩み値）取込", "ImportTickCsv"
+    AddButton ws, 9, "銘柄シートを追加", "AddTickSheet"
+End Sub
+
+'------------------------------------------------------------------
+' 銘柄行をあらかじめ置いておく
+'   記録中（15:00〜15:20）から最良気配をここに出すため
+'------------------------------------------------------------------
+Private Sub SeedResultRows(ws As Worksheet)
+
+    Dim shts As Collection
+    Dim src As Worksheet
+    Dim i As Long, rw As Long
+
+    Set shts = TargetSheets()
+
+    For i = 1 To shts.Count
+        Set src = shts(i)
+        rw = ROW_HEADER + i
+        ws.Cells(rw, 2).Value = src.Cells(ROW_CODE, COL_CODE).Value
+        ws.Cells(rw, 3).Value = src.Cells(ROW_CODE, COL_NAME).Value
+    Next i
 End Sub
 
 Private Sub AddButton(ws As Worksheet, ByVal idx As Long, ByVal caption As String, ByVal macroName As String)

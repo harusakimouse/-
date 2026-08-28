@@ -1,0 +1,18 @@
+'==================================================================
+' ThisWorkbook モジュールに貼り付けてください
+'   （VBE 左のツリー → ThisWorkbook をダブルクリック → 貼り付け）
+'   ※ .bas のようにインポートするとただのクラスになってしまうので、
+'      これだけは「コピペ」で入れてください。
+'==================================================================
+Option Explicit
+
+Private Sub Workbook_Open()
+    On Error Resume Next
+    ThisWorkbook.Worksheets(RESULT_SHEET).Activate
+End Sub
+
+Private Sub Workbook_BeforeClose(Cancel As Boolean)
+    ' 記録ループとタイマー予約を確実に止める
+    StopTickLogging
+    DisarmAutoRun
+End Sub

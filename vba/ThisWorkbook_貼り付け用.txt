@@ -1,28 +1,32 @@
 '==================================================================
-' ThisWorkbook モジュールに貼り付けてください
-'   （VBE 左のツリー → ThisWorkbook をダブルクリック → 貼り付け）
-'   ※ .bas のようにインポートするとただのクラスになってしまうので、
-'      これだけは「コピペ」で入れてください。
+' Paste this into the ThisWorkbook module.
+'   VBE tree -> double-click "ThisWorkbook" -> paste here.
+'   Do NOT import this as a .bas file (it would become a plain class).
+'
+'   Comments are ASCII only so that this snippet cannot be garbled
+'   by a text editor guessing the wrong encoding.
 '==================================================================
 Option Explicit
 
 Private Sub Workbook_Open()
 
+    ' Open the judge summary sheet.
     On Error Resume Next
-
-    ' 判定サマリーを開く
     ThisWorkbook.Worksheets(RESULT_SHEET).Activate
+    On Error GoTo 0
 
-    ' 自動開始を予約する（Module_Config の AUTO_ARM_ON_OPEN = True のとき）
-    '   ・予約時刻前  → その時刻に自動で記録開始
-    '   ・予約時刻後  → 判定窓の終了前ならすぐ記録開始
-    '   ・判定窓の後  → 何もしない
+    ' Arm the automatic start (when AUTO_ARM_ON_OPEN = True in Module_Config).
+    '   before AUTO_ARM_TIME : starts automatically at that time
+    '   after  AUTO_ARM_TIME : starts right away if JUDGE_END has not passed
+    '   after  JUDGE_END     : does nothing
     ArmAutoRunSilent
 
 End Sub
 
 Private Sub Workbook_BeforeClose(Cancel As Boolean)
-    ' 記録ループとタイマー予約を確実に止める
+
+    ' Make sure the logging loop and the OnTime reservation are stopped.
     StopTickLogging
     DisarmAutoRun
+
 End Sub

@@ -325,8 +325,8 @@ Public Sub WriteSummary(res() As TickJudgeResult)
         rw = rw + 1
     Next i
 
-    ws.Range("X1").Value = "”»’èŠ®—¹ " & Format$(Now, "hh:mm:ss")
-    ws.Range("X3").Value = "”ƒ‚¢ " & nBuy & " / ”„‚è " & nSell & " / ’†—§ " & nNeutral
+    ws.Range(RES_STATUS).Value = "”»’èŠ®—¹ " & Format$(Now, "hh:mm:ss")
+    ws.Range(RES_BREAK).Value = "”ƒ‚¢ " & nBuy & " / ”„‚è " & nSell & " / ’†—§ " & nNeutral
 End Sub
 
 '------------------------------------------------------------------

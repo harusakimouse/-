@@ -7,8 +7,18 @@
 Option Explicit
 
 Private Sub Workbook_Open()
+
     On Error Resume Next
+
+    ' 判定サマリーを開く
     ThisWorkbook.Worksheets(RESULT_SHEET).Activate
+
+    ' 自動開始を予約する（Module_Config の AUTO_ARM_ON_OPEN = True のとき）
+    '   ・予約時刻前  → その時刻に自動で記録開始
+    '   ・予約時刻後  → 判定窓の終了前ならすぐ記録開始
+    '   ・判定窓の後  → 何もしない
+    ArmAutoRunSilent
+
 End Sub
 
 Private Sub Workbook_BeforeClose(Cancel As Boolean)

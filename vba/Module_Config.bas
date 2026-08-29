@@ -106,6 +106,12 @@ Public Const AUTO_JUDGE_ON_STOP As Boolean = True
 ' 自動開始の予約時刻（ArmAutoRun で使用）
 Public Const AUTO_ARM_TIME As String = "14:59:30"
 
+' ブックを開いたときに自動開始を予約するか
+'   True  = 開くだけで予約完了。ボタンを押す必要がありません（推奨）
+'           予約時刻を過ぎていても、判定窓の終了前なら自動で記録を始めます。
+'   False = 「自動開始を予約」ボタンを自分で押す
+Public Const AUTO_ARM_ON_OPEN As Boolean = True
+
 ' 時刻の取得元
 '   True  = RSS の「現在値時刻」を使う（約定時刻そのもの／推奨）
 '   False = PC 時計（Now）を使う
@@ -117,6 +123,7 @@ Public Const USE_RSS_TIME As Boolean = True
 Public Const RESULT_SHEET As String = "Judge_Results"
 
 ' 銘柄シートの行
+'   1行目はメモ用に空けてあります。マクロは絶対に書き込みません。
 Public Const ROW_HEADER     As Long = 2   ' 見出し行
 Public Const ROW_CODE       As Long = 3   ' B3=コード / C3=銘柄名称
 Public Const TICK_FIRST_ROW As Long = 3   ' ティックログ開始行
@@ -147,14 +154,22 @@ Public Const IX_ASK   As Long = COL_ASK - COL_TIME + 1
 Public Const IX_MARK  As Long = COL_MARK - COL_TIME + 1
 
 ' 銘柄シートの RSS ライブ取得セル（S列=ラベル / T列=値）
-Public Const LIVE_PRICE As String = "T1"   ' 現在値
-Public Const LIVE_VOL   As String = "T2"   ' 出来高（当日累計）
-Public Const LIVE_BID   As String = "T3"   ' 最良買気配値
-Public Const LIVE_ASK   As String = "T4"   ' 最良売気配値
-Public Const LIVE_TIME  As String = "T5"   ' 現在値時刻
+'   1行目はメモ欄なので 2行目から並べます。
+Public Const LIVE_PRICE  As String = "T2"   ' 現在値
+Public Const LIVE_VOL    As String = "T3"   ' 出来高（当日累計）
+Public Const LIVE_BID    As String = "T4"   ' 最良買気配値
+Public Const LIVE_ASK    As String = "T5"   ' 最良売気配値
+Public Const LIVE_TIME   As String = "T6"   ' 現在値時刻
+Public Const LIVE_SPREAD As String = "T7"   ' スプレッド（数式）
 
 ' 銘柄シートの判定結果ブロック（O列=ラベル / P列=値）
-Public Const RES_TOP As String = "O1"
+Public Const RES_TOP  As String = "O2"
+Public Const RES_ROWS As Long = 18          ' 結果ブロックの行数
+
+' Judge_Results の状態表示セル（W列=ラベル / X列=値）
+Public Const RES_STATUS As String = "X2"    ' 状態
+Public Const RES_COUNT  As String = "X3"    ' 件数
+Public Const RES_BREAK  As String = "X4"    ' 内訳
 
 ' Judge_Results のボタン設置基準セル
 Public Const BTN_ANCHOR As String = "W5"

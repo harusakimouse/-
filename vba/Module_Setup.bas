@@ -26,6 +26,7 @@ Public Sub Setup_All()
     Next i
 
     SetupResultSheet
+    ResultSheet().Activate
 
     Application.ScreenUpdating = True
 
@@ -56,10 +57,7 @@ Public Sub SetupStockSheet(ws As Worksheet)
     Dim st As Long, bk As Long
 
     With ws
-        '--- タイトル ------------------------------------------------
-        .Range("A1").Value = "ティック判定ロジック（15:00～15:20）"
-        .Range("A1").Font.Bold = True
-        .Range("A1").Font.Size = 14
+        '--- 1行目はメモ欄として空けておく（マクロは一切書き込まない） ---
 
         '--- 見出し行 ------------------------------------------------
         .Cells(ROW_HEADER, COL_CODE).Value = "コード"
@@ -88,14 +86,14 @@ Public Sub SetupStockSheet(ws As Worksheet)
         .Cells(ROW_CODE, COL_NAME).Formula = "=RssMarket($B$3,""銘柄名称"")"
 
         '--- RSS ライブ取得ブロック（S列ラベル / T列値） -------------
-        .Range("S1").Value = "現在値"
-        .Range("S2").Value = "出来高（当日累計）"
-        .Range("S3").Value = "最良買気配値"
-        .Range("S4").Value = "最良売気配値"
-        .Range("S5").Value = "現在値時刻"
-        .Range("S6").Value = "スプレッド"
-        .Range("S7").Value = "※このブロックを RSS が更新します"
-        .Range("T6").Formula = "=IF(COUNT(T3:T4)=2,T4-T3,"""")"
+        .Range("S2").Value = "現在値"
+        .Range("S3").Value = "出来高（当日累計）"
+        .Range("S4").Value = "最良買気配値"
+        .Range("S5").Value = "最良売気配値"
+        .Range("S6").Value = "現在値時刻"
+        .Range("S7").Value = "スプレッド"
+        .Range("S8").Value = "※このブロックを RSS が更新します"
+        .Range(LIVE_SPREAD).Formula = "=IF(COUNT(T4:T5)=2,T5-T4,"""")"
 
         .Range(LIVE_PRICE).Formula = "=RssMarket($B$3,""現在値"")"
         .Range(LIVE_VOL).Formula = "=RssMarket($B$3,""出来高"")"
@@ -104,9 +102,10 @@ Public Sub SetupStockSheet(ws As Worksheet)
         .Range(LIVE_TIME).Formula = "=RssMarket($B$3,""現在値時刻"")"
         .Range(LIVE_TIME).NumberFormatLocal = "hh:mm:ss"
 
-        .Range("S1:S7").Font.Color = RGB(120, 120, 120)
-        .Range("S7").Font.Italic = True
-        .Range("S3:T4").Font.Bold = True
+        .Range("S2:S8").Font.Color = RGB(120, 120, 120)
+        .Range("S8").Font.Italic = True
+        .Range("S4:T5").Font.Bold = True
+        .Range("S1:T1").ClearContents
 
         '--- 判定結果ブロック（O列ラベル / P列値） ------------------
         labels = Array("判定", "信頼度", _
@@ -139,15 +138,17 @@ Public Sub SetupStockSheet(ws As Worksheet)
         .Range(RES_TOP).Offset(0, 0).Resize(UBound(labels) + 1, 1).Interior.Color = RGB(242, 242, 242)
 
         '--- 歩み値（TICK）ブロック ----------------------------------
-        .Range("AA1").Value = "歩み値（TICK）ブロック"
-        .Range("AA1").Font.Bold = True
-        .Range("AA2").Value = "RssTickList をここに登録します"
-        .Range("AA3").Value = "　表示開始セル = " & TICK_BLOCK_CELL
-        .Range("AA4").Value = "　銘柄コード   = B3（セル参照）"
-        .Range("AA5").Value = "　表示本数     = 300"
-        .Range("AA6").Value = "　取得項目     = 時刻 / 出来高 / 約定値"
-        .Range("AA7").Value = "※見出しとデータは RSS が書き出します"
-        .Range("AA2:AA7").Font.Color = RGB(120, 120, 120)
+        '   1行目には書き込まないので、AA2 から並べます
+        .Range("AA2").Value = "歩み値（TICK）ブロック"
+        .Range("AA2").Font.Bold = True
+        .Range("AA3").Value = "RssTickList をここに登録します"
+        .Range("AA4").Value = "　表示開始セル = " & TICK_BLOCK_CELL
+        .Range("AA5").Value = "　銘柄コード   = B3（セル参照）"
+        .Range("AA6").Value = "　表示本数     = 300"
+        .Range("AA7").Value = "　取得項目     = 時刻 / 出来高 / 約定値"
+        .Range("AA8").Value = "※見出しとデータは RSS が書き出します"
+        .Range("AA3:AA8").Font.Color = RGB(120, 120, 120)
+        .Range("AA1").ClearContents
 
         '--- 旧レイアウトの見出しは RSS の見出しと二重になるので撤去 ---
         .Range("AB2:AE2").ClearContents
@@ -174,10 +175,14 @@ Public Sub SetupStockSheet(ws As Worksheet)
         .Columns("S").ColumnWidth = 20
         .Columns("T").ColumnWidth = 12
 
-        '--- 見出し固定 ---------------------------------------------
+        '--- 見出し固定（1～2行目を常に表示） -------------------------
+        '   先に左上までスクロールを戻さないと、1行目が固定ペインの外に
+        '   押し出されて二度と表示されなくなります。
         On Error Resume Next
         .Activate
         ActiveWindow.FreezePanes = False
+        ActiveWindow.ScrollRow = 1
+        ActiveWindow.ScrollColumn = 1
         .Range("A3").Select
         ActiveWindow.FreezePanes = True
         On Error GoTo 0
@@ -202,9 +207,7 @@ Public Sub SetupResultSheet()
                  "最良買気配", "最良売気配", "スプレッド")
 
     With ws
-        .Range("B1").Value = "引け判定サマリー（15:00～15:20 のティックで判定）"
-        .Range("B1").Font.Bold = True
-        .Range("B1").Font.Size = 14
+        '--- 1行目はメモ欄として空けておく（マクロは一切書き込まない） ---
 
         For i = LBound(head) To UBound(head)
             .Cells(ROW_HEADER, 2 + i).Value = head(i)
@@ -231,14 +234,26 @@ Public Sub SetupResultSheet()
         End With
 
         '--- 状態表示 ------------------------------------------------
-        .Range("W1").Value = "状態"
-        .Range("W2").Value = "件数"
-        .Range("W3").Value = "内訳"
-        .Range("W1:W3").Font.Bold = True
+        .Range("W2").Value = "状態"
+        .Range("W3").Value = "件数"
+        .Range("W4").Value = "内訳"
+        .Range("W2:W4").Font.Bold = True
+        .Range("W1:X1").ClearContents
 
-        '--- 旧レイアウトの残骸を掃除 -------------------------------
-        .Range("O1:O3").ClearContents
-        .Range("T1:U3").ClearContents
+        '   ※ 旧版は O1:O3 / T1:U3 に文字を書いていましたが、現在その位置は
+        '      サマリー表（O=ティック数 / T=最良売気配 / U=スプレッド）です。
+        '      掃除しようとすると見出しとデータを消してしまうため行いません。
+        '      1行目に古い文字が残っていたら手で消してください。
+
+        '--- 見出し固定（1～2行目を常に表示） -------------------------
+        On Error Resume Next
+        .Activate
+        ActiveWindow.FreezePanes = False
+        ActiveWindow.ScrollRow = 1
+        ActiveWindow.ScrollColumn = 1
+        .Range("A3").Select
+        ActiveWindow.FreezePanes = True
+        On Error GoTo 0
     End With
 
     SeedResultRows ws

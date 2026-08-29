@@ -85,7 +85,7 @@ Public Sub StartTickLogging()
     End If
 
     Set res = ResultSheet()
-    res.Range("X1").Value = "記録中… 開始 " & Format$(Now, "hh:mm:ss") & _
+    res.Range(RES_STATUS).Value = "記録中… 開始 " & Format$(Now, "hh:mm:ss") & _
                             "（" & IIf(mode = 1, "歩み値追従", "出来高ポーリング") & "）"
 
     gLogging = True
@@ -108,7 +108,7 @@ Public Sub StartTickLogging()
         End If
 
         If Timer - lastPaint > 1 Then
-            res.Range("X2").Value = "ティック " & tickTotal & " 件 / 最終 " & Format$(Now, "hh:mm:ss")
+            res.Range(RES_COUNT).Value = "ティック " & tickTotal & " 件 / 最終 " & Format$(Now, "hh:mm:ss")
             RefreshQuotes shts                    ' 最良気配のリアルタイム表示
             lastPaint = Timer
         End If
@@ -121,11 +121,11 @@ Fin:
     Application.EnableCancelKey = xlInterrupt
 
     If Err.Number <> 0 And Err.Number <> 18 Then
-        res.Range("X1").Value = "記録エラー " & Err.Number & " : " & Err.Description
+        res.Range(RES_STATUS).Value = "記録エラー " & Err.Number & " : " & Err.Description
         MsgBox "記録中にエラーが発生しました。" & vbCrLf & _
                Err.Number & " : " & Err.Description, vbCritical, "ティック記録"
     Else
-        res.Range("X1").Value = "記録停止 " & Format$(Now, "hh:mm:ss") & _
+        res.Range(RES_STATUS).Value = "記録停止 " & Format$(Now, "hh:mm:ss") & _
                                 "（" & IIf(mode = 1, "歩み値追従", "出来高ポーリング") & _
                                 " / ティック " & tickTotal & " 件）"
     End If
@@ -198,7 +198,7 @@ Private Function FollowTickBlock(ws As Worksheet, ByRef anchorKey As String, _
             ' ブロックが一周してしまい前回位置を見失った＝取りこぼしの可能性
             If Not gapWarned Then
                 gapWarned = True
-                ResultSheet().Range("X3").Value = _
+                ResultSheet().Range(RES_BREAK).Value = _
                     "警告：" & ws.Name & " で歩み値ブロックを追い越しました。" & _
                     "TICK_BLOCK_ROWS を増やすか POLL_MS を短くしてください。"
             End If
@@ -520,20 +520,53 @@ End Function
 '==================================================================
 
 Public Sub ArmAutoRun()
+    ArmAutoRunCore True
+End Sub
+
+' ブックを開いたときに呼ぶ版（メッセージを出さない）
+Public Sub ArmAutoRunSilent()
+    If AUTO_ARM_ON_OPEN Then ArmAutoRunCore False
+End Sub
+
+Private Sub ArmAutoRunCore(ByVal showMsg As Boolean)
+
+    Dim armAt As Date
 
     DisarmAutoRun
+    If gLogging Then Exit Sub
 
-    mArmedTime = Date + TimeValue(AUTO_ARM_TIME)
+    armAt = Date + TimeValue(AUTO_ARM_TIME)
 
-    If mArmedTime <= Now Then
-        MsgBox "予約時刻（" & AUTO_ARM_TIME & "）を過ぎています。" & vbCrLf & _
-               "「② ティック記録 開始」を手で押してください。", vbInformation, "自動実行の予約"
+    If Now < armAt Then
+        '--- 予約時刻前：その時刻に開始 ------------------------------
+        mArmedTime = armAt
+        Application.OnTime mArmedTime, "StartTickLogging"
+        ResultSheet().Range(RES_STATUS).Value = "自動開始を予約しました（" & AUTO_ARM_TIME & "）"
+        If showMsg Then
+            MsgBox AUTO_ARM_TIME & " に自動で記録を開始します。" & vbCrLf & _
+                   "そのまま置いておいてください。", vbInformation, "自動実行の予約"
+        End If
+
+    ElseIf NowTime() < TimeValue(JUDGE_END) Then
+        '--- 予約時刻は過ぎたが判定窓の終了前：すぐ開始 ---------------
+        '   （判定窓の開始前なら StartTickLogging 側で待機します）
+        mArmedTime = Now + TimeSerial(0, 0, 3)
+        Application.OnTime mArmedTime, "StartTickLogging"
+        ResultSheet().Range(RES_STATUS).Value = "予約時刻を過ぎていたため、記録を開始します"
+        If showMsg Then
+            MsgBox "予約時刻（" & AUTO_ARM_TIME & "）を過ぎていたので、" & vbCrLf & _
+                   "このまま記録を開始します。", vbInformation, "自動実行の予約"
+        End If
+
+    Else
+        '--- 本日の判定時間は終了 ------------------------------------
         mArmedTime = 0
-        Exit Sub
+        ResultSheet().Range(RES_STATUS).Value = "本日の判定時間（～" & JUDGE_END & "）は終了しています"
+        If showMsg Then
+            MsgBox "本日の判定時間（～" & JUDGE_END & "）は終了しています。", _
+                   vbInformation, "自動実行の予約"
+        End If
     End If
-
-    Application.OnTime mArmedTime, "StartTickLogging"
-    ResultSheet().Range("X1").Value = "自動開始を予約しました（" & AUTO_ARM_TIME & "）"
 End Sub
 
 Public Sub DisarmAutoRun()
@@ -566,14 +599,14 @@ Public Sub ClearAllTicks()
         If lastRow >= TICK_FIRST_ROW Then
             ws.Range(ws.Cells(TICK_FIRST_ROW, COL_TIME), ws.Cells(lastRow, COL_MARK)).ClearContents
         End If
-        ws.Range(RES_TOP).Offset(0, 1).Resize(15, 1).ClearContents
+        ws.Range(RES_TOP).Offset(0, 1).Resize(RES_ROWS, 1).ClearContents
         ws.Range(RES_TOP).Offset(0, 1).Interior.Pattern = xlNone
     Next i
 
     With ResultSheet()
         .Range(.Cells(ROW_HEADER + 1, 2), .Cells(ROW_HEADER + 200, 18)).ClearContents
         .Range(.Cells(ROW_HEADER + 1, 2), .Cells(ROW_HEADER + 200, 18)).Interior.Pattern = xlNone
-        .Range("X1:X3").ClearContents
+        .Range(RES_STATUS & ":" & RES_BREAK).ClearContents
     End With
     Application.ScreenUpdating = True
 End Sub

@@ -4,7 +4,10 @@ Option Explicit
 '==================================================================
 ' Module_TickLogger : 15:00～15:20 のティックを各銘柄シートに記録する
 '
-'  ● モード1（既定 / LOG_MODE = 1）… 歩み値（TICK）ブロック追従
+'  LOG_MODE = 0（既定）なら、記録開始時に歩み値ブロックを1回読んで
+'  モード1／モード2 を自動で選びます。歩み値の数式がまだでも本番は回ります。
+'
+'  ● モード1 … 歩み値（TICK）ブロック追従
 '      RSS の歩み値をシート上のブロック（既定 AB3～）に出しておき、
 '      前回から増えた行だけを検出してティックログに追記します。
 '      約定1本ずつのデータなので ③SpeedMax が正確に出ます。
@@ -13,7 +16,7 @@ Option Explicit
 '      ・記録開始時にブロック内の履歴もまとめて取り込みます
 '      ・ブロックを追い越した（＝取りこぼした）場合は警告を出します
 '
-'  ● モード2（LOG_MODE = 2）… 現在値・出来高ポーリング
+'  ● モード2 … 現在値・出来高ポーリング
 '      歩み値が使えない環境向け。出来高（当日累計）の増分を1ティックとみなします。
 '==================================================================
 
@@ -35,6 +38,7 @@ Public Sub StartTickLogging()
     Dim tickTotal As Long
     Dim res As Worksheet
     Dim lastPaint As Single
+    Dim mode As Long
 
     If gLogging Then Exit Sub
 
@@ -60,9 +64,22 @@ Public Sub StartTickLogging()
         anchor(i) = SeedAnchorFromLog(ws)    ' モード1：途中再開でも二重取込しない
     Next i
 
+    '--- 取込方式を決める（LOG_MODE = 0 なら歩み値が読めるかで自動判定） ---
+    mode = LOG_MODE
+    If mode = 0 Then
+        mode = 2
+        For i = 1 To n
+            Set ws = shts(i)
+            If IsArray(ReadTickBlock(ws)) Then
+                mode = 1
+                Exit For
+            End If
+        Next i
+    End If
+
     Set res = ResultSheet()
     res.Range("X1").Value = "記録中… 開始 " & Format$(Now, "hh:mm:ss") & _
-                            "（" & IIf(LOG_MODE = 1, "歩み値追従", "出来高ポーリング") & "）"
+                            "（" & IIf(mode = 1, "歩み値追従", "出来高ポーリング") & "）"
 
     gLogging = True
     Application.EnableCancelKey = xlErrorHandler
@@ -75,7 +92,7 @@ Public Sub StartTickLogging()
         If NowTime() >= TimeValue(JUDGE_START) Then
             For i = 1 To n
                 Set ws = shts(i)
-                If LOG_MODE = 1 Then
+                If mode = 1 Then
                     tickTotal = tickTotal + FollowTickBlock(ws, anchor(i), nextRow(i), gapWarned(i))
                 Else
                     If PollOne(ws, prevVol(i), nextRow(i)) Then tickTotal = tickTotal + 1
@@ -102,7 +119,8 @@ Fin:
                Err.Number & " : " & Err.Description, vbCritical, "ティック記録"
     Else
         res.Range("X1").Value = "記録停止 " & Format$(Now, "hh:mm:ss") & _
-                                "（ティック " & tickTotal & " 件）"
+                                "（" & IIf(mode = 1, "歩み値追従", "出来高ポーリング") & _
+                                " / ティック " & tickTotal & " 件）"
     End If
 
     If AUTO_JUDGE_ON_STOP Then JudgeAll

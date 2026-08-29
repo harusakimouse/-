@@ -77,6 +77,14 @@ Public Const TICK_BLOCK_CELL As String = "AB3"
 '   表示本数(300) + 配信状態行 + 見出し行 + 余裕。多い分は空行を読み飛ばすだけです。
 Public Const TICK_BLOCK_ROWS As Long = 310
 
+' RssTickList を書き込む位置（「歩み値の数式を設定」ボタンで使用）
+'   TICK_FORMULA_CELL に数式（ここに配信状態が出ます）
+'   TICK_ITEMS_CELL から右へ3セルが取得項目の見出しで、RSS はここを見て項目を決めます
+'   データはその1行下から流れてきます
+Public Const TICK_FORMULA_CELL As String = "AB4"
+Public Const TICK_ITEMS_CELL   As String = "AB5"
+Public Const TICK_SHOW_ROWS    As Long = 300      ' 表示本数（最大300）
+
 ' 追従用アンカーに使う行数
 '   「15:24:59 / 100 / 3130」のように同一秒・同値・同数量のティックが連続することが
 '   あるため、直前1本だけでは位置を取り違えます。直近この本数の並びで位置合わせします。

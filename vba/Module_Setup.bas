@@ -100,6 +100,10 @@ Public Sub SetupStockSheet(ws As Worksheet)
         .Range(LIVE_BID).Formula = "=RssMarket($B$3,""最良買気配値"")"
         .Range(LIVE_ASK).Formula = "=RssMarket($B$3,""最良売気配値"")"
         .Range(LIVE_TIME).Formula = "=RssMarket($B$3,""現在値時刻"")"
+
+        '   旧レイアウトの表示形式が残ると、気配値が時刻として表示されてしまうので
+        '   ここで明示的に戻します。
+        .Range("T2:T7").NumberFormat = "General"
         .Range(LIVE_TIME).NumberFormatLocal = "hh:mm:ss"
 
         .Range("S2:S8").Font.Color = RGB(120, 120, 120)
@@ -141,13 +145,14 @@ Public Sub SetupStockSheet(ws As Worksheet)
         '   1行目には書き込まないので、AA2 から並べます
         .Range("AA2").Value = "歩み値（TICK）ブロック"
         .Range("AA2").Font.Bold = True
-        .Range("AA3").Value = "RssTickList をここに登録します"
-        .Range("AA4").Value = "　表示開始セル = " & TICK_BLOCK_CELL
-        .Range("AA5").Value = "　銘柄コード   = B3（セル参照）"
-        .Range("AA6").Value = "　表示本数     = 300"
-        .Range("AA7").Value = "　取得項目     = 時刻 / 出来高 / 約定値"
-        .Range("AA8").Value = "※見出しとデータは RSS が書き出します"
-        .Range("AA3:AA8").Font.Color = RGB(120, 120, 120)
+        .Range("AA3").Value = "「歩み値の数式を全シートに設定」ボタンで自動設定できます"
+        .Range("AA4").Value = "手で登録する場合の RssTickList 設定"
+        .Range("AA5").Value = "　表示開始セル = " & TICK_FORMULA_CELL
+        .Range("AA6").Value = "　銘柄コード   = B3（セル参照）"
+        .Range("AA7").Value = "　表示本数     = " & TICK_SHOW_ROWS
+        .Range("AA8").Value = "　取得項目     = 時刻 / 出来高 / 約定値"
+        .Range("AA9").Value = "※見出しとデータは RSS が書き出します"
+        .Range("AA3:AA9").Font.Color = RGB(120, 120, 120)
         .Range("AA1").ClearContents
 
         '--- 旧レイアウトの見出しは RSS の見出しと二重になるので撤去 ---
@@ -159,6 +164,7 @@ Public Sub SetupStockSheet(ws As Worksheet)
 
         '--- 書式・幅 ------------------------------------------------
         .Columns(COL_TIME).NumberFormatLocal = "hh:mm:ss"
+        .Range(.Columns(COL_VOL), .Columns(COL_MARK)).NumberFormat = "General"
         .Columns(COL_TIME).ColumnWidth = 10
         .Columns(COL_PRICE).ColumnWidth = 10
         .Columns(COL_VOL).ColumnWidth = 10
@@ -274,11 +280,12 @@ Private Sub BuildButtons(ws As Worksheet)
     AddButton ws, 3, "④ 判定 実行", "JudgeAll"
     AddButton ws, 4, "⑤ ティックログ消去", "ClearAllTicks"
     AddButton ws, 5, "自動開始を予約（14:59:30）", "ArmAutoRun"
-    AddButton ws, 6, "歩み値を今すぐ取込", "ImportTickBlockNow"
+    AddButton ws, 6, "歩み値の数式を全シートに設定", "ApplyTickFormula"
     AddButton ws, 7, "歩み値ブロックの確認", "ShowTickBlockInfo"
-    AddButton ws, 8, "出来高プロファイル", "ShowVolumeProfile"
-    AddButton ws, 9, "CSV（歩み値）取込", "ImportTickCsv"
-    AddButton ws, 10, "銘柄シートを追加", "AddTickSheet"
+    AddButton ws, 8, "歩み値を今すぐ取込", "ImportTickBlockNow"
+    AddButton ws, 9, "出来高プロファイル", "ShowVolumeProfile"
+    AddButton ws, 10, "CSV（歩み値）取込", "ImportTickCsv"
+    AddButton ws, 11, "銘柄シートを追加", "AddTickSheet"
 End Sub
 
 '------------------------------------------------------------------
@@ -347,4 +354,86 @@ Public Sub AddTickSheet()
     SetupResultSheet
 
     MsgBox "シート " & nm & " を作成しました。", vbInformation
+End Sub
+
+'------------------------------------------------------------------
+' 歩み値（RssTickList）の数式を全銘柄シートに設定する
+'   シートを増やしたときも、これ1回で全部そろいます。
+'------------------------------------------------------------------
+Public Sub ApplyTickFormula()
+
+    Dim shts As Collection
+    Dim ws As Worksheet
+    Dim i As Long
+    Dim itemsAddr As String
+
+    Set shts = TargetSheets()
+    If shts.Count = 0 Then
+        MsgBox "銘柄シートがありません。B3 に証券コードを入れてください。", vbExclamation
+        Exit Sub
+    End If
+
+    If MsgBox(shts.Count & " 枚の銘柄シートに歩み値の数式を設定します。" & vbCrLf & vbCrLf & _
+              "　" & TICK_ITEMS_CELL & " から右へ : 時刻 / 出来高 / 約定値" & vbCrLf & _
+              "　" & TICK_FORMULA_CELL & " : =RssTickList(...)  ※銘柄コードは各シートの B3" & vbCrLf & _
+              "　表示本数 : " & TICK_SHOW_ROWS & vbCrLf & vbCrLf & _
+              "この位置の既存の内容は上書きされます。よろしいですか？", _
+              vbYesNo + vbQuestion, "歩み値の数式を設定") <> vbYes Then Exit Sub
+
+    Application.ScreenUpdating = False
+    For i = 1 To shts.Count
+        Set ws = shts(i)
+
+        With ws.Range(TICK_ITEMS_CELL)
+            .Value = "時刻"
+            .Offset(0, 1).Value = "出来高"
+            .Offset(0, 2).Value = "約定値"
+            itemsAddr = .Resize(1, 3).Address(True, True)
+        End With
+
+        ws.Range(TICK_FORMULA_CELL).Formula = _
+            "=RssTickList(" & itemsAddr & ",$B$3," & TICK_SHOW_ROWS & ")"
+    Next i
+    Application.ScreenUpdating = True
+
+    MsgBox shts.Count & " 枚に設定しました。" & vbCrLf & vbCrLf & _
+           "RSS が配信を始めるまで数秒待ってから、" & vbCrLf & _
+           "「歩み値ブロックの確認」で読めているか確かめてください。", _
+           vbInformation, "歩み値の数式を設定"
+End Sub
+
+'------------------------------------------------------------------
+' 旧バージョンが1行目に書いた残骸を掃除する（1回だけ実行）
+'   Alt+F8 から実行してください。ボタンは置いていません。
+'------------------------------------------------------------------
+Public Sub CleanupOldLayout()
+
+    Dim shts As Collection
+    Dim ws As Worksheet
+    Dim i As Long
+
+    If MsgBox("旧バージョンが1行目に書いた文字と書式を消します。" & vbCrLf & _
+              "（タイトル、O1の「判定」、S1:T1 のRSS数式など）" & vbCrLf & vbCrLf & _
+              "1行目に既にメモを書いている場合は一緒に消えます。" & vbCrLf & _
+              "実行しますか？", vbYesNo + vbExclamation, "旧レイアウトの掃除") <> vbYes Then Exit Sub
+
+    Set shts = TargetSheets()
+
+    Application.ScreenUpdating = False
+    For i = 1 To shts.Count
+        Set ws = shts(i)
+        ws.Rows(1).ClearContents
+        ws.Rows(1).ClearFormats
+        ws.Rows(1).RowHeight = ws.StandardHeight
+    Next i
+
+    With ResultSheet()
+        .Rows(1).ClearContents
+        .Rows(1).ClearFormats
+        .Rows(1).RowHeight = .StandardHeight
+    End With
+    Application.ScreenUpdating = True
+
+    MsgBox "1行目を掃除しました。ここが自由に使えるメモ欄です。", _
+           vbInformation, "旧レイアウトの掃除"
 End Sub

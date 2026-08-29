@@ -92,8 +92,7 @@ Public Function JudgeSheet(ws As Worksheet) As TickJudgeResult
 
     n = lastRow - TICK_FIRST_ROW + 1
     src = ws.Range(ws.Cells(TICK_FIRST_ROW, COL_TIME), ws.Cells(lastRow, COL_MARK)).Value
-    ' src の列 : 1=D時刻 2=E約定値 3=F出来高 4=G重み 5=H 6=I
-    '            7=J買気配 8=K売気配 9=L方向 10=M秒内 11=Nティック記号
+    ' src の列は IX_* 定数で参照します（COL_* の並べ替えに自動追従）
 
     ReDim outCalc(1 To n, 1 To 3)
     ReDim outDir(1 To n, 1 To 2)
@@ -103,15 +102,15 @@ Public Function JudgeSheet(ws As Worksheet) As TickJudgeResult
 
     For i = 1 To n
 
-        sec = TickSec(src(i, 1))
+        sec = TickSec(src(i, IX_TIME))
         If sec < startSec Or sec > endSec Then GoTo NextI     ' 15:00～15:20 のみ
 
-        price = NumOrZero(src(i, 2))
+        price = NumOrZero(src(i, IX_PRICE))
         If price <= 0 Then GoTo NextI                          ' 約定値が無い行は無視
 
-        vol = NumOrZero(src(i, 3))
-        bid = NumOrZero(src(i, 7))
-        ask = NumOrZero(src(i, 8))
+        vol = NumOrZero(src(i, IX_VOL))
+        bid = NumOrZero(src(i, IX_BID))
+        ask = NumOrZero(src(i, IX_ASK))
 
         r.TickCount = r.TickCount + 1
 
@@ -141,7 +140,7 @@ Public Function JudgeSheet(ws As Worksheet) As TickJudgeResult
 
         '--- ① 方向判定：ティック記号（↑↓）優先、無ければ前ティック比 -----
         dirTick = 0
-        If USE_TICK_MARK Then dirTick = MarkDir(src(i, 11))
+        If USE_TICK_MARK Then dirTick = MarkDir(src(i, IX_MARK))
 
         If dirTick = 0 And havePrev Then
             If price > prevPrice Then

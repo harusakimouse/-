@@ -62,15 +62,16 @@ Public Const POLL_MS As Long = 200
 ' RSS の歩み値数式を置くブロックの左上セル
 Public Const TICK_BLOCK_CELL As String = "AB3"
 
-' 読み取る行数（RSS が返す歩み値の行数に合わせてください）
+' 読み取る行数（RssTickList の「表示本数」に合わせる。最大 300 本）
 Public Const TICK_BLOCK_ROWS As Long = 300
 
 ' ブロック内の列オフセット（左上セルから何列目か）
-'   お使いの RSS の並びが違う場合はここだけ直してください。
-Public Const TB_OFF_TIME  As Long = 0    ' 時刻
-Public Const TB_OFF_PRICE As Long = 1    ' 約定値
-Public Const TB_OFF_VOL   As Long = 2    ' 出来高
-Public Const TB_OFF_MARK  As Long = 3    ' ティック記号（↑↓）。無い場合は -1
+'   RssTickList の「取得項目」に並べた順と同じにしてください。
+'   既定は 取得項目 = 時刻 / 出来高 / 約定値 の並び。
+Public Const TB_OFF_TIME  As Long = 0     ' 時刻
+Public Const TB_OFF_VOL   As Long = 1     ' 出来高
+Public Const TB_OFF_PRICE As Long = 2     ' 約定値
+Public Const TB_OFF_MARK  As Long = -1    ' ティック記号（取得項目に加えたら 3 などに設定）
 
 ' 歩み値の並び順
 '   0 = 自動判定（既定） / 1 = 新しい順（上が最新） / 2 = 古い順
@@ -106,9 +107,10 @@ Public Const TICK_FIRST_ROW As Long = 3   ' ティックログ開始行
 ' 銘柄シートの列
 Public Const COL_CODE  As Long = 2   ' B  コード
 Public Const COL_NAME  As Long = 3   ' C  銘柄名称
+'   D～F の並びは RssTickList の取得項目（時刻 / 出来高 / 約定値）に合わせています
 Public Const COL_TIME  As Long = 4   ' D  時刻
-Public Const COL_PRICE As Long = 5   ' E  約定値
-Public Const COL_VOL   As Long = 6   ' F  出来高（ティック単体）
+Public Const COL_VOL   As Long = 5   ' E  出来高（ティック単体）
+Public Const COL_PRICE As Long = 6   ' F  約定値
 Public Const COL_W     As Long = 7   ' G  重み
 Public Const COL_UP    As Long = 8   ' H  UpScore（累積・参考）
 Public Const COL_DN    As Long = 9   ' I  DnScore（累積・参考）
@@ -116,7 +118,16 @@ Public Const COL_BID   As Long = 10  ' J  最良買気配値
 Public Const COL_ASK   As Long = 11  ' K  最良売気配値
 Public Const COL_DIR   As Long = 12  ' L  方向（↑↓→）
 Public Const COL_SPD   As Long = 13  ' M  同一秒内の約定連番
-Public Const COL_MARK  As Long = 14  ' N  ティック記号（RSSの歩み値そのまま）
+Public Const COL_MARK  As Long = 14  ' N  ティック記号（取得項目に無ければ空欄）
+
+' ティックログを配列で読むときの列番号（COL_TIME を 1 とした相対位置）
+'   上の COL_* を並べ替えても自動で追従します。
+Public Const IX_TIME  As Long = 1
+Public Const IX_VOL   As Long = COL_VOL - COL_TIME + 1
+Public Const IX_PRICE As Long = COL_PRICE - COL_TIME + 1
+Public Const IX_BID   As Long = COL_BID - COL_TIME + 1
+Public Const IX_ASK   As Long = COL_ASK - COL_TIME + 1
+Public Const IX_MARK  As Long = COL_MARK - COL_TIME + 1
 
 ' 銘柄シートの RSS ライブ取得セル（S列=ラベル / T列=値）
 Public Const LIVE_PRICE As String = "T1"   ' 現在値

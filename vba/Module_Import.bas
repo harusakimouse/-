@@ -7,8 +7,8 @@ Option Explicit
 '   RSS でリアルタイム記録できないとき（検証・バックテスト）に使います。
 '   CSV の列並び（1行目が見出しでも可）
 '       1列目 : 時刻      15:00:03 / 15:00:03.250 / 2026-08-28 15:00:03
-'       2列目 : 約定値
-'       3列目 : 出来高    ティック単体 でも 当日累計 でも可（取込時に選択）
+'       2列目 : 出来高    ティック単体 でも 当日累計 でも可（取込時に選択）
+'       3列目 : 約定値
 '       4列目 : 最良買気配値（任意）
 '       5列目 : 最良売気配値（任意）
 '       6列目 : ティック記号 ↑↓（任意）
@@ -38,7 +38,7 @@ Public Sub ImportTickCsv()
     f = Application.GetOpenFilename("CSVファイル (*.csv),*.csv", , "歩み値CSVを選択")
     If VarType(f) = vbBoolean Then Exit Sub
 
-    ans = MsgBox("CSVの3列目「出来高」は当日累計ですか？" & vbCrLf & vbCrLf & _
+    ans = MsgBox("CSVの2列目「出来高」は当日累計ですか？" & vbCrLf & vbCrLf & _
                  "  はい   = 累計出来高（差分をティック出来高にします）" & vbCrLf & _
                  "  いいえ = そのティックの出来高", vbYesNoCancel + vbQuestion, "CSV取込")
     If ans = vbCancel Then Exit Sub
@@ -70,9 +70,9 @@ Public Sub ImportTickCsv()
         t = ParseTimeText(tTxt)
         If t = 0 Then GoTo NextLine                       ' 見出し行など
 
-        If Not IsNumeric(CleanCell(parts(1))) Then GoTo NextLine
+        If Not IsNumeric(CleanCell(parts(2))) Then GoTo NextLine
 
-        v = Val(CleanCell(parts(2)))
+        v = Val(CleanCell(parts(1)))
         If isCumulative Then
             If prevVol = 0 Then
                 prevVol = v
@@ -86,7 +86,7 @@ Public Sub ImportTickCsv()
         End If
 
         ws.Cells(rw, COL_TIME).Value = t
-        ws.Cells(rw, COL_PRICE).Value = Val(CleanCell(parts(1)))
+        ws.Cells(rw, COL_PRICE).Value = Val(CleanCell(parts(2)))
         ws.Cells(rw, COL_VOL).Value = dv
         If UBound(parts) >= 3 Then ws.Cells(rw, COL_BID).Value = Val(CleanCell(parts(3)))
         If UBound(parts) >= 4 Then ws.Cells(rw, COL_ASK).Value = Val(CleanCell(parts(4)))

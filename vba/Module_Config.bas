@@ -16,8 +16,15 @@ Option Explicit
 '------------------------------------------------------------------
 ' 判定対象時間帯
 '------------------------------------------------------------------
+'   ザラバは 15:25:00 で終了し、以降はクロージング・オークション（気配のみ）。
+'   15:30:00 の板寄せ約定は1本で桁違いの出来高になるため、絶対に窓へ入れないこと。
+'   → JUDGE_END は 15:25:00 を超えてはいけません。
+'
+'   既定は 15:00:00～15:24:00。
+'   ザラバ終盤（15:22～15:25）の大口集中を Vol4 で捉えつつ、
+'   15:24:02 頃に判定が出るので 15:30 の板寄せまで約6分の発注時間が残ります。
 Public Const JUDGE_START As String = "15:00:00"
-Public Const JUDGE_END   As String = "15:20:00"
+Public Const JUDGE_END   As String = "15:24:00"
 
 '------------------------------------------------------------------
 ' 判定パラメータ（ここだけ触れば感度を変えられます）
@@ -31,6 +38,7 @@ Public Const SEQ_MIN As Long = 5
 Public Const RESET_ON_FLAT As Boolean = True
 
 ' ② 出来高初動判定 : Vol4 > Vol3 × この倍率
+'   区間は JUDGE_START～JUDGE_END を4等分します（窓を変えれば区間幅も自動で追従）。
 Public Const VOL_RATIO As Double = 1.5
 
 ' ③ 約定速度 : 同一秒内の約定回数がこの値以上なら「アルゴ／大口が本気」
@@ -260,6 +268,42 @@ End Function
 ' 文字列時刻 → 経過秒
 Public Function SecOfText(ByVal s As String) As Long
     SecOfText = TickSec(CDate(s))
+End Function
+
+' 経過秒 → "hh:mm"
+Public Function SecHM(ByVal sec As Long) As String
+    SecHM = Format$(TimeSerial(sec \ 3600, (sec \ 60) Mod 60, 0), "hh:mm")
+End Function
+
+' 経過秒 → "hh:mm:ss"
+Public Function SecHMS(ByVal sec As Long) As String
+    SecHMS = Format$(TimeSerial(sec \ 3600, (sec \ 60) Mod 60, sec Mod 60), "hh:mm:ss")
+End Function
+
+' ②の1区間の長さ（秒）。判定窓を4等分します。
+Public Function BucketSec() As Long
+    BucketSec = (SecOfText(JUDGE_END) - SecOfText(JUDGE_START)) \ 4
+    If BucketSec < 1 Then BucketSec = 1
+End Function
+
+' 判定窓の設定チェック。問題なければ空文字を返します。
+Public Function WindowWarning() As String
+
+    Dim st As Long, en As Long
+
+    st = SecOfText(JUDGE_START)
+    en = SecOfText(JUDGE_END)
+
+    If en <= st Then
+        WindowWarning = "JUDGE_START と JUDGE_END が逆、または同じです。"
+    ElseIf en > SecOfText("15:25:00") Then
+        WindowWarning = "JUDGE_END が 15:25:00 を超えています。" & vbCrLf & _
+                        "ザラバは 15:25:00 で終わり、15:30:00 の板寄せ約定は1本で桁違いの" & vbCrLf & _
+                        "出来高になるため、Vol4 と SpeedMax が壊れます。" & vbCrLf & _
+                        "JUDGE_END を 15:25:00 以下にしてください。"
+    ElseIf (en - st) < 240 Then
+        WindowWarning = "判定窓が短すぎます（4分未満）。1区間が1分未満になります。"
+    End If
 End Function
 
 ' 現在時刻（0～1 の日内小数）

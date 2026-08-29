@@ -61,7 +61,7 @@ Public Function JudgeSheet(ws As Worksheet) As TickJudgeResult
     Dim outCalc() As Variant          ' G:I（重み / UpScore / DnScore）書き戻し用
     Dim outDir() As Variant           ' L:M（方向 / 秒内連番）書き戻し用
 
-    Dim sec As Long, startSec As Long, endSec As Long, bucket As Long
+    Dim sec As Long, startSec As Long, endSec As Long, bucket As Long, bkSec As Long
     Dim price As Double, prevPrice As Double
     Dim bid As Double, ask As Double, prevBid As Double, prevAsk As Double
     Dim vol As Double, w As Long
@@ -82,6 +82,7 @@ Public Function JudgeSheet(ws As Worksheet) As TickJudgeResult
 
     startSec = SecOfText(JUDGE_START)
     endSec = SecOfText(JUDGE_END)
+    bkSec = BucketSec()                        ' 判定窓を4等分した1区間の長さ
 
     lastRow = LastTickRow(ws)
     If lastRow < TICK_FIRST_ROW Then
@@ -114,9 +115,9 @@ Public Function JudgeSheet(ws As Worksheet) As TickJudgeResult
 
         r.TickCount = r.TickCount + 1
 
-        '--- ② 出来高初動判定：15:00からの経過秒で4区間に振り分け -------
-        bucket = (sec - startSec) \ 300&
-        If bucket > 3 Then bucket = 3                          ' 15:20:00 ちょうどは第4区間
+        '--- ② 出来高初動判定：判定窓を4等分した区間に振り分け -----------
+        bucket = (sec - startSec) \ bkSec
+        If bucket > 3 Then bucket = 3                          ' 終端ちょうどは第4区間
         Select Case bucket
             Case 0: r.Vol1 = r.Vol1 + vol
             Case 1: r.Vol2 = r.Vol2 + vol
@@ -360,6 +361,81 @@ Public Sub RefreshQuotes(shts As Collection)
             res.Cells(rw, 21).Value = ""
         End If
     Next i
+End Sub
+
+'------------------------------------------------------------------
+' 分別の出来高プロファイル（判定窓を決めるための診断）
+'   記録済みティックを1分ごとに集計します。判定窓の外も表示するので、
+'   「何分から大口が入るか」を自分のデータで確かめて窓を決められます。
+'------------------------------------------------------------------
+Public Sub ShowVolumeProfile()
+
+    Dim ws As Worksheet, shts As Collection
+    Dim lastRow As Long, n As Long, i As Long
+    Dim src As Variant
+    Dim sec As Long, mi As Long, base As Long
+    Dim vol(0 To 1439) As Double
+    Dim cnt(0 To 1439) As Long
+    Dim first As Long, last As Long
+    Dim total As Double
+    Dim msg As String
+
+    Set ws = ActiveSheet
+    If ws.Name = RESULT_SHEET Then
+        Set shts = TargetSheets()
+        If shts.Count = 0 Then Exit Sub
+        Set ws = shts(1)
+    End If
+
+    lastRow = LastTickRow(ws)
+    If lastRow < TICK_FIRST_ROW Then
+        MsgBox "ティックが記録されていません。", vbExclamation, "出来高プロファイル"
+        Exit Sub
+    End If
+
+    n = lastRow - TICK_FIRST_ROW + 1
+    src = ws.Range(ws.Cells(TICK_FIRST_ROW, COL_TIME), ws.Cells(lastRow, COL_MARK)).Value
+
+    first = 9999
+    last = -1
+
+    For i = 1 To n
+        sec = TickSec(src(i, IX_TIME))
+        If sec >= 0 Then
+            mi = sec \ 60
+            vol(mi) = vol(mi) + NumOrZero(src(i, IX_VOL))
+            cnt(mi) = cnt(mi) + 1
+            total = total + NumOrZero(src(i, IX_VOL))
+            If mi < first Then first = mi
+            If mi > last Then last = mi
+        End If
+    Next i
+
+    If last < 0 Then
+        MsgBox "時刻を読める行がありませんでした。", vbExclamation, "出来高プロファイル"
+        Exit Sub
+    End If
+
+    msg = ws.Name & " / " & ws.Cells(ROW_CODE, COL_NAME).Value & vbCrLf & _
+          "記録範囲 " & SecHM(first * 60) & " ～ " & SecHM(last * 60) & _
+          " / 合計 " & Format$(total, "#,##0") & " 株" & vbCrLf & vbCrLf & _
+          "時刻    出来高        ティック   構成比" & vbCrLf & _
+          String$(42, "-") & vbCrLf
+
+    For mi = first To last
+        If cnt(mi) > 0 Or vol(mi) > 0 Then
+            msg = msg & SecHM(mi * 60) & "  " & _
+                  Right$(Space$(11) & Format$(vol(mi), "#,##0"), 11) & "  " & _
+                  Right$(Space$(8) & cnt(mi), 8) & "  " & _
+                  Right$(Space$(6) & Format$(IIf(total > 0, vol(mi) / total, 0), "0.0%"), 6) & vbCrLf
+        End If
+    Next mi
+
+    msg = msg & vbCrLf & _
+          "現在の判定窓 : " & JUDGE_START & " ～ " & JUDGE_END & vbCrLf & _
+          "1区間の長さ  : " & (BucketSec() \ 60) & "分" & (BucketSec() Mod 60) & "秒"
+
+    MsgBox msg, vbInformation, "出来高プロファイル（判定窓の検討用）"
 End Sub
 
 '------------------------------------------------------------------

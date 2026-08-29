@@ -42,6 +42,13 @@ Public Sub StartTickLogging()
 
     If gLogging Then Exit Sub
 
+    If Len(WindowWarning()) > 0 Then
+        If MsgBox("判定窓の設定に問題があります。" & vbCrLf & vbCrLf & WindowWarning() & vbCrLf & vbCrLf & _
+                  "このまま記録を開始しますか？", vbYesNo + vbExclamation, "判定窓の設定") <> vbYes Then
+            Exit Sub
+        End If
+    End If
+
     Set shts = TargetSheets()
     If shts.Count = 0 Then
         MsgBox "記録対象の銘柄シートがありません。" & vbCrLf & _

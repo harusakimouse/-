@@ -29,12 +29,20 @@ Public Sub Setup_All()
 
     Application.ScreenUpdating = True
 
+    If Len(WindowWarning()) > 0 Then
+        MsgBox "判定窓の設定に問題があります。" & vbCrLf & vbCrLf & WindowWarning(), _
+               vbExclamation, "判定窓の設定"
+    End If
+
     If shts.Count = 0 Then
         MsgBox "銘柄シートが見つかりませんでした。" & vbCrLf & vbCrLf & _
                "各銘柄シートの B3 に証券コードを入れてから、" & vbCrLf & _
                "もう一度「① 準備」を押してください。", vbExclamation, "準備"
     Else
-        MsgBox shts.Count & " 銘柄シートの準備が完了しました。", vbInformation, "準備"
+        MsgBox shts.Count & " 銘柄シートの準備が完了しました。" & vbCrLf & vbCrLf & _
+               "判定窓 : " & JUDGE_START & " ～ " & JUDGE_END & vbCrLf & _
+               "1区間 : " & (BucketSec() \ 60) & "分" & (BucketSec() Mod 60) & "秒", _
+               vbInformation, "準備"
     End If
 End Sub
 
@@ -45,6 +53,7 @@ Public Sub SetupStockSheet(ws As Worksheet)
 
     Dim labels As Variant
     Dim i As Long
+    Dim st As Long, bk As Long
 
     With ws
         '--- タイトル ------------------------------------------------
@@ -103,9 +112,17 @@ Public Sub SetupStockSheet(ws As Worksheet)
         labels = Array("判定", "信頼度", _
                        "最良買気配値", "最良売気配値", "スプレッド", _
                        "方向判定①", "UpSeqMax", "DnSeqMax", _
-                       "Vol1 (15:00-05)", "Vol2 (15:05-10)", "Vol3 (15:10-15)", "Vol4 (15:15-20)", _
+                       "Vol1", "Vol2", "Vol3", "Vol4", _
                        "Vol4優勢②", "SpeedMax③", "ティック数", _
                        "BuyTotal(参考)", "SellTotal(参考)", "判定時刻")
+
+        '--- Vol1～Vol4 のラベルは判定窓から自動生成 ------------------
+        st = SecOfText(JUDGE_START)
+        bk = BucketSec()
+        labels(8) = "Vol1 (" & SecHM(st) & "-" & SecHM(st + bk) & ")"
+        labels(9) = "Vol2 (" & SecHM(st + bk) & "-" & SecHM(st + bk * 2) & ")"
+        labels(10) = "Vol3 (" & SecHM(st + bk * 2) & "-" & SecHM(st + bk * 3) & ")"
+        labels(11) = "Vol4 (" & SecHM(st + bk * 3) & "-" & SecHM(SecOfText(JUDGE_END)) & ")"
 
         For i = LBound(labels) To UBound(labels)
             .Range(RES_TOP).Offset(i, 0).Value = labels(i)
@@ -244,8 +261,9 @@ Private Sub BuildButtons(ws As Worksheet)
     AddButton ws, 5, "自動開始を予約（14:59:30）", "ArmAutoRun"
     AddButton ws, 6, "歩み値を今すぐ取込", "ImportTickBlockNow"
     AddButton ws, 7, "歩み値ブロックの確認", "ShowTickBlockInfo"
-    AddButton ws, 8, "CSV（歩み値）取込", "ImportTickCsv"
-    AddButton ws, 9, "銘柄シートを追加", "AddTickSheet"
+    AddButton ws, 8, "出来高プロファイル", "ShowVolumeProfile"
+    AddButton ws, 9, "CSV（歩み値）取込", "ImportTickCsv"
+    AddButton ws, 10, "銘柄シートを追加", "AddTickSheet"
 End Sub
 
 '------------------------------------------------------------------

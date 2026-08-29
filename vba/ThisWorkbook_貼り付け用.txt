@@ -1,8 +1,8 @@
 '==================================================================
-' ThisWorkbook モジュールに貼り付けてください
-'   （VBE 左のツリー → ThisWorkbook をダブルクリック → 貼り付け）
-'   ※ .bas のようにインポートするとただのクラスになってしまうので、
-'      これだけは「コピペ」で入れてください。
+' ThisWorkbook ���W���[���ɓ\��t���Ă�������
+'   �iVBE ���̃c���[ �� ThisWorkbook ���_�u���N���b�N �� �\��t���j
+'   �� .bas �̂悤�ɃC���|�[�g����Ƃ����̃N���X�ɂȂ��Ă��܂��̂ŁA
+'      ���ꂾ���́u�R�s�y�v�œ���Ă��������B
 '==================================================================
 Option Explicit
 
@@ -12,7 +12,7 @@ Private Sub Workbook_Open()
 End Sub
 
 Private Sub Workbook_BeforeClose(Cancel As Boolean)
-    ' 記録ループとタイマー予約を確実に止める
+    ' �L�^���[�v�ƃ^�C�}�[�\����m���Ɏ~�߂�
     StopTickLogging
     DisarmAutoRun
 End Sub

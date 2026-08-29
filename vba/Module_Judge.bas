@@ -2,16 +2,16 @@ Attribute VB_Name = "Module_Judge"
 Option Explicit
 
 '==================================================================
-' Module_Judge : ãƒ†ã‚£ãƒƒã‚¯åˆ¤å®šãƒ­ã‚¸ãƒƒã‚¯æœ¬ä½“ï¼ˆ15:00ã€œ15:20å°‚ç”¨ï¼‰
+' Module_Judge : ƒeƒBƒbƒN”»’èƒƒWƒbƒN–{‘Ìi15:00`15:20ê—pj
 '
-'   â‘  æ–¹å‘åˆ¤å®šï¼ˆé€£ç¶šãƒ†ã‚£ãƒƒã‚¯ï¼‰
-'   â‘¡ å‡ºæ¥é«˜åˆå‹•åˆ¤å®šï¼ˆå¤§å£ã®æœ¬æ°—ï¼‰
-'   â‘¢ ç´„å®šé€Ÿåº¦ï¼ˆTick Speedï¼‰
-'   â‘£ ç·åˆã‚¸ãƒ£ãƒƒã‚¸ â†’ è²·ã„ / å£²ã‚Š / ä¸­ç«‹
+'   ‡@ •ûŒü”»’èi˜A‘±ƒeƒBƒbƒNj
+'   ‡A o—ˆ‚‰“®”»’èi‘åŒû‚Ì–{‹Cj
+'   ‡B –ñ’è‘¬“xiTick Speedj
+'   ‡C ‘‡ƒWƒƒƒbƒW ¨ ”ƒ‚¢ / ”„‚è / ’†—§
 '==================================================================
 
 '------------------------------------------------------------------
-' å…¨éŠ˜æŸ„ã‚’åˆ¤å®šã—ã¦ Judge_Results ã«ã¾ã¨ã‚ã‚‹ï¼ˆãƒœã‚¿ãƒ³â‘£ï¼‰
+' ‘S–Á•¿‚ğ”»’è‚µ‚Ä Judge_Results ‚É‚Ü‚Æ‚ß‚éiƒ{ƒ^ƒ“‡Cj
 '------------------------------------------------------------------
 Public Sub JudgeAll()
 
@@ -23,9 +23,9 @@ Public Sub JudgeAll()
     Set shts = TargetSheets()
 
     If shts.Count = 0 Then
-        MsgBox "åˆ¤å®šå¯¾è±¡ã®éŠ˜æŸ„ã‚·ãƒ¼ãƒˆãŒã‚ã‚Šã¾ã›ã‚“ã€‚" & vbCrLf & _
-               "å„ã‚·ãƒ¼ãƒˆã® B3 ã«è¨¼åˆ¸ã‚³ãƒ¼ãƒ‰ã‚’å…¥ã‚Œã¦ã‹ã‚‰ã€Œâ‘  æº–å‚™ã€ã‚’å®Ÿè¡Œã—ã¦ãã ã•ã„ã€‚", _
-               vbExclamation, "ãƒ†ã‚£ãƒƒã‚¯åˆ¤å®š"
+        MsgBox "”»’è‘ÎÛ‚Ì–Á•¿ƒV[ƒg‚ª‚ ‚è‚Ü‚¹‚ñB" & vbCrLf & _
+               "ŠeƒV[ƒg‚Ì B3 ‚ÉØŒ”ƒR[ƒh‚ğ“ü‚ê‚Ä‚©‚çu‡@ €”õv‚ğÀs‚µ‚Ä‚­‚¾‚³‚¢B", _
+               vbExclamation, "ƒeƒBƒbƒN”»’è"
         Exit Sub
     End If
 
@@ -45,21 +45,21 @@ Public Sub JudgeAll()
 Fin:
     Application.ScreenUpdating = True
     If Err.Number <> 0 Then
-        MsgBox "åˆ¤å®šä¸­ã«ã‚¨ãƒ©ãƒ¼ãŒç™ºç”Ÿã—ã¾ã—ãŸã€‚" & vbCrLf & _
-               Err.Number & " : " & Err.Description, vbCritical, "ãƒ†ã‚£ãƒƒã‚¯åˆ¤å®š"
+        MsgBox "”»’è’†‚ÉƒGƒ‰[‚ª”­¶‚µ‚Ü‚µ‚½B" & vbCrLf & _
+               Err.Number & " : " & Err.Description, vbCritical, "ƒeƒBƒbƒN”»’è"
     End If
 End Sub
 
 '------------------------------------------------------------------
-' 1éŠ˜æŸ„ã‚·ãƒ¼ãƒˆã‚’åˆ¤å®šã™ã‚‹
+' 1–Á•¿ƒV[ƒg‚ğ”»’è‚·‚é
 '------------------------------------------------------------------
 Public Function JudgeSheet(ws As Worksheet) As TickJudgeResult
 
     Dim r As TickJudgeResult
     Dim lastRow As Long, n As Long, i As Long
     Dim src As Variant
-    Dim outCalc() As Variant          ' G:Iï¼ˆé‡ã¿ / UpScore / DnScoreï¼‰æ›¸ãæˆ»ã—ç”¨
-    Dim outDir() As Variant           ' L:Mï¼ˆæ–¹å‘ / ç§’å†…é€£ç•ªï¼‰æ›¸ãæˆ»ã—ç”¨
+    Dim outCalc() As Variant          ' G:Iid‚İ / UpScore / DnScorej‘‚«–ß‚µ—p
+    Dim outDir() As Variant           ' L:Mi•ûŒü / •b“à˜A”Ôj‘‚«–ß‚µ—p
 
     Dim sec As Long, startSec As Long, endSec As Long, bucket As Long
     Dim price As Double, prevPrice As Double
@@ -76,24 +76,24 @@ Public Function JudgeSheet(ws As Worksheet) As TickJudgeResult
     r.SheetName = ws.Name
     r.Code = CStr(ws.Cells(ROW_CODE, COL_CODE).Value)
     r.StockName = CStr(ws.Cells(ROW_CODE, COL_NAME).Value)
-    r.Judge = "ä¸­ç«‹"
-    r.DirText = "ä¸­ç«‹"
-    r.Confidence = "é€šå¸¸"
+    r.Judge = "’†—§"
+    r.DirText = "’†—§"
+    r.Confidence = "’Êí"
 
     startSec = SecOfText(JUDGE_START)
     endSec = SecOfText(JUDGE_END)
 
     lastRow = LastTickRow(ws)
     If lastRow < TICK_FIRST_ROW Then
-        r.DirText = "ãƒ‡ãƒ¼ã‚¿ãªã—"
+        r.DirText = "ƒf[ƒ^‚È‚µ"
         JudgeSheet = r
         Exit Function
     End If
 
     n = lastRow - TICK_FIRST_ROW + 1
     src = ws.Range(ws.Cells(TICK_FIRST_ROW, COL_TIME), ws.Cells(lastRow, COL_MARK)).Value
-    ' src ã®åˆ— : 1=Dæ™‚åˆ» 2=Eç´„å®šå€¤ 3=Få‡ºæ¥é«˜ 4=Gé‡ã¿ 5=H 6=I
-    '            7=Jè²·æ°—é… 8=Kå£²æ°—é… 9=Læ–¹å‘ 10=Mç§’å†… 11=Nãƒ†ã‚£ãƒƒã‚¯è¨˜å·
+    ' src ‚Ì—ñ : 1=D 2=E–ñ’è’l 3=Fo—ˆ‚ 4=Gd‚İ 5=H 6=I
+    '            7=J”ƒ‹C”z 8=K”„‹C”z 9=L•ûŒü 10=M•b“à 11=NƒeƒBƒbƒN‹L†
 
     ReDim outCalc(1 To n, 1 To 3)
     ReDim outDir(1 To n, 1 To 2)
@@ -104,10 +104,10 @@ Public Function JudgeSheet(ws As Worksheet) As TickJudgeResult
     For i = 1 To n
 
         sec = TickSec(src(i, 1))
-        If sec < startSec Or sec > endSec Then GoTo NextI     ' 15:00ã€œ15:20 ã®ã¿
+        If sec < startSec Or sec > endSec Then GoTo NextI     ' 15:00`15:20 ‚Ì‚İ
 
         price = NumOrZero(src(i, 2))
-        If price <= 0 Then GoTo NextI                          ' ç´„å®šå€¤ãŒç„¡ã„è¡Œã¯ç„¡è¦–
+        If price <= 0 Then GoTo NextI                          ' –ñ’è’l‚ª–³‚¢s‚Í–³‹
 
         vol = NumOrZero(src(i, 3))
         bid = NumOrZero(src(i, 7))
@@ -115,9 +115,9 @@ Public Function JudgeSheet(ws As Worksheet) As TickJudgeResult
 
         r.TickCount = r.TickCount + 1
 
-        '--- â‘¡ å‡ºæ¥é«˜åˆå‹•åˆ¤å®šï¼š15:00ã‹ã‚‰ã®çµŒéç§’ã§4åŒºé–“ã«æŒ¯ã‚Šåˆ†ã‘ -------
+        '--- ‡A o—ˆ‚‰“®”»’èF15:00‚©‚ç‚ÌŒo‰ß•b‚Å4‹æŠÔ‚ÉU‚è•ª‚¯ -------
         bucket = (sec - startSec) \ 300&
-        If bucket > 3 Then bucket = 3                          ' 15:20:00 ã¡ã‚‡ã†ã©ã¯ç¬¬4åŒºé–“
+        If bucket > 3 Then bucket = 3                          ' 15:20:00 ‚¿‚å‚¤‚Ç‚Í‘æ4‹æŠÔ
         Select Case bucket
             Case 0: r.Vol1 = r.Vol1 + vol
             Case 1: r.Vol2 = r.Vol2 + vol
@@ -125,7 +125,7 @@ Public Function JudgeSheet(ws As Worksheet) As TickJudgeResult
             Case 3: r.Vol4 = r.Vol4 + vol
         End Select
 
-        '--- â‘¢ ç´„å®šé€Ÿåº¦ï¼šåŒä¸€ç§’å†…ã®ç´„å®šå›æ•° ------------------------------
+        '--- ‡B –ñ’è‘¬“xF“¯ˆê•b“à‚Ì–ñ’è‰ñ” ------------------------------
         If sec = prevSec Then
             secCount = secCount + 1
         Else
@@ -135,11 +135,11 @@ Public Function JudgeSheet(ws As Worksheet) As TickJudgeResult
         If secCount > r.SpeedMax Then r.SpeedMax = secCount
         outDir(i, 2) = secCount
 
-        '--- é‡ã¿ï¼ˆå‚è€ƒã‚¹ã‚³ã‚¢ç”¨ï¼‰ ----------------------------------------
+        '--- d‚İiQlƒXƒRƒA—pj ----------------------------------------
         w = VolWeight(vol)
         outCalc(i, 1) = w
 
-        '--- â‘  æ–¹å‘åˆ¤å®šï¼šãƒ†ã‚£ãƒƒã‚¯è¨˜å·ï¼ˆâ†‘â†“ï¼‰å„ªå…ˆã€ç„¡ã‘ã‚Œã°å‰ãƒ†ã‚£ãƒƒã‚¯æ¯” -----
+        '--- ‡@ •ûŒü”»’èFƒeƒBƒbƒN‹L†iª«j—DæA–³‚¯‚ê‚Î‘OƒeƒBƒbƒN”ä -----
         dirTick = 0
         If USE_TICK_MARK Then dirTick = MarkDir(src(i, 11))
 
@@ -159,24 +159,24 @@ Public Function JudgeSheet(ws As Worksheet) As TickJudgeResult
                     upRun = upRun + 1
                     dnRun = 0
                     upScore = upScore + w
-                    outDir(i, 1) = ChrW(&H2191)                ' â†‘
+                    outDir(i, 1) = ChrW(&H2191)                ' ª
                 Case -1
                     dnRun = dnRun + 1
                     upRun = 0
                     dnScore = dnScore + w
-                    outDir(i, 1) = ChrW(&H2193)                ' â†“
+                    outDir(i, 1) = ChrW(&H2193)                ' «
                 Case Else
                     If RESET_ON_FLAT Then
                         upRun = 0
                         dnRun = 0
                     End If
-                    outDir(i, 1) = ChrW(&H2192)                ' â†’
+                    outDir(i, 1) = ChrW(&H2192)                ' ¨
             End Select
 
             If upRun > r.UpSeqMax Then r.UpSeqMax = upRun
             If dnRun > r.DnSeqMax Then r.DnSeqMax = dnRun
 
-            '--- å‚è€ƒï¼šæ°—é…ã®åˆ‡ã‚Šä¸Šã’ï¼åˆ‡ã‚Šä¸‹ã’ --------------------------
+            '--- QlF‹C”z‚ÌØ‚èã‚°^Ø‚è‰º‚° --------------------------
             If bid > 0 And prevBid > 0 Then
                 If bid > prevBid Then buyBid = buyBid + 1
             End If
@@ -198,46 +198,46 @@ Public Function JudgeSheet(ws As Worksheet) As TickJudgeResult
 NextI:
     Next i
 
-    '--- â‘  åˆ¤å®š ------------------------------------------------------
+    '--- ‡@ ”»’è ------------------------------------------------------
     If r.UpSeqMax >= SEQ_MIN And r.UpSeqMax > r.DnSeqMax Then
         r.Direction = 1
-        r.DirText = "å¼•ã‘ä¸Šæ–¹å‘ï¼ˆè²·ã„å„ªå‹¢ï¼‰"
+        r.DirText = "ˆø‚¯ã•ûŒüi”ƒ‚¢—D¨j"
     ElseIf r.DnSeqMax >= SEQ_MIN And r.DnSeqMax > r.UpSeqMax Then
         r.Direction = -1
-        r.DirText = "å¼•ã‘ä¸‹æ–¹å‘ï¼ˆå£²ã‚Šå„ªå‹¢ï¼‰"
+        r.DirText = "ˆø‚¯‰º•ûŒüi”„‚è—D¨j"
     Else
         r.Direction = 0
-        r.DirText = "ä¸­ç«‹ï¼ˆæ¿ã§æœ€çµ‚ç¢ºèªï¼‰"
+        r.DirText = "’†—§i”Â‚ÅÅIŠm”Fj"
     End If
 
-    '--- â‘¡ åˆ¤å®š : çµ‚ç›¤ã§å¤§å£é›†ä¸­ -------------------------------------
+    '--- ‡A ”»’è : I”Õ‚Å‘åŒûW’† -------------------------------------
     r.VolDominant = (r.Vol4 > r.Vol3 * VOL_RATIO) And (r.Vol4 > r.Vol2) And (r.Vol4 > r.Vol1)
 
-    '--- â‘¢ åˆ¤å®š : ã‚¢ãƒ«ã‚´ï¼å¤§å£ãŒæœ¬æ°— ---------------------------------
+    '--- ‡B ”»’è : ƒAƒ‹ƒS^‘åŒû‚ª–{‹C ---------------------------------
     r.SpeedFast = (r.SpeedMax >= SPEED_MIN)
-    r.Confidence = IIf(r.SpeedFast, "é«˜ï¼ˆã‚¢ãƒ«ã‚´/å¤§å£ï¼‰", "é€šå¸¸")
+    r.Confidence = IIf(r.SpeedFast, "‚iƒAƒ‹ƒS/‘åŒûj", "’Êí")
 
-    '--- å‚è€ƒã‚¹ã‚³ã‚¢ï¼ˆä¸­ç«‹æ™‚ã«æ¿ã‚’è¦‹ã‚‹ã¨ãã®ææ–™ï¼‰ --------------------
+    '--- QlƒXƒRƒAi’†—§‚É”Â‚ğŒ©‚é‚Æ‚«‚ÌŞ—¿j --------------------
     r.BuyTotal = upScore + buyBid
     r.SellTotal = dnScore + sellAsk
 
-    '--- æœ€è‰¯æ°—é…ï¼ˆRSS ã®ãƒ©ã‚¤ãƒ–å€¤å„ªå…ˆã€‚å–ã‚Œãªã‘ã‚Œã°æœ€å¾Œã®ãƒ†ã‚£ãƒƒã‚¯æ™‚ç‚¹ï¼‰ ---
+    '--- Å—Ç‹C”ziRSS ‚Ìƒ‰ƒCƒu’l—DæBæ‚ê‚È‚¯‚ê‚ÎÅŒã‚ÌƒeƒBƒbƒN“_j ---
     r.BestBid = NumOrZero(ws.Range(LIVE_BID).Value)
     r.BestAsk = NumOrZero(ws.Range(LIVE_ASK).Value)
     If r.BestBid <= 0 Then r.BestBid = lastBid
     If r.BestAsk <= 0 Then r.BestAsk = lastAsk
     If r.BestBid > 0 And r.BestAsk > 0 Then r.Spread = r.BestAsk - r.BestBid
 
-    '--- â‘£ ç·åˆã‚¸ãƒ£ãƒƒã‚¸ ----------------------------------------------
+    '--- ‡C ‘‡ƒWƒƒƒbƒW ----------------------------------------------
     If r.Direction = 1 And r.VolDominant Then
-        r.Judge = "è²·ã„"
+        r.Judge = "”ƒ‚¢"
     ElseIf r.Direction = -1 And r.VolDominant Then
-        r.Judge = "å£²ã‚Š"
+        r.Judge = "”„‚è"
     Else
-        r.Judge = "ä¸­ç«‹"
+        r.Judge = "’†—§"
     End If
 
-    '--- è¨ˆç®—éç¨‹ã‚’ã‚·ãƒ¼ãƒˆã«æ›¸ãæˆ»ã™ ----------------------------------
+    '--- ŒvZ‰ß’ö‚ğƒV[ƒg‚É‘‚«–ß‚· ----------------------------------
     ws.Range(ws.Cells(TICK_FIRST_ROW, COL_W), ws.Cells(lastRow, COL_DN)).Value = outCalc
     ws.Range(ws.Cells(TICK_FIRST_ROW, COL_DIR), ws.Cells(lastRow, COL_SPD)).Value = outDir
 
@@ -245,7 +245,7 @@ NextI:
 End Function
 
 '------------------------------------------------------------------
-' éŠ˜æŸ„ã‚·ãƒ¼ãƒˆã®çµæœãƒ–ãƒ­ãƒƒã‚¯ï¼ˆOåˆ—ãƒ©ãƒ™ãƒ«ï¼Påˆ—å€¤ï¼‰ã‚’æ›´æ–°
+' –Á•¿ƒV[ƒg‚ÌŒ‹‰ÊƒuƒƒbƒNiO—ñƒ‰ƒxƒ‹^P—ñ’lj‚ğXV
 '------------------------------------------------------------------
 Public Sub WriteSheetResult(ws As Worksheet, r As TickJudgeResult)
 
@@ -264,7 +264,7 @@ Public Sub WriteSheetResult(ws As Worksheet, r As TickJudgeResult)
     top.Offset(9, 1).Value = r.Vol2
     top.Offset(10, 1).Value = r.Vol3
     top.Offset(11, 1).Value = r.Vol4
-    top.Offset(12, 1).Value = IIf(r.VolDominant, "â—‹ çµ‚ç›¤ã«å¤§å£é›†ä¸­", "Ã—")
+    top.Offset(12, 1).Value = IIf(r.VolDominant, "› I”Õ‚É‘åŒûW’†", "~")
     top.Offset(13, 1).Value = r.SpeedMax
     top.Offset(14, 1).Value = r.TickCount
     top.Offset(15, 1).Value = r.BuyTotal
@@ -275,7 +275,7 @@ Public Sub WriteSheetResult(ws As Worksheet, r As TickJudgeResult)
 End Sub
 
 '------------------------------------------------------------------
-' Judge_Results ä¸€è¦§ã‚’æ›´æ–°
+' Judge_Results ˆê——‚ğXV
 '------------------------------------------------------------------
 Public Sub WriteSummary(res() As TickJudgeResult)
 
@@ -303,7 +303,7 @@ Public Sub WriteSummary(res() As TickJudgeResult)
             .Cells(rw, 10).Value = res(i).Vol2
             .Cells(rw, 11).Value = res(i).Vol3
             .Cells(rw, 12).Value = res(i).Vol4
-            .Cells(rw, 13).Value = IIf(res(i).VolDominant, "â—‹", "Ã—")
+            .Cells(rw, 13).Value = IIf(res(i).VolDominant, "›", "~")
             .Cells(rw, 14).Value = res(i).SpeedMax
             .Cells(rw, 15).Value = res(i).TickCount
             .Cells(rw, 16).Value = res(i).BuyTotal
@@ -317,21 +317,21 @@ Public Sub WriteSummary(res() As TickJudgeResult)
         PaintJudge ws.Cells(rw, 4), res(i).Judge
 
         Select Case res(i).Judge
-            Case "è²·ã„": nBuy = nBuy + 1
-            Case "å£²ã‚Š": nSell = nSell + 1
+            Case "”ƒ‚¢": nBuy = nBuy + 1
+            Case "”„‚è": nSell = nSell + 1
             Case Else:   nNeutral = nNeutral + 1
         End Select
 
         rw = rw + 1
     Next i
 
-    ws.Range("X1").Value = "åˆ¤å®šå®Œäº† " & Format$(Now, "hh:mm:ss")
-    ws.Range("X3").Value = "è²·ã„ " & nBuy & " / å£²ã‚Š " & nSell & " / ä¸­ç«‹ " & nNeutral
+    ws.Range("X1").Value = "”»’èŠ®—¹ " & Format$(Now, "hh:mm:ss")
+    ws.Range("X3").Value = "”ƒ‚¢ " & nBuy & " / ”„‚è " & nSell & " / ’†—§ " & nNeutral
 End Sub
 
 '------------------------------------------------------------------
-' æœ€è‰¯æ°—é…ã®ãƒªã‚¢ãƒ«ã‚¿ã‚¤ãƒ è¡¨ç¤º
-'   è¨˜éŒ²ä¸­ã« Judge_Results ã® S:U åˆ—ã‚’1ç§’ã”ã¨ã«æ›´æ–°ã—ã¾ã™ã€‚
+' Å—Ç‹C”z‚ÌƒŠƒAƒ‹ƒ^ƒCƒ€•\¦
+'   ‹L˜^’†‚É Judge_Results ‚Ì S:U —ñ‚ğ1•b‚²‚Æ‚ÉXV‚µ‚Ü‚·B
 '------------------------------------------------------------------
 Public Sub RefreshQuotes(shts As Collection)
 
@@ -364,7 +364,7 @@ Public Sub RefreshQuotes(shts As Collection)
 End Sub
 
 '------------------------------------------------------------------
-' ãƒ†ã‚£ãƒƒã‚¯è¨˜å·ï¼ˆâ†‘â†“ï¼‰ã‚’æ–¹å‘ã«å¤‰æ›  1=ä¸Š / -1=ä¸‹ / 0=ä¸æ˜ãƒ»å¤‰ã‚ã‚‰ãš
+' ƒeƒBƒbƒN‹L†iª«j‚ğ•ûŒü‚É•ÏŠ·  1=ã / -1=‰º / 0=•s–¾E•Ï‚í‚ç‚¸
 '------------------------------------------------------------------
 Public Function MarkDir(ByVal v As Variant) As Long
 
@@ -379,10 +379,10 @@ Public Function MarkDir(ByVal v As Variant) As Long
 
     Select Case True
         Case InStr(s, ChrW(&H2191)) > 0, InStr(s, "+") > 0, _
-             UCase$(s) = "U", s = "ä¸Š", s = "è²·", InStr(s, ChrW(&HFF0B)) > 0
+             UCase$(s) = "U", s = "ã", s = "”ƒ", InStr(s, ChrW(&HFF0B)) > 0
             MarkDir = 1
         Case InStr(s, ChrW(&H2193)) > 0, InStr(s, "-") > 0, _
-             UCase$(s) = "D", s = "ä¸‹", s = "å£²", InStr(s, ChrW(&HFF0D)) > 0
+             UCase$(s) = "D", s = "‰º", s = "”„", InStr(s, ChrW(&HFF0D)) > 0
             MarkDir = -1
     End Select
 
@@ -391,17 +391,17 @@ End Function
 
 
 '------------------------------------------------------------------
-' åˆ¤å®šã‚»ãƒ«ã®è‰²ä»˜ã‘
+' ”»’èƒZƒ‹‚ÌF•t‚¯
 '------------------------------------------------------------------
 Private Sub PaintJudge(cel As Range, ByVal judge As String)
     With cel
         .HorizontalAlignment = xlCenter
         .Font.Bold = True
         Select Case judge
-            Case "è²·ã„"
+            Case "”ƒ‚¢"
                 .Interior.Color = RGB(198, 239, 206)
                 .Font.Color = RGB(0, 97, 0)
-            Case "å£²ã‚Š"
+            Case "”„‚è"
                 .Interior.Color = RGB(255, 199, 206)
                 .Font.Color = RGB(156, 0, 6)
             Case Else

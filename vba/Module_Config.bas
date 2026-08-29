@@ -2,134 +2,134 @@ Attribute VB_Name = "Module_Config"
 Option Explicit
 
 '==================================================================
-' Module_Config : 共通設定・共通関数・共通型
-'   ティック判定ロジック（15:00〜15:20専用）
+' Module_Config : ���ʐݒ�E���ʊ֐��E���ʌ^
+'   �e�B�b�N���胍�W�b�N�i15:00�`15:20��p�j
 '------------------------------------------------------------------
-'   運用タイムライン
-'     15:00:00  ティック記録 開始（自動 or ボタン）
-'     15:20:00  ティック記録 終了 → 自動で判定実行
-'     15:20:03  Judge_Results に 買い / 売り / 中立 が出る
-'     15:25     プレクロージング（中立は板を見て最終判断）
-'     15:30     板寄せ終了
+'   �^�p�^�C�����C��
+'     15:00:00  �e�B�b�N�L�^ �J�n�i���� or �{�^���j
+'     15:20:00  �e�B�b�N�L�^ �I�� �� �����Ŕ�����s
+'     15:20:03  Judge_Results �� ���� / ���� / ���� ���o��
+'     15:25     �v���N���[�W���O�i�����͔����čŏI���f�j
+'     15:30     �񂹏I��
 '==================================================================
 
 '------------------------------------------------------------------
-' 判定対象時間帯
+' ����Ώێ��ԑ�
 '------------------------------------------------------------------
 Public Const JUDGE_START As String = "15:00:00"
 Public Const JUDGE_END   As String = "15:20:00"
 
 '------------------------------------------------------------------
-' 判定パラメータ（ここだけ触れば感度を変えられます）
+' ����p�����[�^�i���������G��Ί��x��ς����܂��j
 '------------------------------------------------------------------
-' ① 方向判定 : 連続上昇／連続下落が何回続いたら「方向あり」とみなすか
+' �@ �������� : �A���㏸�^�A�����������񑱂�����u��������v�Ƃ݂Ȃ���
 Public Const SEQ_MIN As Long = 5
 
-' ① 変わらず（前ティックと同値）のティックで連続をリセットするか
-'    True  = 同値で連続が途切れる（仕様どおり／推奨）
-'    False = 同値は無視して連続を継続する（緩め）
+' �@ �ς�炸�i�O�e�B�b�N�Ɠ��l�j�̃e�B�b�N�ŘA�������Z�b�g���邩
+'    True  = ���l�ŘA�����r�؂��i�d�l�ǂ���^�����j
+'    False = ���l�͖������ĘA�����p������i�ɂ߁j
 Public Const RESET_ON_FLAT As Boolean = True
 
-' ② 出来高初動判定 : Vol4 > Vol3 × この倍率
+' �A �o������������ : Vol4 > Vol3 �~ ���̔{��
 Public Const VOL_RATIO As Double = 1.5
 
-' ③ 約定速度 : 同一秒内の約定回数がこの値以上なら「アルゴ／大口が本気」
+' �B ��葬�x : ����b���̖��񐔂����̒l�ȏ�Ȃ�u�A���S�^������{�C�v
 Public Const SPEED_MIN As Long = 3
 
 '------------------------------------------------------------------
-' ティックの取込方式
+' �e�B�b�N�̎捞����
 '------------------------------------------------------------------
-'   1 = 歩み値（TICK）ブロック追従   ← RSS が歩み値を配信する場合はこちら（既定）
-'       RSS の歩み値をシート上のブロックに出しておき、増えた行だけを追記します。
-'       約定1本ずつのデータなので SpeedMax（③約定速度）が正確に出ます。
-'   2 = 現在値・出来高ポーリング     ← 歩み値が使えない環境向けフォールバック
-'       出来高（当日累計）の増分を1ティックとみなします。
+'   1 = ���ݒl�iTICK�j�u���b�N�Ǐ]   �� RSS �����ݒl��z�M����ꍇ�͂�����i����j
+'       RSS �̕��ݒl���V�[�g��̃u���b�N�ɏo���Ă����A�������s������ǋL���܂��B
+'       ���1�{���̃f�[�^�Ȃ̂� SpeedMax�i�B��葬�x�j�����m�ɏo�܂��B
+'   2 = ���ݒl�E�o�����|�[�����O     �� ���ݒl���g���Ȃ��������t�H�[���o�b�N
+'       �o�����i�����݌v�j�̑�����1�e�B�b�N�Ƃ݂Ȃ��܂��B
 Public Const LOG_MODE As Long = 1
 
-' ポーリング間隔（ミリ秒）
-'   モード1 : 歩み値ブロックが履歴を保持するので 300〜1000 で十分（分解能は落ちません）
-'   モード2 : 200 で 1秒あたり最大5ティックまで分離（ここが SpeedMax の上限になります）
+' �|�[�����O�Ԋu�i�~���b�j
+'   ���[�h1 : ���ݒl�u���b�N��������ێ�����̂� 300�`1000 �ŏ\���i����\�͗����܂���j
+'   ���[�h2 : 200 �� 1�b������ő�5�e�B�b�N�܂ŕ����i������ SpeedMax �̏���ɂȂ�܂��j
 Public Const POLL_MS As Long = 300
 
 '------------------------------------------------------------------
-' 歩み値（TICK）ブロックの設定  ※ LOG_MODE = 1 のとき使用
+' ���ݒl�iTICK�j�u���b�N�̐ݒ�  �� LOG_MODE = 1 �̂Ƃ��g�p
 '------------------------------------------------------------------
-' RSS の歩み値数式を置くブロックの左上セル
+' RSS �̕��ݒl������u���u���b�N�̍���Z��
 Public Const TICK_BLOCK_CELL As String = "AB3"
 
-' 読み取る行数（RSS が返す歩み値の行数に合わせてください）
+' �ǂݎ��s���iRSS ���Ԃ����ݒl�̍s���ɍ��킹�Ă��������j
 Public Const TICK_BLOCK_ROWS As Long = 300
 
-' ブロック内の列オフセット（左上セルから何列目か）
-'   お使いの RSS の並びが違う場合はここだけ直してください。
-Public Const TB_OFF_TIME  As Long = 0    ' 時刻
-Public Const TB_OFF_PRICE As Long = 1    ' 約定値
-Public Const TB_OFF_VOL   As Long = 2    ' 出来高
-Public Const TB_OFF_MARK  As Long = 3    ' ティック記号（↑↓）。無い場合は -1
+' �u���b�N���̗�I�t�Z�b�g�i����Z�����牽��ڂ��j
+'   ���g���� RSS �̕��т��Ⴄ�ꍇ�͂������������Ă��������B
+Public Const TB_OFF_TIME  As Long = 0    ' ����
+Public Const TB_OFF_PRICE As Long = 1    ' ���l
+Public Const TB_OFF_VOL   As Long = 2    ' �o����
+Public Const TB_OFF_MARK  As Long = 3    ' �e�B�b�N�L���i�����j�B�����ꍇ�� -1
 
-' 歩み値の並び順
-'   0 = 自動判定（既定） / 1 = 新しい順（上が最新） / 2 = 古い順
+' ���ݒl�̕��я�
+'   0 = ��������i����j / 1 = �V�������i�オ�ŐV�j / 2 = �Â���
 Public Const TICK_BLOCK_ORDER As Long = 0
 
-' ① の方向をティック記号（↑↓）で判定する
-'   True  = 記号があればそれを使う（取引所の呼値そのものなので正確）
-'           記号が空欄の行は前ティック比で判定します
-'   False = 常に前ティック比で判定
+' �@ �̕������e�B�b�N�L���i�����j�Ŕ��肷��
+'   True  = �L��������΂�����g���i������̌Ēl���̂��̂Ȃ̂Ő��m�j
+'           �L�����󗓂̍s�͑O�e�B�b�N��Ŕ��肵�܂�
+'   False = ��ɑO�e�B�b�N��Ŕ���
 Public Const USE_TICK_MARK As Boolean = True
 
-' 記録終了（15:20）と同時に自動で判定まで走らせる
+' �L�^�I���i15:20�j�Ɠ����Ɏ����Ŕ���܂ő��点��
 Public Const AUTO_JUDGE_ON_STOP As Boolean = True
 
-' 自動開始の予約時刻（ArmAutoRun で使用）
+' �����J�n�̗\�񎞍��iArmAutoRun �Ŏg�p�j
 Public Const AUTO_ARM_TIME As String = "14:59:30"
 
-' 時刻の取得元
-'   True  = RSS の「現在値時刻」を使う（約定時刻そのもの／推奨）
-'   False = PC 時計（Now）を使う
+' �����̎擾��
+'   True  = RSS �́u���ݒl�����v���g���i��莞�����̂��́^�����j
+'   False = PC ���v�iNow�j���g��
 Public Const USE_RSS_TIME As Boolean = True
 
 '------------------------------------------------------------------
-' シート名・レイアウト定数
+' �V�[�g���E���C�A�E�g�萔
 '------------------------------------------------------------------
 Public Const RESULT_SHEET As String = "Judge_Results"
 
-' 銘柄シートの行
-Public Const ROW_HEADER     As Long = 2   ' 見出し行
-Public Const ROW_CODE       As Long = 3   ' B3=コード / C3=銘柄名称
-Public Const TICK_FIRST_ROW As Long = 3   ' ティックログ開始行
+' �����V�[�g�̍s
+Public Const ROW_HEADER     As Long = 2   ' ���o���s
+Public Const ROW_CODE       As Long = 3   ' B3=�R�[�h / C3=��������
+Public Const TICK_FIRST_ROW As Long = 3   ' �e�B�b�N���O�J�n�s
 
-' 銘柄シートの列
-Public Const COL_CODE  As Long = 2   ' B  コード
-Public Const COL_NAME  As Long = 3   ' C  銘柄名称
-Public Const COL_TIME  As Long = 4   ' D  時刻
-Public Const COL_PRICE As Long = 5   ' E  約定値
-Public Const COL_VOL   As Long = 6   ' F  出来高（ティック単体）
-Public Const COL_W     As Long = 7   ' G  重み
-Public Const COL_UP    As Long = 8   ' H  UpScore（累積・参考）
-Public Const COL_DN    As Long = 9   ' I  DnScore（累積・参考）
-Public Const COL_BID   As Long = 10  ' J  最良買気配値
-Public Const COL_ASK   As Long = 11  ' K  最良売気配値
-Public Const COL_DIR   As Long = 12  ' L  方向（↑↓→）
-Public Const COL_SPD   As Long = 13  ' M  同一秒内の約定連番
-Public Const COL_MARK  As Long = 14  ' N  ティック記号（RSSの歩み値そのまま）
+' �����V�[�g�̗�
+Public Const COL_CODE  As Long = 2   ' B  �R�[�h
+Public Const COL_NAME  As Long = 3   ' C  ��������
+Public Const COL_TIME  As Long = 4   ' D  ����
+Public Const COL_PRICE As Long = 5   ' E  ���l
+Public Const COL_VOL   As Long = 6   ' F  �o�����i�e�B�b�N�P�́j
+Public Const COL_W     As Long = 7   ' G  �d��
+Public Const COL_UP    As Long = 8   ' H  UpScore�i�ݐρE�Q�l�j
+Public Const COL_DN    As Long = 9   ' I  DnScore�i�ݐρE�Q�l�j
+Public Const COL_BID   As Long = 10  ' J  �ŗǔ��C�z�l
+Public Const COL_ASK   As Long = 11  ' K  �ŗǔ��C�z�l
+Public Const COL_DIR   As Long = 12  ' L  �����i�������j
+Public Const COL_SPD   As Long = 13  ' M  ����b���̖��A��
+Public Const COL_MARK  As Long = 14  ' N  �e�B�b�N�L���iRSS�̕��ݒl���̂܂܁j
 
-' 銘柄シートの RSS ライブ取得セル（S列=ラベル / T列=値）
-Public Const LIVE_PRICE As String = "T1"   ' 現在値
-Public Const LIVE_VOL   As String = "T2"   ' 出来高（当日累計）
-Public Const LIVE_BID   As String = "T3"   ' 最良買気配値
-Public Const LIVE_ASK   As String = "T4"   ' 最良売気配値
-Public Const LIVE_TIME  As String = "T5"   ' 現在値時刻
+' �����V�[�g�� RSS ���C�u�擾�Z���iS��=���x�� / T��=�l�j
+Public Const LIVE_PRICE As String = "T1"   ' ���ݒl
+Public Const LIVE_VOL   As String = "T2"   ' �o�����i�����݌v�j
+Public Const LIVE_BID   As String = "T3"   ' �ŗǔ��C�z�l
+Public Const LIVE_ASK   As String = "T4"   ' �ŗǔ��C�z�l
+Public Const LIVE_TIME  As String = "T5"   ' ���ݒl����
 
-' 銘柄シートの判定結果ブロック（O列=ラベル / P列=値）
+' �����V�[�g�̔��茋�ʃu���b�N�iO��=���x�� / P��=�l�j
 Public Const RES_TOP As String = "O1"
 
-' Judge_Results のボタン設置基準セル
+' Judge_Results �̃{�^���ݒu��Z��
 Public Const BTN_ANCHOR As String = "W5"
 Public Const BTN_W As Double = 190
 Public Const BTN_H As Double = 34
 
 '------------------------------------------------------------------
-' 判定結果の型
+' ���茋�ʂ̌^
 '------------------------------------------------------------------
 Public Type TickJudgeResult
     SheetName    As String
@@ -138,7 +138,7 @@ Public Type TickJudgeResult
     TickCount    As Long
     UpSeqMax     As Long
     DnSeqMax     As Long
-    Direction    As Long      ' 1=引け上方向 / -1=引け下方向 / 0=中立
+    Direction    As Long      ' 1=��������� / -1=���������� / 0=����
     DirText      As String
     Vol1         As Double
     Vol2         As Double
@@ -147,17 +147,17 @@ Public Type TickJudgeResult
     VolDominant  As Boolean
     SpeedMax     As Long
     SpeedFast    As Boolean
-    BuyTotal     As Double    ' 参考：重み付きスコア＋気配スコア
+    BuyTotal     As Double    ' �Q�l�F�d�ݕt���X�R�A�{�C�z�X�R�A
     SellTotal    As Double
-    BestBid      As Double    ' 判定時点の最良買気配値
-    BestAsk      As Double    ' 判定時点の最良売気配値
-    Spread       As Double    ' 最良売 − 最良買
-    Judge        As String    ' 買い / 売り / 中立
-    Confidence   As String    ' 高（アルゴ/大口） / 通常
+    BestBid      As Double    ' ���莞�_�̍ŗǔ��C�z�l
+    BestAsk      As Double    ' ���莞�_�̍ŗǔ��C�z�l
+    Spread       As Double    ' �ŗǔ� �| �ŗǔ�
+    Judge        As String    ' ���� / ���� / ����
+    Confidence   As String    ' ���i�A���S/����j / �ʏ�
 End Type
 
 '------------------------------------------------------------------
-' Sleep API（ポーリング間隔用）
+' Sleep API�i�|�[�����O�Ԋu�p�j
 '------------------------------------------------------------------
 #If VBA7 Then
     Public Declare PtrSafe Sub Sleep Lib "kernel32" (ByVal dwMilliseconds As Long)
@@ -166,12 +166,12 @@ End Type
 #End If
 
 '==================================================================
-' 共通関数
+' ���ʊ֐�
 '==================================================================
 
-' 判定対象の銘柄シートを列挙する
-'   Judge_Results 以外で、B3 に証券コードが入っているシートを対象にします。
-'   ※ シート名が全角「１」でも半角「1」でも取りこぼしません。
+' ����Ώۂ̖����V�[�g��񋓂���
+'   Judge_Results �ȊO�ŁAB3 �ɏ،��R�[�h�������Ă���V�[�g��Ώۂɂ��܂��B
+'   �� �V�[�g�����S�p�u�P�v�ł����p�u1�v�ł���肱�ڂ��܂���B
 Public Function TargetSheets() As Collection
     Dim c As New Collection
     Dim ws As Worksheet
@@ -187,7 +187,7 @@ Public Function TargetSheets() As Collection
     Set TargetSheets = c
 End Function
 
-' 結果シートを取得（無ければ作る）
+' ���ʃV�[�g���擾�i������΍��j
 Public Function ResultSheet() As Worksheet
     Dim ws As Worksheet
 
@@ -203,13 +203,13 @@ Public Function ResultSheet() As Worksheet
     Set ResultSheet = ws
 End Function
 
-' ティックログの最終行
+' �e�B�b�N���O�̍ŏI�s
 Public Function LastTickRow(ws As Worksheet) As Long
     LastTickRow = ws.Cells(ws.Rows.Count, COL_TIME).End(xlUp).Row
     If LastTickRow < TICK_FIRST_ROW Then LastTickRow = TICK_FIRST_ROW - 1
 End Function
 
-' セルの値を「0時からの経過秒」に変換する。変換できなければ -1
+' �Z���̒l���u0������̌o�ߕb�v�ɕϊ�����B�ϊ��ł��Ȃ���� -1
 Public Function TickSec(ByVal v As Variant) As Long
     Dim d As Date
 
@@ -232,17 +232,17 @@ Bad:
     TickSec = -1
 End Function
 
-' 文字列時刻 → 経過秒
+' �����񎞍� �� �o�ߕb
 Public Function SecOfText(ByVal s As String) As Long
     SecOfText = TickSec(CDate(s))
 End Function
 
-' 現在時刻（0〜1 の日内小数）
+' ���ݎ����i0�`1 �̓��������j
 Public Function NowTime() As Double
     NowTime = Now - Date
 End Function
 
-' 数値化（エラー値・空白は 0）
+' ���l���i�G���[�l�E�󔒂� 0�j
 Public Function NumOrZero(ByVal v As Variant) As Double
     On Error GoTo Bad
     If IsError(v) Then GoTo Bad
@@ -254,7 +254,7 @@ Bad:
     NumOrZero = 0
 End Function
 
-' 出来高から重みを求める（参考スコア用）
+' �o��������d�݂����߂�i�Q�l�X�R�A�p�j
 Public Function VolWeight(ByVal vol As Double) As Long
     Select Case vol
         Case Is >= 10000#: VolWeight = 5
@@ -265,13 +265,13 @@ Public Function VolWeight(ByVal vol As Double) As Long
     End Select
 End Function
 
-' Excel を固めずに指定ミリ秒待つ
+' Excel ���ł߂��Ɏw��~���b�҂�
 Public Sub WaitMs(ByVal ms As Long)
     Dim t0 As Single
     t0 = Timer
     Do
         DoEvents
         Sleep 15
-        If Timer < t0 Then Exit Do   ' 日付跨ぎ保険
+        If Timer < t0 Then Exit Do   ' ���t�ׂ��ی�
     Loop While (Timer - t0) * 1000# < ms
 End Sub

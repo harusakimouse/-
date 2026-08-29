@@ -2,16 +2,16 @@ Attribute VB_Name = "Module_Import"
 Option Explicit
 
 '==================================================================
-' Module_Import : æ­©ã¿å€¤CSV ã‚’éŠ˜æŸ„ã‚·ãƒ¼ãƒˆã«å–ã‚Šè¾¼ã‚€
+' Module_Import : •à‚İ’lCSV ‚ğ–Á•¿ƒV[ƒg‚Éæ‚è‚Ş
 '
-'   RSS ã§ãƒªã‚¢ãƒ«ã‚¿ã‚¤ãƒ è¨˜éŒ²ã§ããªã„ã¨ãï¼ˆæ¤œè¨¼ãƒ»ãƒãƒƒã‚¯ãƒ†ã‚¹ãƒˆï¼‰ã«ä½¿ã„ã¾ã™ã€‚
-'   CSV ã®åˆ—ä¸¦ã³ï¼ˆ1è¡Œç›®ãŒè¦‹å‡ºã—ã§ã‚‚å¯ï¼‰
-'       1åˆ—ç›® : æ™‚åˆ»      15:00:03 / 15:00:03.250 / 2026-08-28 15:00:03
-'       2åˆ—ç›® : ç´„å®šå€¤
-'       3åˆ—ç›® : å‡ºæ¥é«˜    ãƒ†ã‚£ãƒƒã‚¯å˜ä½“ ã§ã‚‚ å½“æ—¥ç´¯è¨ˆ ã§ã‚‚å¯ï¼ˆå–è¾¼æ™‚ã«é¸æŠï¼‰
-'       4åˆ—ç›® : æœ€è‰¯è²·æ°—é…å€¤ï¼ˆä»»æ„ï¼‰
-'       5åˆ—ç›® : æœ€è‰¯å£²æ°—é…å€¤ï¼ˆä»»æ„ï¼‰
-'       6åˆ—ç›® : ãƒ†ã‚£ãƒƒã‚¯è¨˜å· â†‘â†“ï¼ˆä»»æ„ï¼‰
+'   RSS ‚ÅƒŠƒAƒ‹ƒ^ƒCƒ€‹L˜^‚Å‚«‚È‚¢‚Æ‚«iŒŸØEƒoƒbƒNƒeƒXƒgj‚Ég‚¢‚Ü‚·B
+'   CSV ‚Ì—ñ•À‚Ñi1s–Ú‚ªŒ©o‚µ‚Å‚à‰Âj
+'       1—ñ–Ú :       15:00:03 / 15:00:03.250 / 2026-08-28 15:00:03
+'       2—ñ–Ú : –ñ’è’l
+'       3—ñ–Ú : o—ˆ‚    ƒeƒBƒbƒN’P‘Ì ‚Å‚à “–“ú—İŒv ‚Å‚à‰Âiæ‚É‘I‘ğj
+'       4—ñ–Ú : Å—Ç”ƒ‹C”z’li”CˆÓj
+'       5—ñ–Ú : Å—Ç”„‹C”z’li”CˆÓj
+'       6—ñ–Ú : ƒeƒBƒbƒN‹L† ª«i”CˆÓj
 '==================================================================
 
 Public Sub ImportTickCsv()
@@ -31,22 +31,22 @@ Public Sub ImportTickCsv()
 
     Set ws = ActiveSheet
     If ws.Name = RESULT_SHEET Then
-        MsgBox "å–ã‚Šè¾¼ã¿å…ˆã®éŠ˜æŸ„ã‚·ãƒ¼ãƒˆã‚’é–‹ã„ã¦ã‹ã‚‰å®Ÿè¡Œã—ã¦ãã ã•ã„ã€‚", vbExclamation, "CSVå–è¾¼"
+        MsgBox "æ‚è‚İæ‚Ì–Á•¿ƒV[ƒg‚ğŠJ‚¢‚Ä‚©‚çÀs‚µ‚Ä‚­‚¾‚³‚¢B", vbExclamation, "CSVæ"
         Exit Sub
     End If
 
-    f = Application.GetOpenFilename("CSVãƒ•ã‚¡ã‚¤ãƒ« (*.csv),*.csv", , "æ­©ã¿å€¤CSVã‚’é¸æŠ")
+    f = Application.GetOpenFilename("CSVƒtƒ@ƒCƒ‹ (*.csv),*.csv", , "•à‚İ’lCSV‚ğ‘I‘ğ")
     If VarType(f) = vbBoolean Then Exit Sub
 
-    ans = MsgBox("CSVã®3åˆ—ç›®ã€Œå‡ºæ¥é«˜ã€ã¯å½“æ—¥ç´¯è¨ˆã§ã™ã‹ï¼Ÿ" & vbCrLf & vbCrLf & _
-                 "  ã¯ã„   = ç´¯è¨ˆå‡ºæ¥é«˜ï¼ˆå·®åˆ†ã‚’ãƒ†ã‚£ãƒƒã‚¯å‡ºæ¥é«˜ã«ã—ã¾ã™ï¼‰" & vbCrLf & _
-                 "  ã„ã„ãˆ = ãã®ãƒ†ã‚£ãƒƒã‚¯ã®å‡ºæ¥é«˜", vbYesNoCancel + vbQuestion, "CSVå–è¾¼")
+    ans = MsgBox("CSV‚Ì3—ñ–Úuo—ˆ‚v‚Í“–“ú—İŒv‚Å‚·‚©H" & vbCrLf & vbCrLf & _
+                 "  ‚Í‚¢   = —İŒvo—ˆ‚i·•ª‚ğƒeƒBƒbƒNo—ˆ‚‚É‚µ‚Ü‚·j" & vbCrLf & _
+                 "  ‚¢‚¢‚¦ = ‚»‚ÌƒeƒBƒbƒN‚Ìo—ˆ‚", vbYesNoCancel + vbQuestion, "CSVæ")
     If ans = vbCancel Then Exit Sub
     isCumulative = (ans = vbYes)
 
     rw = LastTickRow(ws)
     If rw >= TICK_FIRST_ROW Then
-        If MsgBox("æ—¢å­˜ã®ãƒ†ã‚£ãƒƒã‚¯ãƒ­ã‚°ã‚’æ¶ˆã—ã¦ã‹ã‚‰å–ã‚Šè¾¼ã¿ã¾ã™ã‹ï¼Ÿ", vbYesNo + vbQuestion, "CSVå–è¾¼") = vbYes Then
+        If MsgBox("Šù‘¶‚ÌƒeƒBƒbƒNƒƒO‚ğÁ‚µ‚Ä‚©‚çæ‚è‚İ‚Ü‚·‚©H", vbYesNo + vbQuestion, "CSVæ") = vbYes Then
             ws.Range(ws.Cells(TICK_FIRST_ROW, COL_TIME), ws.Cells(rw, COL_MARK)).ClearContents
         End If
     End If
@@ -68,7 +68,7 @@ Public Sub ImportTickCsv()
 
         tTxt = CleanCell(parts(0))
         t = ParseTimeText(tTxt)
-        If t = 0 Then GoTo NextLine                       ' è¦‹å‡ºã—è¡Œãªã©
+        If t = 0 Then GoTo NextLine                       ' Œ©o‚µs‚È‚Ç
 
         If Not IsNumeric(CleanCell(parts(1))) Then GoTo NextLine
 
@@ -76,7 +76,7 @@ Public Sub ImportTickCsv()
         If isCumulative Then
             If prevVol = 0 Then
                 prevVol = v
-                GoTo NextLine                             ' 1ä»¶ç›®ã¯åŸºæº–å€¤
+                GoTo NextLine                             ' 1Œ–Ú‚ÍŠî€’l
             End If
             dv = v - prevVol
             prevVol = v
@@ -108,17 +108,17 @@ Fin:
     Application.ScreenUpdating = True
 
     If errNum <> 0 Then
-        MsgBox "å–è¾¼ä¸­ã«ã‚¨ãƒ©ãƒ¼ãŒç™ºç”Ÿã—ã¾ã—ãŸã€‚" & vbCrLf & errNum & " : " & errDesc, _
-               vbCritical, "CSVå–è¾¼"
+        MsgBox "æ’†‚ÉƒGƒ‰[‚ª”­¶‚µ‚Ü‚µ‚½B" & vbCrLf & errNum & " : " & errDesc, _
+               vbCritical, "CSVæ"
         Exit Sub
     End If
 
-    MsgBox nRead & " ä»¶ã®ãƒ†ã‚£ãƒƒã‚¯ã‚’å–ã‚Šè¾¼ã¿ã¾ã—ãŸã€‚" & vbCrLf & _
-           "ã€Œâ‘£ åˆ¤å®š å®Ÿè¡Œã€ã§åˆ¤å®šã§ãã¾ã™ã€‚", vbInformation, "CSVå–è¾¼"
+    MsgBox nRead & " Œ‚ÌƒeƒBƒbƒN‚ğæ‚è‚İ‚Ü‚µ‚½B" & vbCrLf & _
+           "u‡C ”»’è Àsv‚Å”»’è‚Å‚«‚Ü‚·B", vbInformation, "CSVæ"
 End Sub
 
 '------------------------------------------------------------------
-' ã‚»ãƒ«æ–‡å­—åˆ—ã®æƒé™¤ï¼ˆãƒ€ãƒ–ãƒ«ã‚¯ã‚©ãƒ¼ãƒˆãƒ»ç©ºç™½ãƒ»ã‚«ãƒ³ãƒåŒºåˆ‡ã‚Šã®æ¡åŒºåˆ‡ã‚Šã‚’é™¤å»ï¼‰
+' ƒZƒ‹•¶š—ñ‚Ì‘|œiƒ_ƒuƒ‹ƒNƒH[ƒgE‹ó”’EƒJƒ“ƒ}‹æØ‚è‚ÌŒ…‹æØ‚è‚ğœ‹j
 '------------------------------------------------------------------
 Private Function CleanCell(ByVal s As String) As String
     s = Replace$(s, """", "")
@@ -127,7 +127,7 @@ Private Function CleanCell(ByVal s As String) As String
 End Function
 
 '------------------------------------------------------------------
-' æ™‚åˆ»æ–‡å­—åˆ— â†’ Dateï¼ˆæ™‚åˆ†ç§’ã®ã¿ï¼‰ã€‚è§£é‡ˆã§ããªã‘ã‚Œã° 0
+' •¶š—ñ ¨ Datei•ª•b‚Ì‚İjB‰ğß‚Å‚«‚È‚¯‚ê‚Î 0
 '------------------------------------------------------------------
 Private Function ParseTimeText(ByVal s As String) As Date
 
@@ -136,7 +136,7 @@ Private Function ParseTimeText(ByVal s As String) As Date
 
     If Len(s) = 0 Then Exit Function
 
-    ' "15:00:03.250" ã®ã‚ˆã†ãªãƒŸãƒªç§’ã¯åˆ‡ã‚Šæ¨ã¦
+    ' "15:00:03.250" ‚Ì‚æ‚¤‚Èƒ~ƒŠ•b‚ÍØ‚èÌ‚Ä
     p = InStr(s, ".")
     If p > 0 Then
         If InStr(s, ":") > 0 And p > InStr(s, ":") Then s = Left$(s, p - 1)

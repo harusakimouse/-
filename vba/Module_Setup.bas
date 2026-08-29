@@ -2,13 +2,13 @@ Attribute VB_Name = "Module_Setup"
 Option Explicit
 
 '==================================================================
-' Module_Setup : ã‚·ãƒ¼ãƒˆã®ä½“è£ãƒ»RSSæ•°å¼ãƒ»ãƒœã‚¿ãƒ³ã‚’è‡ªå‹•ç”Ÿæˆã™ã‚‹
-'   æœ€åˆã«1å›ã€ŒSetup_Allã€ã‚’å®Ÿè¡Œã™ã‚Œã°è¡¨ãŒå®Œæˆã—ã¾ã™ã€‚
-'   ï¼ˆéŠ˜æŸ„ã‚’è¶³ã—ãŸã‚ã¨ã€ã‚‚ã†ä¸€åº¦å®Ÿè¡Œã—ã¦ã‚‚å®‰å…¨ã§ã™ï¼‰
+' Module_Setup : ƒV[ƒg‚Ì‘ÌÙERSS”®Eƒ{ƒ^ƒ“‚ğ©“®¶¬‚·‚é
+'   Å‰‚É1‰ñuSetup_Allv‚ğÀs‚·‚ê‚Î•\‚ªŠ®¬‚µ‚Ü‚·B
+'   i–Á•¿‚ğ‘«‚µ‚½‚ ‚ÆA‚à‚¤ˆê“xÀs‚µ‚Ä‚àˆÀ‘S‚Å‚·j
 '==================================================================
 
 '------------------------------------------------------------------
-' ã™ã¹ã¦æº–å‚™ã™ã‚‹ï¼ˆãƒœã‚¿ãƒ³â‘ ï¼‰
+' ‚·‚×‚Ä€”õ‚·‚éiƒ{ƒ^ƒ“‡@j
 '------------------------------------------------------------------
 Public Sub Setup_All()
 
@@ -30,16 +30,16 @@ Public Sub Setup_All()
     Application.ScreenUpdating = True
 
     If shts.Count = 0 Then
-        MsgBox "éŠ˜æŸ„ã‚·ãƒ¼ãƒˆãŒè¦‹ã¤ã‹ã‚Šã¾ã›ã‚“ã§ã—ãŸã€‚" & vbCrLf & vbCrLf & _
-               "å„éŠ˜æŸ„ã‚·ãƒ¼ãƒˆã® B3 ã«è¨¼åˆ¸ã‚³ãƒ¼ãƒ‰ã‚’å…¥ã‚Œã¦ã‹ã‚‰ã€" & vbCrLf & _
-               "ã‚‚ã†ä¸€åº¦ã€Œâ‘  æº–å‚™ã€ã‚’æŠ¼ã—ã¦ãã ã•ã„ã€‚", vbExclamation, "æº–å‚™"
+        MsgBox "–Á•¿ƒV[ƒg‚ªŒ©‚Â‚©‚è‚Ü‚¹‚ñ‚Å‚µ‚½B" & vbCrLf & vbCrLf & _
+               "Še–Á•¿ƒV[ƒg‚Ì B3 ‚ÉØŒ”ƒR[ƒh‚ğ“ü‚ê‚Ä‚©‚çA" & vbCrLf & _
+               "‚à‚¤ˆê“xu‡@ €”õv‚ğ‰Ÿ‚µ‚Ä‚­‚¾‚³‚¢B", vbExclamation, "€”õ"
     Else
-        MsgBox shts.Count & " éŠ˜æŸ„ã‚·ãƒ¼ãƒˆã®æº–å‚™ãŒå®Œäº†ã—ã¾ã—ãŸã€‚", vbInformation, "æº–å‚™"
+        MsgBox shts.Count & " –Á•¿ƒV[ƒg‚Ì€”õ‚ªŠ®—¹‚µ‚Ü‚µ‚½B", vbInformation, "€”õ"
     End If
 End Sub
 
 '------------------------------------------------------------------
-' éŠ˜æŸ„ã‚·ãƒ¼ãƒˆ1æšã®ä½“è£ã‚’æ•´ãˆã‚‹
+' –Á•¿ƒV[ƒg1–‡‚Ì‘ÌÙ‚ğ®‚¦‚é
 '------------------------------------------------------------------
 Public Sub SetupStockSheet(ws As Worksheet)
 
@@ -47,25 +47,25 @@ Public Sub SetupStockSheet(ws As Worksheet)
     Dim i As Long
 
     With ws
-        '--- ã‚¿ã‚¤ãƒˆãƒ« ------------------------------------------------
-        .Range("A1").Value = "ãƒ†ã‚£ãƒƒã‚¯åˆ¤å®šãƒ­ã‚¸ãƒƒã‚¯ï¼ˆ15:00ã€œ15:20ï¼‰"
+        '--- ƒ^ƒCƒgƒ‹ ------------------------------------------------
+        .Range("A1").Value = "ƒeƒBƒbƒN”»’èƒƒWƒbƒNi15:00`15:20j"
         .Range("A1").Font.Bold = True
         .Range("A1").Font.Size = 14
 
-        '--- è¦‹å‡ºã—è¡Œ ------------------------------------------------
-        .Cells(ROW_HEADER, COL_CODE).Value = "ã‚³ãƒ¼ãƒ‰"
-        .Cells(ROW_HEADER, COL_NAME).Value = "éŠ˜æŸ„åç§°"
-        .Cells(ROW_HEADER, COL_TIME).Value = "æ™‚åˆ»"
-        .Cells(ROW_HEADER, COL_PRICE).Value = "ç´„å®šå€¤"
-        .Cells(ROW_HEADER, COL_VOL).Value = "å‡ºæ¥é«˜"
-        .Cells(ROW_HEADER, COL_W).Value = "é‡ã¿"
+        '--- Œ©o‚µs ------------------------------------------------
+        .Cells(ROW_HEADER, COL_CODE).Value = "ƒR[ƒh"
+        .Cells(ROW_HEADER, COL_NAME).Value = "–Á•¿–¼Ì"
+        .Cells(ROW_HEADER, COL_TIME).Value = ""
+        .Cells(ROW_HEADER, COL_PRICE).Value = "–ñ’è’l"
+        .Cells(ROW_HEADER, COL_VOL).Value = "o—ˆ‚"
+        .Cells(ROW_HEADER, COL_W).Value = "d‚İ"
         .Cells(ROW_HEADER, COL_UP).Value = "UpScore"
         .Cells(ROW_HEADER, COL_DN).Value = "DnScore"
-        .Cells(ROW_HEADER, COL_BID).Value = "æœ€è‰¯è²·æ°—é…å€¤"
-        .Cells(ROW_HEADER, COL_ASK).Value = "æœ€è‰¯å£²æ°—é…å€¤"
-        .Cells(ROW_HEADER, COL_DIR).Value = "æ–¹å‘"
-        .Cells(ROW_HEADER, COL_SPD).Value = "ç§’å†…ç´„å®šæ•°"
-        .Cells(ROW_HEADER, COL_MARK).Value = "ãƒ†ã‚£ãƒƒã‚¯"
+        .Cells(ROW_HEADER, COL_BID).Value = "Å—Ç”ƒ‹C”z’l"
+        .Cells(ROW_HEADER, COL_ASK).Value = "Å—Ç”„‹C”z’l"
+        .Cells(ROW_HEADER, COL_DIR).Value = "•ûŒü"
+        .Cells(ROW_HEADER, COL_SPD).Value = "•b“à–ñ’è”"
+        .Cells(ROW_HEADER, COL_MARK).Value = "ƒeƒBƒbƒN"
 
         With .Range(.Cells(ROW_HEADER, COL_CODE), .Cells(ROW_HEADER, COL_MARK))
             .Font.Bold = True
@@ -75,37 +75,37 @@ Public Sub SetupStockSheet(ws As Worksheet)
             .Borders.Color = RGB(150, 150, 150)
         End With
 
-        '--- éŠ˜æŸ„åç§°ï¼ˆRSSï¼‰ ----------------------------------------
-        .Cells(ROW_CODE, COL_NAME).Formula = "=RssMarket($B$3,""éŠ˜æŸ„åç§°"")"
+        '--- –Á•¿–¼ÌiRSSj ----------------------------------------
+        .Cells(ROW_CODE, COL_NAME).Formula = "=RssMarket($B$3,""–Á•¿–¼Ì"")"
 
-        '--- RSS ãƒ©ã‚¤ãƒ–å–å¾—ãƒ–ãƒ­ãƒƒã‚¯ï¼ˆSåˆ—ãƒ©ãƒ™ãƒ« / Tåˆ—å€¤ï¼‰ -------------
-        .Range("S1").Value = "ç¾åœ¨å€¤"
-        .Range("S2").Value = "å‡ºæ¥é«˜ï¼ˆå½“æ—¥ç´¯è¨ˆï¼‰"
-        .Range("S3").Value = "æœ€è‰¯è²·æ°—é…å€¤"
-        .Range("S4").Value = "æœ€è‰¯å£²æ°—é…å€¤"
-        .Range("S5").Value = "ç¾åœ¨å€¤æ™‚åˆ»"
-        .Range("S6").Value = "ã‚¹ãƒ—ãƒ¬ãƒƒãƒ‰"
-        .Range("S7").Value = "â€»ã“ã®ãƒ–ãƒ­ãƒƒã‚¯ã‚’ RSS ãŒæ›´æ–°ã—ã¾ã™"
+        '--- RSS ƒ‰ƒCƒuæ“¾ƒuƒƒbƒNiS—ñƒ‰ƒxƒ‹ / T—ñ’lj -------------
+        .Range("S1").Value = "Œ»İ’l"
+        .Range("S2").Value = "o—ˆ‚i“–“ú—İŒvj"
+        .Range("S3").Value = "Å—Ç”ƒ‹C”z’l"
+        .Range("S4").Value = "Å—Ç”„‹C”z’l"
+        .Range("S5").Value = "Œ»İ’l"
+        .Range("S6").Value = "ƒXƒvƒŒƒbƒh"
+        .Range("S7").Value = "¦‚±‚ÌƒuƒƒbƒN‚ğ RSS ‚ªXV‚µ‚Ü‚·"
         .Range("T6").Formula = "=IF(COUNT(T3:T4)=2,T4-T3,"""")"
 
-        .Range(LIVE_PRICE).Formula = "=RssMarket($B$3,""ç¾åœ¨å€¤"")"
-        .Range(LIVE_VOL).Formula = "=RssMarket($B$3,""å‡ºæ¥é«˜"")"
-        .Range(LIVE_BID).Formula = "=RssMarket($B$3,""æœ€è‰¯è²·æ°—é…å€¤"")"
-        .Range(LIVE_ASK).Formula = "=RssMarket($B$3,""æœ€è‰¯å£²æ°—é…å€¤"")"
-        .Range(LIVE_TIME).Formula = "=RssMarket($B$3,""ç¾åœ¨å€¤æ™‚åˆ»"")"
+        .Range(LIVE_PRICE).Formula = "=RssMarket($B$3,""Œ»İ’l"")"
+        .Range(LIVE_VOL).Formula = "=RssMarket($B$3,""o—ˆ‚"")"
+        .Range(LIVE_BID).Formula = "=RssMarket($B$3,""Å—Ç”ƒ‹C”z’l"")"
+        .Range(LIVE_ASK).Formula = "=RssMarket($B$3,""Å—Ç”„‹C”z’l"")"
+        .Range(LIVE_TIME).Formula = "=RssMarket($B$3,""Œ»İ’l"")"
         .Range(LIVE_TIME).NumberFormatLocal = "hh:mm:ss"
 
         .Range("S1:S7").Font.Color = RGB(120, 120, 120)
         .Range("S7").Font.Italic = True
         .Range("S3:T4").Font.Bold = True
 
-        '--- åˆ¤å®šçµæœãƒ–ãƒ­ãƒƒã‚¯ï¼ˆOåˆ—ãƒ©ãƒ™ãƒ« / Påˆ—å€¤ï¼‰ ------------------
-        labels = Array("åˆ¤å®š", "ä¿¡é ¼åº¦", _
-                       "æœ€è‰¯è²·æ°—é…å€¤", "æœ€è‰¯å£²æ°—é…å€¤", "ã‚¹ãƒ—ãƒ¬ãƒƒãƒ‰", _
-                       "æ–¹å‘åˆ¤å®šâ‘ ", "UpSeqMax", "DnSeqMax", _
+        '--- ”»’èŒ‹‰ÊƒuƒƒbƒNiO—ñƒ‰ƒxƒ‹ / P—ñ’lj ------------------
+        labels = Array("”»’è", "M—Š“x", _
+                       "Å—Ç”ƒ‹C”z’l", "Å—Ç”„‹C”z’l", "ƒXƒvƒŒƒbƒh", _
+                       "•ûŒü”»’è‡@", "UpSeqMax", "DnSeqMax", _
                        "Vol1 (15:00-05)", "Vol2 (15:05-10)", "Vol3 (15:10-15)", "Vol4 (15:15-20)", _
-                       "Vol4å„ªå‹¢â‘¡", "SpeedMaxâ‘¢", "ãƒ†ã‚£ãƒƒã‚¯æ•°", _
-                       "BuyTotal(å‚è€ƒ)", "SellTotal(å‚è€ƒ)", "åˆ¤å®šæ™‚åˆ»")
+                       "Vol4—D¨‡A", "SpeedMax‡B", "ƒeƒBƒbƒN”", _
+                       "BuyTotal(Ql)", "SellTotal(Ql)", "”»’è")
 
         For i = LBound(labels) To UBound(labels)
             .Range(RES_TOP).Offset(i, 0).Value = labels(i)
@@ -121,21 +121,21 @@ Public Sub SetupStockSheet(ws As Worksheet)
         End With
         .Range(RES_TOP).Offset(0, 0).Resize(UBound(labels) + 1, 1).Interior.Color = RGB(242, 242, 242)
 
-        '--- æ­©ã¿å€¤ï¼ˆTICKï¼‰ãƒ–ãƒ­ãƒƒã‚¯ ----------------------------------
-        .Range("AA1").Value = "æ­©ã¿å€¤ï¼ˆTICKï¼‰ãƒ–ãƒ­ãƒƒã‚¯"
+        '--- •à‚İ’liTICKjƒuƒƒbƒN ----------------------------------
+        .Range("AA1").Value = "•à‚İ’liTICKjƒuƒƒbƒN"
         .Range("AA1").Font.Bold = True
-        .Range("AA2").Value = "â†’ " & TICK_BLOCK_CELL & " ã«ãŠä½¿ã„ã®RSSã®æ­©ã¿å€¤æ•°å¼ã‚’å…¥ã‚Œã¦ãã ã•ã„"
+        .Range("AA2").Value = "¨ " & TICK_BLOCK_CELL & " ‚É‚¨g‚¢‚ÌRSS‚Ì•à‚İ’l”®‚ğ“ü‚ê‚Ä‚­‚¾‚³‚¢"
         .Range("AA2").Font.Color = RGB(120, 120, 120)
-        .Range("AB2").Value = "æ™‚åˆ»"
-        .Range("AC2").Value = "ç´„å®šå€¤"
-        .Range("AD2").Value = "å‡ºæ¥é«˜"
-        .Range("AE2").Value = "ãƒ†ã‚£ãƒƒã‚¯"
+        .Range("AB2").Value = ""
+        .Range("AC2").Value = "–ñ’è’l"
+        .Range("AD2").Value = "o—ˆ‚"
+        .Range("AE2").Value = "ƒeƒBƒbƒN"
         .Range("AB2:AE2").Font.Bold = True
         .Range("AB2:AE2").Interior.Color = RGB(226, 239, 218)
         .Columns("AA").ColumnWidth = 32
         .Columns("AB:AE").ColumnWidth = 11
 
-        '--- æ›¸å¼ãƒ»å¹… ------------------------------------------------
+        '--- ‘®E• ------------------------------------------------
         .Columns(COL_TIME).NumberFormatLocal = "hh:mm:ss"
         .Columns(COL_TIME).ColumnWidth = 10
         .Columns(COL_PRICE).ColumnWidth = 10
@@ -153,7 +153,7 @@ Public Sub SetupStockSheet(ws As Worksheet)
         .Columns("S").ColumnWidth = 20
         .Columns("T").ColumnWidth = 12
 
-        '--- è¦‹å‡ºã—å›ºå®š ---------------------------------------------
+        '--- Œ©o‚µŒÅ’è ---------------------------------------------
         On Error Resume Next
         .Activate
         ActiveWindow.FreezePanes = False
@@ -164,7 +164,7 @@ Public Sub SetupStockSheet(ws As Worksheet)
 End Sub
 
 '------------------------------------------------------------------
-' Judge_Results ã‚·ãƒ¼ãƒˆã®ä½“è£ã¨ãƒœã‚¿ãƒ³
+' Judge_Results ƒV[ƒg‚Ì‘ÌÙ‚Æƒ{ƒ^ƒ“
 '------------------------------------------------------------------
 Public Sub SetupResultSheet()
 
@@ -174,14 +174,14 @@ Public Sub SetupResultSheet()
 
     Set ws = ResultSheet()
 
-    head = Array("ã‚³ãƒ¼ãƒ‰", "éŠ˜æŸ„å", "åˆ¤å®š", "ä¿¡é ¼åº¦", _
-                 "UpSeqMax", "DnSeqMax", "æ–¹å‘åˆ¤å®šâ‘ ", _
-                 "Vol1", "Vol2", "Vol3", "Vol4", "Vol4å„ªå‹¢â‘¡", _
-                 "SpeedMaxâ‘¢", "ãƒ†ã‚£ãƒƒã‚¯æ•°", "BuyTotal", "SellTotal", "æ›´æ–°æ™‚åˆ»", _
-                 "æœ€è‰¯è²·æ°—é…", "æœ€è‰¯å£²æ°—é…", "ã‚¹ãƒ—ãƒ¬ãƒƒãƒ‰")
+    head = Array("ƒR[ƒh", "–Á•¿–¼", "”»’è", "M—Š“x", _
+                 "UpSeqMax", "DnSeqMax", "•ûŒü”»’è‡@", _
+                 "Vol1", "Vol2", "Vol3", "Vol4", "Vol4—D¨‡A", _
+                 "SpeedMax‡B", "ƒeƒBƒbƒN”", "BuyTotal", "SellTotal", "XV", _
+                 "Å—Ç”ƒ‹C”z", "Å—Ç”„‹C”z", "ƒXƒvƒŒƒbƒh")
 
     With ws
-        .Range("B1").Value = "å¼•ã‘åˆ¤å®šã‚µãƒãƒªãƒ¼ï¼ˆ15:00ã€œ15:20 ã®ãƒ†ã‚£ãƒƒã‚¯ã§åˆ¤å®šï¼‰"
+        .Range("B1").Value = "ˆø‚¯”»’èƒTƒ}ƒŠ[i15:00`15:20 ‚ÌƒeƒBƒbƒN‚Å”»’èj"
         .Range("B1").Font.Bold = True
         .Range("B1").Font.Size = 14
 
@@ -209,13 +209,13 @@ Public Sub SetupResultSheet()
             .Interior.Color = RGB(255, 242, 204)
         End With
 
-        '--- çŠ¶æ…‹è¡¨ç¤º ------------------------------------------------
-        .Range("W1").Value = "çŠ¶æ…‹"
-        .Range("W2").Value = "ä»¶æ•°"
-        .Range("W3").Value = "å†…è¨³"
+        '--- ó‘Ô•\¦ ------------------------------------------------
+        .Range("W1").Value = "ó‘Ô"
+        .Range("W2").Value = "Œ”"
+        .Range("W3").Value = "“à–ó"
         .Range("W1:W3").Font.Bold = True
 
-        '--- æ—§ãƒ¬ã‚¤ã‚¢ã‚¦ãƒˆã®æ®‹éª¸ã‚’æƒé™¤ -------------------------------
+        '--- ‹ŒƒŒƒCƒAƒEƒg‚ÌcŠ[‚ğ‘|œ -------------------------------
         .Range("O1:O3").ClearContents
         .Range("T1:U3").ClearContents
     End With
@@ -226,27 +226,27 @@ Public Sub SetupResultSheet()
 End Sub
 
 '------------------------------------------------------------------
-' æ“ä½œãƒœã‚¿ãƒ³ã‚’ä½œã‚Šç›´ã™
+' ‘€ìƒ{ƒ^ƒ“‚ğì‚è’¼‚·
 '------------------------------------------------------------------
 Private Sub BuildButtons(ws As Worksheet)
 
     ws.Buttons.Delete
 
-    AddButton ws, 0, "â‘  æº–å‚™ï¼ˆè¡¨ã¨RSSã‚’ä½œã‚‹ï¼‰", "Setup_All"
-    AddButton ws, 1, "â‘¡ ãƒ†ã‚£ãƒƒã‚¯è¨˜éŒ² é–‹å§‹", "StartTickLogging"
-    AddButton ws, 2, "â‘¢ è¨˜éŒ² åœæ­¢ â†’ åˆ¤å®š", "StopAndJudge"
-    AddButton ws, 3, "â‘£ åˆ¤å®š å®Ÿè¡Œ", "JudgeAll"
-    AddButton ws, 4, "â‘¤ ãƒ†ã‚£ãƒƒã‚¯ãƒ­ã‚°æ¶ˆå»", "ClearAllTicks"
-    AddButton ws, 5, "è‡ªå‹•é–‹å§‹ã‚’äºˆç´„ï¼ˆ14:59:30ï¼‰", "ArmAutoRun"
-    AddButton ws, 6, "æ­©ã¿å€¤ã‚’ä»Šã™ãå–è¾¼", "ImportTickBlockNow"
-    AddButton ws, 7, "æ­©ã¿å€¤ãƒ–ãƒ­ãƒƒã‚¯ã®ç¢ºèª", "ShowTickBlockInfo"
-    AddButton ws, 8, "CSVï¼ˆæ­©ã¿å€¤ï¼‰å–è¾¼", "ImportTickCsv"
-    AddButton ws, 9, "éŠ˜æŸ„ã‚·ãƒ¼ãƒˆã‚’è¿½åŠ ", "AddTickSheet"
+    AddButton ws, 0, "‡@ €”õi•\‚ÆRSS‚ğì‚éj", "Setup_All"
+    AddButton ws, 1, "‡A ƒeƒBƒbƒN‹L˜^ ŠJn", "StartTickLogging"
+    AddButton ws, 2, "‡B ‹L˜^ ’â~ ¨ ”»’è", "StopAndJudge"
+    AddButton ws, 3, "‡C ”»’è Às", "JudgeAll"
+    AddButton ws, 4, "‡D ƒeƒBƒbƒNƒƒOÁ‹", "ClearAllTicks"
+    AddButton ws, 5, "©“®ŠJn‚ğ—\–ñi14:59:30j", "ArmAutoRun"
+    AddButton ws, 6, "•à‚İ’l‚ğ¡‚·‚®æ", "ImportTickBlockNow"
+    AddButton ws, 7, "•à‚İ’lƒuƒƒbƒN‚ÌŠm”F", "ShowTickBlockInfo"
+    AddButton ws, 8, "CSVi•à‚İ’ljæ", "ImportTickCsv"
+    AddButton ws, 9, "–Á•¿ƒV[ƒg‚ğ’Ç‰Á", "AddTickSheet"
 End Sub
 
 '------------------------------------------------------------------
-' éŠ˜æŸ„è¡Œã‚’ã‚ã‚‰ã‹ã˜ã‚ç½®ã„ã¦ãŠã
-'   è¨˜éŒ²ä¸­ï¼ˆ15:00ã€œ15:20ï¼‰ã‹ã‚‰æœ€è‰¯æ°—é…ã‚’ã“ã“ã«å‡ºã™ãŸã‚
+' –Á•¿s‚ğ‚ ‚ç‚©‚¶‚ß’u‚¢‚Ä‚¨‚­
+'   ‹L˜^’†i15:00`15:20j‚©‚çÅ—Ç‹C”z‚ğ‚±‚±‚Éo‚·‚½‚ß
 '------------------------------------------------------------------
 Private Sub SeedResultRows(ws As Worksheet)
 
@@ -278,7 +278,7 @@ Private Sub AddButton(ws As Worksheet, ByVal idx As Long, ByVal caption As Strin
 End Sub
 
 '------------------------------------------------------------------
-' éŠ˜æŸ„ã‚·ãƒ¼ãƒˆã‚’1æšè¿½åŠ ã™ã‚‹
+' –Á•¿ƒV[ƒg‚ğ1–‡’Ç‰Á‚·‚é
 '------------------------------------------------------------------
 Public Sub AddTickSheet()
 
@@ -286,10 +286,10 @@ Public Sub AddTickSheet()
     Dim ws As Worksheet
     Dim nm As String
 
-    s = InputBox("è¿½åŠ ã™ã‚‹éŠ˜æŸ„ã®è¨¼åˆ¸ã‚³ãƒ¼ãƒ‰ã‚’å…¥åŠ›ã—ã¦ãã ã•ã„ã€‚", "éŠ˜æŸ„ã‚·ãƒ¼ãƒˆã®è¿½åŠ ")
+    s = InputBox("’Ç‰Á‚·‚é–Á•¿‚ÌØŒ”ƒR[ƒh‚ğ“ü—Í‚µ‚Ä‚­‚¾‚³‚¢B", "–Á•¿ƒV[ƒg‚Ì’Ç‰Á")
     If Len(Trim$(s)) = 0 Then Exit Sub
     If Not IsNumeric(s) Then
-        MsgBox "è¨¼åˆ¸ã‚³ãƒ¼ãƒ‰ã¯æ•°å€¤ã§å…¥åŠ›ã—ã¦ãã ã•ã„ã€‚", vbExclamation
+        MsgBox "ØŒ”ƒR[ƒh‚Í”’l‚Å“ü—Í‚µ‚Ä‚­‚¾‚³‚¢B", vbExclamation
         Exit Sub
     End If
 
@@ -298,7 +298,7 @@ Public Sub AddTickSheet()
     Set ws = ThisWorkbook.Worksheets(nm)
     On Error GoTo 0
     If Not ws Is Nothing Then
-        MsgBox "ã‚·ãƒ¼ãƒˆ " & nm & " ã¯æ—¢ã«å­˜åœ¨ã—ã¾ã™ã€‚", vbExclamation
+        MsgBox "ƒV[ƒg " & nm & " ‚ÍŠù‚É‘¶İ‚µ‚Ü‚·B", vbExclamation
         Exit Sub
     End If
 
@@ -309,5 +309,5 @@ Public Sub AddTickSheet()
     SetupStockSheet ws
     SetupResultSheet
 
-    MsgBox "ã‚·ãƒ¼ãƒˆ " & nm & " ã‚’ä½œæˆã—ã¾ã—ãŸã€‚", vbInformation
+    MsgBox "ƒV[ƒg " & nm & " ‚ğì¬‚µ‚Ü‚µ‚½B", vbInformation
 End Sub

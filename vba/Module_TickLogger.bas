@@ -2,26 +2,26 @@ Attribute VB_Name = "Module_TickLogger"
 Option Explicit
 
 '==================================================================
-' Module_TickLogger : 15:00〜15:20 のティックを各銘柄シートに記録する
+' Module_TickLogger : 15:00�`15:20 �̃e�B�b�N���e�����V�[�g�ɋL�^����
 '
-'  ● モード1（既定 / LOG_MODE = 1）… 歩み値（TICK）ブロック追従
-'      RSS の歩み値をシート上のブロック（既定 AB3〜）に出しておき、
-'      前回から増えた行だけを検出してティックログに追記します。
-'      約定1本ずつのデータなので ③SpeedMax が正確に出ます。
+'  �� ���[�h1�i���� / LOG_MODE = 1�j�c ���ݒl�iTICK�j�u���b�N�Ǐ]
+'      RSS �̕��ݒl���V�[�g��̃u���b�N�i���� AB3�`�j�ɏo���Ă����A
+'      �O�񂩂瑝�����s���������o���ăe�B�b�N���O�ɒǋL���܂��B
+'      ���1�{���̃f�[�^�Ȃ̂� �BSpeedMax �����m�ɏo�܂��B
 '
-'      ・並び順（新しい順 / 古い順）は自動判定します
-'      ・記録開始時にブロック内の履歴もまとめて取り込みます
-'      ・ブロックを追い越した（＝取りこぼした）場合は警告を出します
+'      �E���я��i�V������ / �Â����j�͎������肵�܂�
+'      �E�L�^�J�n���Ƀu���b�N���̗������܂Ƃ߂Ď�荞�݂܂�
+'      �E�u���b�N��ǂ��z�����i����肱�ڂ����j�ꍇ�͌x�����o���܂�
 '
-'  ● モード2（LOG_MODE = 2）… 現在値・出来高ポーリング
-'      歩み値が使えない環境向け。出来高（当日累計）の増分を1ティックとみなします。
+'  �� ���[�h2�iLOG_MODE = 2�j�c ���ݒl�E�o�����|�[�����O
+'      ���ݒl���g���Ȃ��������B�o�����i�����݌v�j�̑�����1�e�B�b�N�Ƃ݂Ȃ��܂��B
 '==================================================================
 
 Public gLogging As Boolean
 Private mArmedTime As Date
 
 '------------------------------------------------------------------
-' ティック記録 開始（ボタン②）
+' �e�B�b�N�L�^ �J�n�i�{�^���A�j
 '------------------------------------------------------------------
 Public Sub StartTickLogging()
 
@@ -40,9 +40,9 @@ Public Sub StartTickLogging()
 
     Set shts = TargetSheets()
     If shts.Count = 0 Then
-        MsgBox "記録対象の銘柄シートがありません。" & vbCrLf & _
-               "各シートの B3 に証券コードを入れてから「① 準備」を実行してください。", _
-               vbExclamation, "ティック記録"
+        MsgBox "�L�^�Ώۂ̖����V�[�g������܂���B" & vbCrLf & _
+               "�e�V�[�g�� B3 �ɏ،��R�[�h�����Ă���u�@ �����v�����s���Ă��������B", _
+               vbExclamation, "�e�B�b�N�L�^"
         Exit Sub
     End If
 
@@ -54,15 +54,15 @@ Public Sub StartTickLogging()
 
     For i = 1 To n
         Set ws = shts(i)
-        prevVol(i) = 0                       ' モード2：最初の1回は基準値取りに使う
+        prevVol(i) = 0                       ' ���[�h2�F�ŏ���1��͊�l���Ɏg��
         nextRow(i) = LastTickRow(ws) + 1
         If nextRow(i) < TICK_FIRST_ROW Then nextRow(i) = TICK_FIRST_ROW
-        anchor(i) = SeedAnchorFromLog(ws)    ' モード1：途中再開でも二重取込しない
+        anchor(i) = SeedAnchorFromLog(ws)    ' ���[�h1�F�r���ĊJ�ł���d�捞���Ȃ�
     Next i
 
     Set res = ResultSheet()
-    res.Range("X1").Value = "記録中… 開始 " & Format$(Now, "hh:mm:ss") & _
-                            "（" & IIf(LOG_MODE = 1, "歩み値追従", "出来高ポーリング") & "）"
+    res.Range("X1").Value = "�L�^���c �J�n " & Format$(Now, "hh:mm:ss") & _
+                            "�i" & IIf(LOG_MODE = 1, "���ݒl�Ǐ]", "�o�����|�[�����O") & "�j"
 
     gLogging = True
     Application.EnableCancelKey = xlErrorHandler
@@ -70,7 +70,7 @@ Public Sub StartTickLogging()
 
     Do While gLogging
 
-        If NowTime() > TimeValue(JUDGE_END) Then Exit Do          ' 15:20 で自動終了
+        If NowTime() > TimeValue(JUDGE_END) Then Exit Do          ' 15:20 �Ŏ����I��
 
         If NowTime() >= TimeValue(JUDGE_START) Then
             For i = 1 To n
@@ -84,8 +84,8 @@ Public Sub StartTickLogging()
         End If
 
         If Timer - lastPaint > 1 Then
-            res.Range("X2").Value = "ティック " & tickTotal & " 件 / 最終 " & Format$(Now, "hh:mm:ss")
-            RefreshQuotes shts                    ' 最良気配のリアルタイム表示
+            res.Range("X2").Value = "�e�B�b�N " & tickTotal & " �� / �ŏI " & Format$(Now, "hh:mm:ss")
+            RefreshQuotes shts                    ' �ŗǋC�z�̃��A���^�C���\��
             lastPaint = Timer
         End If
 
@@ -97,42 +97,42 @@ Fin:
     Application.EnableCancelKey = xlInterrupt
 
     If Err.Number <> 0 And Err.Number <> 18 Then
-        res.Range("X1").Value = "記録エラー " & Err.Number & " : " & Err.Description
-        MsgBox "記録中にエラーが発生しました。" & vbCrLf & _
-               Err.Number & " : " & Err.Description, vbCritical, "ティック記録"
+        res.Range("X1").Value = "�L�^�G���[ " & Err.Number & " : " & Err.Description
+        MsgBox "�L�^���ɃG���[���������܂����B" & vbCrLf & _
+               Err.Number & " : " & Err.Description, vbCritical, "�e�B�b�N�L�^"
     Else
-        res.Range("X1").Value = "記録停止 " & Format$(Now, "hh:mm:ss") & _
-                                "（ティック " & tickTotal & " 件）"
+        res.Range("X1").Value = "�L�^��~ " & Format$(Now, "hh:mm:ss") & _
+                                "�i�e�B�b�N " & tickTotal & " ���j"
     End If
 
     If AUTO_JUDGE_ON_STOP Then JudgeAll
 End Sub
 
 '------------------------------------------------------------------
-' ティック記録 停止（ボタン③）
+' �e�B�b�N�L�^ ��~�i�{�^���B�j
 '------------------------------------------------------------------
 Public Sub StopTickLogging()
     gLogging = False
 End Sub
 
 '------------------------------------------------------------------
-' 記録を止めてすぐ判定（ボタン③）
+' �L�^���~�߂Ă�������i�{�^���B�j
 '------------------------------------------------------------------
 Public Sub StopAndJudge()
     If gLogging Then
-        gLogging = False        ' StartTickLogging 側で自動的に JudgeAll まで走ります
+        gLogging = False        ' StartTickLogging ���Ŏ����I�� JudgeAll �܂ő���܂�
     Else
         JudgeAll
     End If
 End Sub
 
 '==================================================================
-' モード1 : 歩み値（TICK）ブロック追従
+' ���[�h1 : ���ݒl�iTICK�j�u���b�N�Ǐ]
 '==================================================================
 
 '------------------------------------------------------------------
-' 歩み値ブロックを読み、前回以降に増えた行だけを追記する
-'   戻り値 : 追記したティック数
+' ���ݒl�u���b�N��ǂ݁A�O��ȍ~�ɑ������s������ǋL����
+'   �߂�l : �ǋL�����e�B�b�N��
 '------------------------------------------------------------------
 Private Function FollowTickBlock(ws As Worksheet, ByRef anchorKey As String, _
                                  ByRef nextRow As Long, ByRef gapWarned As Boolean) As Long
@@ -142,16 +142,16 @@ Private Function FollowTickBlock(ws As Worksheet, ByRef anchorKey As String, _
     Dim added As Long
     Dim bid As Double, ask As Double
 
-    b = ReadTickBlock(ws)                    ' 古い順に正規化された配列
+    b = ReadTickBlock(ws)                    ' �Â����ɐ��K�����ꂽ�z��
     If Not IsArray(b) Then Exit Function
     n = UBound(b, 1)
     If n < 1 Then Exit Function
 
-    '--- 歩み値には気配が無いので、そのときの最良気配をスタンプする ---
+    '--- ���ݒl�ɂ͋C�z�������̂ŁA���̂Ƃ��̍ŗǋC�z���X�^���v���� ---
     bid = NumOrZero(ws.Range(LIVE_BID).Value)
     ask = NumOrZero(ws.Range(LIVE_ASK).Value)
 
-    '--- 前回の最終ティックがブロックのどこにあるかを探す -------------
+    '--- �O��̍ŏI�e�B�b�N���u���b�N�̂ǂ��ɂ��邩��T�� -------------
     idx = 0
     If Len(anchorKey) > 0 Then
         For i = n To 1 Step -1
@@ -162,17 +162,17 @@ Private Function FollowTickBlock(ws As Worksheet, ByRef anchorKey As String, _
         Next i
 
         If idx = 0 Then
-            ' ブロックが一周してしまい前回位置を見失った＝取りこぼしの可能性
+            ' �u���b�N��������Ă��܂��O��ʒu��������������肱�ڂ��̉\��
             If Not gapWarned Then
                 gapWarned = True
                 ResultSheet().Range("X3").Value = _
-                    "警告：" & ws.Name & " で歩み値ブロックを追い越しました。" & _
-                    "TICK_BLOCK_ROWS を増やすか POLL_MS を短くしてください。"
+                    "�x���F" & ws.Name & " �ŕ��ݒl�u���b�N��ǂ��z���܂����B" & _
+                    "TICK_BLOCK_ROWS �𑝂₷�� POLL_MS ��Z�����Ă��������B"
             End If
         End If
     End If
 
-    '--- 新しい行だけ追記 --------------------------------------------
+    '--- �V�����s�����ǋL --------------------------------------------
     For i = idx + 1 To n
         If AppendTickRow(ws, nextRow, b, i, bid, ask) Then added = added + 1
     Next i
@@ -182,8 +182,8 @@ Private Function FollowTickBlock(ws As Worksheet, ByRef anchorKey As String, _
 End Function
 
 '------------------------------------------------------------------
-' 歩み値ブロックを読み、（時刻, 約定値, 出来高, 記号）を古い順で返す
-'   有効行が無ければ Empty を返す
+' ���ݒl�u���b�N��ǂ݁A�i����, ���l, �o����, �L���j���Â����ŕԂ�
+'   �L���s��������� Empty ��Ԃ�
 '------------------------------------------------------------------
 Private Function ReadTickBlock(ws As Worksheet) As Variant
 
@@ -227,7 +227,7 @@ Private Function ReadTickBlock(ws As Worksheet) As Variant
 
     If n = 0 Then Exit Function
 
-    '--- 並び順の判定 -------------------------------------------------
+    '--- ���я��̔��� -------------------------------------------------
     Select Case TICK_BLOCK_ORDER
         Case 1: newestFirst = True
         Case 2: newestFirst = False
@@ -248,14 +248,14 @@ Private Function ReadTickBlock(ws As Worksheet) As Variant
 End Function
 
 '------------------------------------------------------------------
-' ブロック1行の識別キー（時刻＋約定値＋出来高）
+' �u���b�N1�s�̎��ʃL�[�i�����{���l�{�o�����j
 '------------------------------------------------------------------
 Private Function BlockRowKey(b As Variant, ByVal i As Long) As String
     BlockRowKey = CStr(b(i, 1)) & "|" & CStr(b(i, 2)) & "|" & CStr(b(i, 3))
 End Function
 
 '------------------------------------------------------------------
-' ティックログ最終行から追従用アンカーを作る（途中再開の二重取込防止）
+' �e�B�b�N���O�ŏI�s����Ǐ]�p�A���J�[�����i�r���ĊJ�̓�d�捞�h�~�j
 '------------------------------------------------------------------
 Private Function SeedAnchorFromLog(ws As Worksheet) As String
 
@@ -273,7 +273,7 @@ Private Function SeedAnchorFromLog(ws As Worksheet) As String
 End Function
 
 '------------------------------------------------------------------
-' ブロック1行をティックログに追記（15:00〜15:20 の範囲だけ）
+' �u���b�N1�s���e�B�b�N���O�ɒǋL�i15:00�`15:20 �͈̔͂����j
 '------------------------------------------------------------------
 Private Function AppendTickRow(ws As Worksheet, ByRef nextRow As Long, _
                                b As Variant, ByVal i As Long, _
@@ -300,8 +300,8 @@ Private Function AppendTickRow(ws As Worksheet, ByRef nextRow As Long, _
 End Function
 
 '------------------------------------------------------------------
-' 歩み値ブロックを今すぐ一括取込（ボタン）
-'   記録を回していないときの取りこぼし回収・検証用
+' ���ݒl�u���b�N���������ꊇ�捞�i�{�^���j
+'   �L�^���񂵂Ă��Ȃ��Ƃ��̎�肱�ڂ�����E���ؗp
 '------------------------------------------------------------------
 Public Sub ImportTickBlockNow()
 
@@ -325,12 +325,12 @@ Public Sub ImportTickBlockNow()
     RefreshQuotes shts
     Application.ScreenUpdating = True
 
-    MsgBox total & " 件のティックを取り込みました。", vbInformation, "歩み値の取込"
+    MsgBox total & " ���̃e�B�b�N����荞�݂܂����B", vbInformation, "���ݒl�̎捞"
 End Sub
 
 '------------------------------------------------------------------
-' 歩み値ブロックの読み取り状態を確認する（ボタン）
-'   列の割り当てが合っているかを目視確認するための診断です
+' ���ݒl�u���b�N�̓ǂݎ���Ԃ��m�F����i�{�^���j
+'   ��̊��蓖�Ă������Ă��邩��ڎ��m�F���邽�߂̐f�f�ł�
 '------------------------------------------------------------------
 Public Sub ShowTickBlockInfo()
 
@@ -345,7 +345,7 @@ Public Sub ShowTickBlockInfo()
     If ws.Name = RESULT_SHEET Then
         Set shts = TargetSheets()
         If shts.Count = 0 Then
-            MsgBox "銘柄シートがありません。", vbExclamation, "歩み値ブロックの確認"
+            MsgBox "�����V�[�g������܂���B", vbExclamation, "���ݒl�u���b�N�̊m�F"
             Exit Sub
         End If
         Set ws = shts(1)
@@ -353,25 +353,25 @@ Public Sub ShowTickBlockInfo()
 
     b = ReadTickBlock(ws)
 
-    msg = "シート : " & ws.Name & vbCrLf & _
-          "ブロック : " & TICK_BLOCK_CELL & " から " & TICK_BLOCK_ROWS & " 行" & vbCrLf & vbCrLf
+    msg = "�V�[�g : " & ws.Name & vbCrLf & _
+          "�u���b�N : " & TICK_BLOCK_CELL & " ���� " & TICK_BLOCK_ROWS & " �s" & vbCrLf & vbCrLf
 
     If Not IsArray(b) Then
-        msg = msg & "有効なティックが1件も読めませんでした。" & vbCrLf & vbCrLf & _
-              "・" & TICK_BLOCK_CELL & " に歩み値のRSS数式が入っているか" & vbCrLf & _
-              "・TB_OFF_TIME / TB_OFF_PRICE / TB_OFF_VOL / TB_OFF_MARK の列オフセット" & vbCrLf & _
-              "を確認してください。"
-        MsgBox msg, vbExclamation, "歩み値ブロックの確認"
+        msg = msg & "�L���ȃe�B�b�N��1�����ǂ߂܂���ł����B" & vbCrLf & vbCrLf & _
+              "�E" & TICK_BLOCK_CELL & " �ɕ��ݒl��RSS�����������Ă��邩" & vbCrLf & _
+              "�ETB_OFF_TIME / TB_OFF_PRICE / TB_OFF_VOL / TB_OFF_MARK �̗�I�t�Z�b�g" & vbCrLf & _
+              "���m�F���Ă��������B"
+        MsgBox msg, vbExclamation, "���ݒl�u���b�N�̊m�F"
         Exit Sub
     End If
 
     n = UBound(b, 1)
-    msg = msg & "読めたティック数 : " & n & vbCrLf & _
-          "最古 : " & SecText(CLng(b(1, 1))) & "  " & b(1, 2) & "  " & b(1, 3) & "  " & b(1, 4) & vbCrLf & _
-          "最新 : " & SecText(CLng(b(n, 1))) & "  " & b(n, 2) & "  " & b(n, 3) & "  " & b(n, 4) & vbCrLf & vbCrLf & _
-          "この並びで「最古→最新」になっていれば設定は正しいです。"
+    msg = msg & "�ǂ߂��e�B�b�N�� : " & n & vbCrLf & _
+          "�Ō� : " & SecText(CLng(b(1, 1))) & "  " & b(1, 2) & "  " & b(1, 3) & "  " & b(1, 4) & vbCrLf & _
+          "�ŐV : " & SecText(CLng(b(n, 1))) & "  " & b(n, 2) & "  " & b(n, 3) & "  " & b(n, 4) & vbCrLf & vbCrLf & _
+          "���̕��тŁu�ŌÁ��ŐV�v�ɂȂ��Ă���ΐݒ�͐������ł��B"
 
-    MsgBox msg, vbInformation, "歩み値ブロックの確認"
+    MsgBox msg, vbInformation, "���ݒl�u���b�N�̊m�F"
 End Sub
 
 Private Function SecText(ByVal sec As Long) As String
@@ -386,11 +386,11 @@ Private Function CStr2(ByVal v As Variant) As String
 End Function
 
 '==================================================================
-' モード2 : 現在値・出来高ポーリング（フォールバック）
+' ���[�h2 : ���ݒl�E�o�����|�[�����O�i�t�H�[���o�b�N�j
 '==================================================================
 
 '------------------------------------------------------------------
-' 1銘柄を1回ポーリングし、出来高が増えていれば1行追記する
+' 1������1��|�[�����O���A�o�����������Ă����1�s�ǋL����
 '------------------------------------------------------------------
 Private Function PollOne(ws As Worksheet, ByRef prevVol As Double, ByRef nextRow As Long) As Boolean
 
@@ -401,14 +401,14 @@ Private Function PollOne(ws As Worksheet, ByRef prevVol As Double, ByRef nextRow
     vol = NumOrZero(ws.Range(LIVE_VOL).Value)
     price = NumOrZero(ws.Range(LIVE_PRICE).Value)
 
-    If vol <= 0 Or price <= 0 Then Exit Function      ' RSS 未接続 / 気配のみ
+    If vol <= 0 Or price <= 0 Then Exit Function      ' RSS ���ڑ� / �C�z�̂�
 
-    If prevVol = 0 Then                               ' 記録開始時点の基準値
+    If prevVol = 0 Then                               ' �L�^�J�n���_�̊�l
         prevVol = vol
         Exit Function
     End If
 
-    If vol <= prevVol Then Exit Function              ' 約定なし
+    If vol <= prevVol Then Exit Function              ' ���Ȃ�
     d = vol - prevVol
     prevVol = vol
 
@@ -432,7 +432,7 @@ Private Function PollOne(ws As Worksheet, ByRef prevVol As Double, ByRef nextRow
 End Function
 
 '------------------------------------------------------------------
-' ティックの時刻（RSS の現在値時刻優先、取れなければ PC 時計）
+' �e�B�b�N�̎����iRSS �̌��ݒl�����D��A���Ȃ���� PC ���v�j
 '------------------------------------------------------------------
 Private Function TickTime(ws As Worksheet) As Date
 
@@ -461,7 +461,7 @@ Private Function TickTime(ws As Worksheet) As Date
 End Function
 
 '==================================================================
-' 自動開始の予約（14:59:30 に記録を開始し、15:20 で自動判定）
+' �����J�n�̗\��i14:59:30 �ɋL�^���J�n���A15:20 �Ŏ�������j
 '==================================================================
 
 Public Sub ArmAutoRun()
@@ -471,14 +471,14 @@ Public Sub ArmAutoRun()
     mArmedTime = Date + TimeValue(AUTO_ARM_TIME)
 
     If mArmedTime <= Now Then
-        MsgBox "予約時刻（" & AUTO_ARM_TIME & "）を過ぎています。" & vbCrLf & _
-               "「② ティック記録 開始」を手で押してください。", vbInformation, "自動実行の予約"
+        MsgBox "�\�񎞍��i" & AUTO_ARM_TIME & "�j���߂��Ă��܂��B" & vbCrLf & _
+               "�u�A �e�B�b�N�L�^ �J�n�v����ŉ����Ă��������B", vbInformation, "�������s�̗\��"
         mArmedTime = 0
         Exit Sub
     End If
 
     Application.OnTime mArmedTime, "StartTickLogging"
-    ResultSheet().Range("X1").Value = "自動開始を予約しました（" & AUTO_ARM_TIME & "）"
+    ResultSheet().Range("X1").Value = "�����J�n��\�񂵂܂����i" & AUTO_ARM_TIME & "�j"
 End Sub
 
 Public Sub DisarmAutoRun()
@@ -491,7 +491,7 @@ Public Sub DisarmAutoRun()
 End Sub
 
 '==================================================================
-' ティックログのクリア（ボタン⑤）
+' �e�B�b�N���O�̃N���A�i�{�^���D�j
 '==================================================================
 Public Sub ClearAllTicks()
 
@@ -499,8 +499,8 @@ Public Sub ClearAllTicks()
     Dim ws As Worksheet
     Dim i As Long, lastRow As Long
 
-    If MsgBox("全銘柄シートのティックログを消去します。よろしいですか？", _
-              vbYesNo + vbQuestion, "ティックログ消去") <> vbYes Then Exit Sub
+    If MsgBox("�S�����V�[�g�̃e�B�b�N���O���������܂��B��낵���ł����H", _
+              vbYesNo + vbQuestion, "�e�B�b�N���O����") <> vbYes Then Exit Sub
 
     Set shts = TargetSheets()
 

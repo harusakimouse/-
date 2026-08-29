@@ -124,17 +124,20 @@ Public Sub SetupStockSheet(ws As Worksheet)
         '--- 歩み値（TICK）ブロック ----------------------------------
         .Range("AA1").Value = "歩み値（TICK）ブロック"
         .Range("AA1").Font.Bold = True
-        .Range("AA2").Value = "RssTickList / 銘柄コード=B3 / 表示本数=300 / 表示開始セル=" & TICK_BLOCK_CELL
-        .Range("AA3").Value = "取得項目は 時刻・出来高・約定値 の順"
-        .Range("AA2:AA3").Font.Color = RGB(120, 120, 120)
-        .Range("AB2").Value = "時刻"
-        .Range("AC2").Value = "出来高"
-        .Range("AD2").Value = "約定値"
-        .Range("AE2").ClearContents
-        .Range("AB2:AD2").Font.Bold = True
-        .Range("AB2:AD2").Interior.Color = RGB(226, 239, 218)
-        .Columns("AA").ColumnWidth = 32
-        .Columns("AB:AE").ColumnWidth = 11
+        .Range("AA2").Value = "RssTickList をここに登録します"
+        .Range("AA3").Value = "　表示開始セル = " & TICK_BLOCK_CELL
+        .Range("AA4").Value = "　銘柄コード   = B3（セル参照）"
+        .Range("AA5").Value = "　表示本数     = 300"
+        .Range("AA6").Value = "　取得項目     = 時刻 / 出来高 / 約定値"
+        .Range("AA7").Value = "※見出しとデータは RSS が書き出します"
+        .Range("AA2:AA7").Font.Color = RGB(120, 120, 120)
+
+        '--- 旧レイアウトの見出しは RSS の見出しと二重になるので撤去 ---
+        .Range("AB2:AE2").ClearContents
+        .Range("AB2:AE2").Interior.Pattern = xlNone
+
+        .Columns("AA").ColumnWidth = 34
+        .Columns("AB:AE").ColumnWidth = 12
 
         '--- 書式・幅 ------------------------------------------------
         .Columns(COL_TIME).NumberFormatLocal = "hh:mm:ss"

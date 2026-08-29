@@ -159,6 +159,7 @@ Private Function FollowTickBlock(ws As Worksheet, ByRef anchorKey As String, _
     Dim n As Long, i As Long, idx As Long
     Dim added As Long
     Dim bid As Double, ask As Double
+    Dim keys() As String
 
     b = ReadTickBlock(ws)                    ' 古い順に正規化された配列
     If Not IsArray(b) Then Exit Function
@@ -170,10 +171,17 @@ Private Function FollowTickBlock(ws As Worksheet, ByRef anchorKey As String, _
     ask = NumOrZero(ws.Range(LIVE_ASK).Value)
 
     '--- 前回の最終ティックがブロックのどこにあるかを探す -------------
+    '   同一秒・同値・同数量のティックが連続することがあるため、直前1本ではなく
+    '   直近 ANCHOR_DEPTH 本の並びで位置合わせします。
+    ReDim keys(1 To n)
+    For i = 1 To n
+        keys(i) = BlockRowKey(b, i)
+    Next i
+
     idx = 0
     If Len(anchorKey) > 0 Then
         For i = n To 1 Step -1
-            If BlockRowKey(b, i) = anchorKey Then
+            If SeqKeyAt(keys, i) = anchorKey Then
                 idx = i
                 Exit For
             End If
@@ -195,8 +203,23 @@ Private Function FollowTickBlock(ws As Worksheet, ByRef anchorKey As String, _
         If AppendTickRow(ws, nextRow, b, i, bid, ask) Then added = added + 1
     Next i
 
-    anchorKey = BlockRowKey(b, n)
+    anchorKey = SeqKeyAt(keys, n)
     FollowTickBlock = added
+End Function
+
+'------------------------------------------------------------------
+' 直近 ANCHOR_DEPTH 本ぶんの連結キー（i 行目を末尾とする並び）
+'------------------------------------------------------------------
+Private Function SeqKeyAt(keys() As String, ByVal i As Long) As String
+
+    Dim k As Long
+    Dim s As String
+
+    For k = i - ANCHOR_DEPTH + 1 To i
+        If k >= LBound(keys) Then s = s & keys(k) & ";"
+    Next k
+
+    SeqKeyAt = s
 End Function
 
 '------------------------------------------------------------------
@@ -277,17 +300,24 @@ End Function
 '------------------------------------------------------------------
 Private Function SeedAnchorFromLog(ws As Worksheet) As String
 
-    Dim r As Long, sec As Long
+    Dim lastRow As Long, r As Long, sec As Long
+    Dim s As String
 
-    r = LastTickRow(ws)
-    If r < TICK_FIRST_ROW Then Exit Function
+    lastRow = LastTickRow(ws)
+    If lastRow < TICK_FIRST_ROW Then Exit Function
 
-    sec = TickSec(ws.Cells(r, COL_TIME).Value)
-    If sec < 0 Then Exit Function
+    '--- ブロック側と同じ形式（直近 ANCHOR_DEPTH 本の連結）で作る ---
+    For r = lastRow - ANCHOR_DEPTH + 1 To lastRow
+        If r >= TICK_FIRST_ROW Then
+            sec = TickSec(ws.Cells(r, COL_TIME).Value)
+            If sec < 0 Then Exit Function          ' 不正な行があれば履歴から作らない
+            s = s & CStr(sec) & "|" & _
+                    CStr(NumOrZero(ws.Cells(r, COL_PRICE).Value)) & "|" & _
+                    CStr(NumOrZero(ws.Cells(r, COL_VOL).Value)) & ";"
+        End If
+    Next r
 
-    SeedAnchorFromLog = CStr(sec) & "|" & _
-                        CStr(NumOrZero(ws.Cells(r, COL_PRICE).Value)) & "|" & _
-                        CStr(NumOrZero(ws.Cells(r, COL_VOL).Value))
+    SeedAnchorFromLog = s
 End Function
 
 '------------------------------------------------------------------
@@ -384,7 +414,7 @@ Public Sub ShowTickBlockInfo()
     End If
 
     n = UBound(b, 1)
-    msg = msg & "読めたティック数 : " & n & vbCrLf & _
+    msg = msg & "読めたティック数 : " & n & "（配信状態行・見出し行は自動で読み飛ばし）" & vbCrLf & _
           "最古 : " & SecText(CLng(b(1, 1))) & "  " & b(1, 2) & "  " & b(1, 3) & "  " & b(1, 4) & vbCrLf & _
           "最新 : " & SecText(CLng(b(n, 1))) & "  " & b(n, 2) & "  " & b(n, 3) & "  " & b(n, 4) & vbCrLf & vbCrLf & _
           "この並びで「最古→最新」になっていれば設定は正しいです。"

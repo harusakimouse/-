@@ -83,4 +83,4 @@ iconv -f UTF-8 -t CP932 input.bas | sed 's/$/\r/' > output.bas
 | ブック | 状況 |
 |---|---|
 | `打ち出のこづち_0615MOD整理 改善 .xlsm` | 解析済み。`Application.OnTime` 8箇所、`Workbook_BeforeClose` 無し。`vba/Fix_OnTime_Cleanup.bas` が対策 |
-| `0945_baibai.xlsm` | **リポジトリに未登録**。標準モジュールは `Module1` / `Module2` のみ。`Application.OnTime` 無し。`Workbook_Open` → `VolStart` が常駐処理を開始している疑い。原因未特定 |
+| `0945_baibai.xlsm` | **リポジトリに未登録**（コードのみ受領）。`Module1` は空、`Module2`（出来高モニター v7.2）に `Application.OnTime` が4箇所。`VolTick` が `IsRunning` 判定より前に無条件で再予約し、`Workbook_BeforeClose` が予約を解除しないため自己再オープンしていた。**原因特定済み**。`vba/0945_baibai/MOD2_出来高モニター_v7.3.txt` が対策 |

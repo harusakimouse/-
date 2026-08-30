@@ -1,0 +1,657 @@
+Option Explicit
+'==============================================================
+' 出来高モニター  完全版 v7.3   （標準モジュール名: Module2 / 通称 MOD2）
+'
+' 【差し替え手順】
+'   1. Alt+F11 で VBE を開く
+'   2. 左のツリーで Module2 をダブルクリック
+'   3. コードウィンドウで Ctrl+A （全選択）
+'   4. このファイルの中身を全部コピーして貼り付け
+'   5. Ctrl+S で保存
+'   6. デバッグ → VBAProject のコンパイル でエラーが出ないことを確認
+'   「追記」ではなく「全置き換え」です。
+'
+'   ※ ThisWorkbook 側の変更は不要です（v7.2 のままで動きます）
+'
+'--------------------------------------------------------------
+' v7.3: ブックが勝手に立ち上がる問題を修正
+'
+'  【原因】
+'   Application.OnTime の予約先は「ブック」ではなく Excel アプリケーション本体。
+'   予約を残したままブックを閉じると、予約時刻になった Excel がそのマクロを
+'   実行するために、ブックを自動的に開き直す。
+'
+'   v7.2 では次の2点により、予約が永久に解除されなかった。
+'    (1) Workbook_BeforeClose が VolSaveSilent（保存のみ）を呼ぶだけで、
+'        VolTick / VolAutoSave の予約を解除していなかった
+'    (2) VolTick が IsRunning の判定より前に無条件で次回を予約していたため、
+'        VolStop で停止しても予約の連鎖が死ななかった
+'
+'   結果、閉じても約1分後に VolTick の予約が発火してブックが再オープンされ、
+'   再オープン時の Workbook_Open → VolStart でまた予約が入る、という
+'   無限ループになっていた。15:40 以降に閉じた場合は翌朝 8:50 に開く。
+'
+'  【対策】
+'   (1) VolSaveSilent が、保存より先に必ず全予約を解除するようにした
+'   (2) VolTick は停止中なら再予約せずに終了するようにした
+'   (3) VolAutoSave の予約時刻も永続記録するようにした（自動ログ!E3）。
+'       OnTime の解除は予約時刻の完全一致が必要で、モジュール変数に持つと
+'       ブックを閉じた時点で値が消えて解除に失敗するため。
+'         VolTick     の予約時刻 → 自動ログ!E2
+'         VolAutoSave の予約時刻 → 自動ログ!E3   ← v7.3 で追加
+'   (4) ArmNextTick は OnTime を呼ぶ前にセルへ記録するようにした
+'       （記録漏れの予約が生まれないようにするため）
+'   (5) 15:31 を過ぎてから開いた場合、VolAutoSave が即時発火して
+'       いきなり保存が走っていたのを、予約しないようにした
+'
+' v7.2: VolRecordOnce に重複チェックを追加 / 手動記録は直近に過ぎた予定時刻で記録
+' v7.1: 日付/時刻書式セルの .Value は Date 型で返るため全て .Value2 に変更
+' v6 で発火しなかった原因への対策:
+'  (1) VolTick が（稼働中は）最初に次回予約を入れる → 途中でエラーが出ても連鎖が死なない
+'  (2) RssMarket は非同期。値が届くまで最大25秒待ち、届かなければ次の分に再試行
+'  (3) 翌日起動時に前日分が未保存なら履歴へ救出保存してからクリア（データ消失防止）
+'==============================================================
+
+Private Const SH_RSS   As String = "RSS取得"
+Private Const SH_NEW   As String = "最新"
+Private Const SH_TODAY As String = "本日ログ"
+Private Const SH_HIST  As String = "履歴10日"
+Private Const SH_LOG   As String = "自動ログ"
+Private Const SH_MON   As String = "稼働モニター"
+Private Const SH_CAND  As String = "本日の買い候補"
+
+'--- 自動ログシート上の管理セル（ブックを閉じても消えない永続領域） ---
+Private Const CELL_FLAG As String = "E1"    'RUN / STOP
+Private Const CELL_TICK As String = "E2"    'VolTick の予約時刻（シリアル値）
+Private Const CELL_SAVE As String = "E3"    'VolAutoSave の予約時刻（シリアル値）
+
+Private Const FIRST_ROW As Long = 2
+Private Const LAST_ROW  As Long = 301
+
+Private Const TICK_SEC     As Long = 20      '毎分 :20 秒に判定
+Private Const GRACE_MIN    As Long = 4       '予定時刻から何分まで遅れを許すか
+Private Const RSS_WAIT_SEC As Long = 25      'RSS の値が届くまで最大何秒待つか
+Private Const RSS_MIN_OK   As Long = 100     '何銘柄そろったら記録してよいか
+Private Const HIST_DAYS    As Long = 10
+Private Const SAVE_TIME    As String = "15:31:00"
+Private Const WATCH_END    As String = "15:40:00"
+
+'============ 記録時刻（22点） ============
+Private Function Targets() As Variant
+    Targets = Array("09:00", "09:05", "09:10", "09:15", "09:20", "09:25", _
+                    "09:30", "09:35", "09:40", "09:45", "09:50", "10:00", _
+                    "10:15", "10:30", "10:45", "11:00", "11:15", "11:30", _
+                    "12:30", "13:00", "14:30", "15:30")
+End Function
+
+'============ 開始 / 停止 ============
+Public Sub VolStart()
+    CancelAllTimers
+    SetFlag True
+    VolNewDayCheck
+    ArmNextTick
+    ArmAutoSave
+    WriteLog "記録開始 / 次回チェック " & Format(NextTickTime, "hh:nn:ss") & " / 自動保存 " & SAVE_TIME
+End Sub
+
+Public Sub VolStop()
+    SetFlag False
+    CancelAllTimers
+    WriteLog "記録停止"
+End Sub
+
+Public Sub VolStopMsg()
+    VolStop
+    MsgBox "記録を停止しました。" & vbCrLf & _
+           "予約も解除したので、この状態で閉じればブックが勝手に開くことはありません。", _
+           vbInformation, "出来高モニター"
+End Sub
+
+'============ 心臓部：毎分の判定 ============
+Public Sub VolTick()
+    '★ v7.3: 停止中は再予約しない。
+    '   ここで無条件に再予約すると、ブックを閉じた後も予約が生き続け、
+    '   Excel がマクロ実行のためにブックを勝手に開き直してしまう。
+    If Not IsRunning Then
+        ClearCell CELL_TICK
+        Exit Sub
+    End If
+
+    '稼働中は、記録処理より先に次回を予約する。
+    'こうしておけば以降でエラーが出ても連鎖は切れない。
+    ArmNextTick
+
+    On Error Resume Next          '記録中にエラーが出ても連鎖は生かす
+    VolNewDayCheck
+    CheckAndRecord
+    On Error GoTo 0
+End Sub
+
+Private Sub ArmNextTick()
+    Dim nt As Date
+    On Error Resume Next
+    If TimeValue(Now) > TimeValue(WATCH_END) Then
+        nt = Int(Now) + 1 + TimeSerial(8, 50, TICK_SEC)   '翌朝 8:50:20 から再開
+    Else
+        nt = NextTickTime
+    End If
+    '★ v7.3: OnTime より先にセルへ記録する。
+    '   逆順だと、記録に失敗した予約が解除できない孤児になる。
+    LogSheet().Range(CELL_TICK).Value = CDbl(nt)
+    Application.OnTime nt, "VolTick"
+    On Error GoTo 0
+End Sub
+
+Private Sub ArmAutoSave()
+    Dim st As Date
+    On Error Resume Next
+    st = TodayAt(SAVE_TIME)
+    '★ v7.3: 既に過ぎている時刻を OnTime に渡すと即時発火して
+    '   いきなり保存が走るため、予約しない。
+    If st <= Now Then Exit Sub
+    LogSheet().Range(CELL_SAVE).Value = CDbl(st)
+    Application.OnTime st, "VolAutoSave"
+    On Error GoTo 0
+End Sub
+
+'★ v7.3: VolTick と VolAutoSave の予約をまとめて解除する。
+'  予約時刻はセルに永続記録してあるので、ブックを閉じた後でも
+'  正確な時刻で解除できる（OnTime の解除は時刻の完全一致が必須）。
+Private Sub CancelAllTimers()
+    Dim v As Variant
+    On Error Resume Next
+
+    v = LogSheet().Range(CELL_TICK).Value2
+    If IsNum(v) Then Application.OnTime CDate(CDbl(v)), "VolTick", , False
+    ClearCell CELL_TICK
+
+    v = LogSheet().Range(CELL_SAVE).Value2
+    If IsNum(v) Then Application.OnTime CDate(CDbl(v)), "VolAutoSave", , False
+    ClearCell CELL_SAVE
+
+    '旧版(v7.2以前)が TodayAt(SAVE_TIME) で入れた予約の取りこぼし対策
+    Application.OnTime TodayAt(SAVE_TIME), "VolAutoSave", , False
+
+    On Error GoTo 0
+End Sub
+
+Private Sub ClearCell(ByVal addr As String)
+    On Error Resume Next
+    LogSheet().Range(addr).ClearContents
+End Sub
+
+Private Sub CheckAndRecord()
+    Dim v As Variant, i As Long, tv As Date, nowT As Double
+    v = Targets()
+    nowT = Now - Int(Now)
+    For i = LBound(v) To UBound(v)
+        tv = TimeValue(v(i))
+        If nowT >= CDbl(tv) - 1 / 86400 And nowT <= CDbl(tv) + GRACE_MIN / 1440 Then
+            If Not AlreadyRecorded(tv) Then DoRecord tv
+            Exit Sub
+        End If
+    Next i
+End Sub
+
+Private Function AlreadyRecorded(ByVal tv As Date) As Boolean
+    Dim ws As Worksheet, lr As Long, a As Variant, i As Long
+    Set ws = ThisWorkbook.Worksheets(SH_TODAY)
+    lr = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+    If lr < 3 Then lr = 3
+    a = ws.Range("A2:A" & lr).Value2
+    For i = 1 To UBound(a, 1)
+        If IsNum(a(i, 1)) Then
+            If Abs(CDbl(a(i, 1)) - CDbl(tv)) < 0.0003 Then
+                AlreadyRecorded = True
+                Exit Function
+            End If
+        End If
+    Next i
+End Function
+
+'============ 記録本体 ============
+Private Sub DoRecord(ByVal tv As Date)
+    Dim wr As Worksheet, wn As Worksheet, wt As Worksheet
+    Dim src As Variant, prev As Variant
+    Dim i As Long, j As Long, n As Long, okCnt As Long, s As Long, lr As Long
+    Dim cur As Double, opn As Double, pcl As Double, vol As Double
+    Dim hi As Double, lo As Double, prevVol As Double, seg As Double
+    Dim code As Variant, dic As Object
+
+    Set wr = ThisWorkbook.Worksheets(SH_RSS)
+    Set wn = ThisWorkbook.Worksheets(SH_NEW)
+    Set wt = ThisWorkbook.Worksheets(SH_TODAY)
+
+    ShowBusy Format(tv, "hh:nn") & " 取得中…"
+
+    'RssMarket は非同期。値が届くまで待つ
+    Application.CalculateFull
+    okCnt = CountReady(wr)
+    For s = 1 To RSS_WAIT_SEC
+        If okCnt >= RSS_MIN_OK Then Exit For
+        DoEvents
+        Application.Wait Now + TimeSerial(0, 0, 1)
+        Application.CalculateFull
+        okCnt = CountReady(wr)
+    Next s
+
+    If okCnt < RSS_MIN_OK Then
+        ShowBusy ""
+        WriteLog Format(tv, "hh:nn") & " RSS未着（有効 " & okCnt & " 銘柄）→ 次の分に再試行"
+        Exit Sub
+    End If
+
+    '前回の累積出来高を「最新」から拾う
+    Set dic = CreateObject("Scripting.Dictionary")
+    prev = wn.Range("A" & FIRST_ROW & ":D" & LAST_ROW).Value2
+    For i = 1 To UBound(prev, 1)
+        If Len(CStr(prev(i, 1))) > 0 And IsNum(prev(i, 4)) Then
+            dic(Trim$(CStr(prev(i, 1)))) = CDbl(prev(i, 4))
+        End If
+    Next i
+
+    src = wr.Range("A" & FIRST_ROW & ":H" & LAST_ROW).Value2
+    Dim outA() As Variant, newA() As Variant
+    ReDim outA(1 To LAST_ROW - FIRST_ROW + 1, 1 To 11)
+    ReDim newA(1 To LAST_ROW - FIRST_ROW + 1, 1 To 8)
+
+    For i = 1 To UBound(src, 1)
+        code = src(i, 1)
+        If Len(CStr(code)) > 0 Then
+            If IsNum(src(i, 3)) Then
+                cur = CDbl(src(i, 3))
+                If cur > 0 Then
+                    opn = SafeNum(src(i, 4))
+                    pcl = SafeNum(src(i, 5))
+                    vol = SafeNum(src(i, 6))
+                    hi = SafeNum(src(i, 7))
+                    lo = SafeNum(src(i, 8))
+                    prevVol = 0
+                    If dic.Exists(Trim$(CStr(code))) Then prevVol = dic(Trim$(CStr(code)))
+                    seg = vol - prevVol
+                    If seg < 0 Then seg = vol
+                    n = n + 1
+                    outA(n, 1) = CDbl(tv)
+                    outA(n, 2) = code
+                    outA(n, 3) = src(i, 2)
+                    outA(n, 4) = vol
+                    outA(n, 5) = seg
+                    outA(n, 6) = cur
+                    If opn > 0 Then outA(n, 7) = (cur - opn) / opn Else outA(n, 7) = ""
+                    If pcl > 0 Then outA(n, 8) = (cur - pcl) / pcl Else outA(n, 8) = ""
+                    outA(n, 9) = hi
+                    outA(n, 10) = lo
+                    outA(n, 11) = CLng(Date)
+                    newA(n, 1) = code
+                    newA(n, 2) = src(i, 2)
+                    newA(n, 3) = CDbl(tv)
+                    newA(n, 4) = vol
+                    newA(n, 5) = seg
+                    newA(n, 6) = cur
+                    newA(n, 7) = outA(n, 7)
+                    newA(n, 8) = outA(n, 8)
+                End If
+            End If
+        End If
+    Next i
+
+    If n = 0 Then
+        ShowBusy ""
+        WriteLog Format(tv, "hh:nn") & " 有効データ0件 → 記録せず"
+        Exit Sub
+    End If
+
+    Application.ScreenUpdating = False
+    lr = wt.Cells(wt.Rows.Count, 1).End(xlUp).Row
+    If lr < 1 Then lr = 1
+    wt.Range("A" & (lr + 1)).Resize(n, 11).Value = outA
+    wt.Range("A" & (lr + 1)).Resize(n, 1).NumberFormat = "hh:mm"
+    wt.Range("K" & (lr + 1)).Resize(n, 1).NumberFormat = "yyyy/mm/dd"
+
+    wn.Range("A" & FIRST_ROW & ":H" & LAST_ROW).ClearContents
+    wn.Range("A" & FIRST_ROW).Resize(n, 8).Value = newA
+    wn.Range("C" & FIRST_ROW).Resize(n, 1).NumberFormat = "hh:mm"
+    wt.Range("L1").Value = CLng(Date)
+    wt.Range("L1").NumberFormat = "yyyy/mm/dd"
+    Application.ScreenUpdating = True
+
+    ShowBusy ""
+    WriteLog Format(tv, "hh:nn") & " 記録 " & n & " 銘柄（有効RSS " & okCnt & "）"
+End Sub
+
+'============ 手動で1回記録 ============
+Public Sub VolRecordOnce()
+    Dim tv As Date
+    VolNewDayCheck
+    tv = PrevTarget()
+    If AlreadyRecorded(tv) Then
+        If MsgBox(Format(tv, "hh:nn") & " は既に記録済みです。" & vbCrLf & _
+                 "もう一度記録すると重複します。続けますか？", _
+                 vbYesNo + vbQuestion, "出来高モニター") <> vbYes Then Exit Sub
+    End If
+    DoRecord tv
+    MsgBox Format(tv, "hh:nn") & " として1回記録しました。", vbInformation, "出来高モニター"
+End Sub
+
+'直近に過ぎた記録時刻を返す（手動記録が未来の時刻で入るのを防ぐ）
+Private Function PrevTarget() As Date
+    Dim v As Variant, i As Long, best As Date, nowT As Double
+    v = Targets()
+    nowT = Now - Int(Now)
+    best = TimeValue(v(LBound(v)))
+    For i = LBound(v) To UBound(v)
+        If CDbl(TimeValue(v(i))) <= nowT Then best = TimeValue(v(i))
+    Next i
+    PrevTarget = best
+End Function
+
+'============ 日付切替（前日分の救出保存つき） ============
+Public Sub VolNewDayCheck()
+    Dim wt As Worksheet, wn As Worksheet, d As Variant, lr As Long
+    Set wt = ThisWorkbook.Worksheets(SH_TODAY)
+    Set wn = ThisWorkbook.Worksheets(SH_NEW)
+    d = wt.Range("L1").Value2
+    If IsNum(d) Then
+        If CLng(d) = CLng(Date) Then Exit Sub
+        lr = wt.Cells(wt.Rows.Count, 1).End(xlUp).Row
+        If lr >= 2 Then
+            SaveToHistory CLng(d)
+            WriteLog "前日(" & Format(CLng(d), "m/d") & ")分を履歴に救出保存 " & (lr - 1) & "行"
+        End If
+    End If
+    wt.Range("A2:K" & wt.Rows.Count).ClearContents
+    wn.Range("A" & FIRST_ROW & ":H" & LAST_ROW).ClearContents
+    wt.Range("L1").Value = CLng(Date)
+    wt.Range("L1").NumberFormat = "yyyy/mm/dd"
+    WriteLog "新しい日に切替 / 本日ログをクリア"
+End Sub
+
+'============ 履歴保存 ============
+Public Sub VolSaveHistory()
+    SaveToHistory CLng(Date)
+    MsgBox "本日分を履歴10日に保存しました。", vbInformation, "出来高モニター"
+End Sub
+
+Public Sub VolAutoSave()
+    On Error Resume Next
+    '発火済みなので予約記録を消す
+    ClearCell CELL_SAVE
+    If Not IsRunning Then Exit Sub
+    SaveToHistory CLng(Date)
+    WriteLog SAVE_TIME & " 自動保存を実行"
+    ThisWorkbook.Save
+End Sub
+
+Private Sub SaveToHistory(ByVal dt As Long)
+    Dim wt As Worksheet, wh As Worksheet, a As Variant
+    Dim i As Long, n As Long, lr As Long, hr As Long
+    Set wt = ThisWorkbook.Worksheets(SH_TODAY)
+    Set wh = ThisWorkbook.Worksheets(SH_HIST)
+    lr = wt.Cells(wt.Rows.Count, 1).End(xlUp).Row
+    If lr < 2 Then Exit Sub
+    a = wt.Range("A2:K" & lr).Value2
+    Dim o() As Variant
+    ReDim o(1 To UBound(a, 1), 1 To 11)
+    For i = 1 To UBound(a, 1)
+        If IsNum(a(i, 1)) Then
+            n = n + 1
+            o(n, 1) = dt
+            o(n, 2) = a(i, 1)
+            o(n, 3) = a(i, 2)
+            o(n, 4) = a(i, 3)
+            o(n, 5) = a(i, 4)
+            o(n, 6) = a(i, 5)
+            o(n, 7) = a(i, 6)
+            o(n, 8) = a(i, 7)
+            o(n, 9) = a(i, 8)
+            o(n, 10) = a(i, 9)
+            o(n, 11) = a(i, 10)
+        End If
+    Next i
+    If n = 0 Then Exit Sub
+
+    Application.ScreenUpdating = False
+    RemoveHistDate dt
+    hr = wh.Cells(wh.Rows.Count, 1).End(xlUp).Row
+    If hr < 1 Then hr = 1
+    wh.Range("A" & (hr + 1)).Resize(n, 11).Value = o
+    wh.Range("A" & (hr + 1)).Resize(n, 1).NumberFormat = "yyyy/mm/dd"
+    wh.Range("B" & (hr + 1)).Resize(n, 1).NumberFormat = "hh:mm"
+    TrimHistory
+    Application.ScreenUpdating = True
+    WriteLog "履歴保存 " & Format(dt, "m/d") & " " & n & "行"
+End Sub
+
+Private Sub RemoveHistDate(ByVal dt As Long)
+    Dim wh As Worksheet, a As Variant, i As Long, j As Long, n As Long, lr As Long
+    Set wh = ThisWorkbook.Worksheets(SH_HIST)
+    lr = wh.Cells(wh.Rows.Count, 1).End(xlUp).Row
+    If lr < 2 Then Exit Sub
+    a = wh.Range("A2:K" & lr).Value2
+    Dim o() As Variant
+    ReDim o(1 To UBound(a, 1), 1 To 11)
+    For i = 1 To UBound(a, 1)
+        If Len(CStr(a(i, 1))) > 0 Then
+            If CLng(SafeNum(a(i, 1))) <> dt Then
+                n = n + 1
+                For j = 1 To 11
+                    o(n, j) = a(i, j)
+                Next j
+            End If
+        End If
+    Next i
+    wh.Range("A2:K" & lr).ClearContents
+    If n > 0 Then wh.Range("A2").Resize(n, 11).Value = o
+End Sub
+
+Private Sub TrimHistory()
+    Dim wh As Worksheet, a As Variant, i As Long, lr As Long
+    Set wh = ThisWorkbook.Worksheets(SH_HIST)
+    lr = wh.Cells(wh.Rows.Count, 1).End(xlUp).Row
+    If lr < 2 Then Exit Sub
+    a = wh.Range("A2:A" & lr).Value2
+    Dim dic As Object
+    Set dic = CreateObject("Scripting.Dictionary")
+    For i = 1 To UBound(a, 1)
+        If IsNum(a(i, 1)) Then dic(CLng(a(i, 1))) = 1
+    Next i
+    If dic.Count <= HIST_DAYS Then Exit Sub
+    Dim ks As Variant, x As Long, y As Long, t As Variant
+    ks = dic.Keys
+    For x = LBound(ks) To UBound(ks) - 1
+        For y = x + 1 To UBound(ks)
+            If ks(y) < ks(x) Then
+                t = ks(x): ks(x) = ks(y): ks(y) = t
+            End If
+        Next y
+    Next x
+    Dim cut As Long
+    cut = CLng(ks(UBound(ks) - HIST_DAYS + 1))
+    For x = LBound(ks) To UBound(ks)
+        If CLng(ks(x)) < cut Then RemoveHistDate CLng(ks(x))
+    Next x
+    WriteLog "履歴を直近" & HIST_DAYS & "日に整理"
+End Sub
+
+'============ 重複除去 ============
+Public Sub VolDedupe()
+    Dim wh As Worksheet, a As Variant, i As Long, j As Long, n As Long, lr As Long
+    Dim dic As Object, k As String
+    Set wh = ThisWorkbook.Worksheets(SH_HIST)
+    lr = wh.Cells(wh.Rows.Count, 1).End(xlUp).Row
+    If lr < 3 Then Exit Sub
+    a = wh.Range("A2:K" & lr).Value2
+    Set dic = CreateObject("Scripting.Dictionary")
+    Dim o() As Variant
+    ReDim o(1 To UBound(a, 1), 1 To 11)
+    For i = 1 To UBound(a, 1)
+        If Len(CStr(a(i, 1))) > 0 Then
+            k = CStr(a(i, 1)) & "|" & Format(SafeNum(a(i, 2)), "0.00000") & "|" & Trim$(CStr(a(i, 3)))
+            If Not dic.Exists(k) Then
+                dic(k) = 1
+                n = n + 1
+                For j = 1 To 11
+                    o(n, j) = a(i, j)
+                Next j
+            End If
+        End If
+    Next i
+    wh.Range("A2:K" & lr).ClearContents
+    If n > 0 Then wh.Range("A2").Resize(n, 11).Value = o
+    WriteLog "重複除去 " & (UBound(a, 1) - n) & "行 削除"
+    MsgBox "重複を " & (UBound(a, 1) - n) & " 行 削除しました。", vbInformation, "出来高モニター"
+End Sub
+
+'============ 状態確認 ============
+Public Sub VolStatus()
+    Dim m As String, wt As Worksheet, lr As Long, v As Variant, v2 As Variant
+    Set wt = ThisWorkbook.Worksheets(SH_TODAY)
+    lr = wt.Cells(wt.Rows.Count, 1).End(xlUp).Row
+    v = LogSheet().Range(CELL_TICK).Value2
+    v2 = LogSheet().Range(CELL_SAVE).Value2
+    m = "状態: " & IIf(IsRunning, "稼働中 (RUN)", "停止 (STOP)") & vbCrLf
+    m = m & "次回チェック: " & IIf(IsNum(v), Format(CDate(CDbl(v)), "mm/dd hh:nn:ss"), "未予約") & vbCrLf
+    m = m & "自動保存予約: " & IIf(IsNum(v2), Format(CDate(CDbl(v2)), "mm/dd hh:nn:ss"), "未予約") & vbCrLf
+    m = m & "本日ログ行数: " & IIf(lr < 2, 0, lr - 1) & vbCrLf
+    m = m & "RSS有効銘柄: " & CountReady(ThisWorkbook.Worksheets(SH_RSS)) & " / " & (LAST_ROW - FIRST_ROW + 1) & vbCrLf
+    m = m & "記録日: " & IIf(IsNum(wt.Range("L1").Value2), Format(CLng(wt.Range("L1").Value2), "yyyy/mm/dd"), "未設定") & vbCrLf
+    m = m & "今日の日付: " & Format(Date, "yyyy/mm/dd")
+    MsgBox m, vbInformation, "出来高モニター 状態"
+End Sub
+
+'============ 終了前の処理（ThisWorkbook の Workbook_BeforeClose から呼ばれます） ============
+'★ v7.3: 保存だけでなく、必ず OnTime 予約を解除する。
+'  ここで解除しないと、閉じた後に予約が発火して Excel がブックを開き直す。
+Public Sub VolSaveSilent()
+    On Error Resume Next
+    SetFlag False
+    CancelAllTimers
+    SaveToHistory CLng(Date)
+    WriteLog "ブックを閉じる前に予約を解除して保存"
+End Sub
+
+'============ ボタン生成 ============
+Public Sub VolMakeButtons()
+    Dim ws As Worksheet, ws2 As Worksheet
+    On Error Resume Next
+    Set ws = ThisWorkbook.Worksheets(SH_MON)
+    Set ws2 = ThisWorkbook.Worksheets(SH_CAND)
+    On Error GoTo 0
+    If ws Is Nothing Or ws2 Is Nothing Then
+        MsgBox "シートが見つかりません。", vbExclamation, "ボタン生成"
+        Exit Sub
+    End If
+    ClearBtn ws
+    AddBtn ws, "記録開始", "VolStart", ws.Range("F3")
+    AddBtn ws, "記録停止", "VolStopMsg", ws.Range("F5")
+    AddBtn ws, "今すぐ1回記録", "VolRecordOnce", ws.Range("F7")
+    AddBtn ws, "状態を確認", "VolStatus", ws.Range("F9")
+    AddBtn ws, "履歴に保存", "VolSaveHistory", ws.Range("F11")
+    AddBtn ws, "重複除去", "VolDedupe", ws.Range("F13")
+    AddBtn ws, "画面を更新", "VolRefresh", ws.Range("F15")
+    ClearBtn ws2
+    AddBtn ws2, "画面を更新", "VolRefresh", ws2.Range("K3")
+    AddBtn ws2, "状態を確認", "VolStatus", ws2.Range("K5")
+    AddBtn ws2, "今すぐ1回記録", "VolRecordOnce", ws2.Range("K7")
+    MsgBox "ボタンを作成しました。", vbInformation, "ボタン生成"
+End Sub
+
+Private Sub ClearBtn(ws As Worksheet)
+    Dim i As Long
+    For i = ws.Shapes.Count To 1 Step -1
+        If Left$(ws.Shapes(i).Name, 3) = "vb_" Then ws.Shapes(i).Delete
+    Next i
+End Sub
+
+Private Sub AddBtn(ws As Worksheet, ByVal cap As String, ByVal proc As String, rng As Range)
+    Dim s As Shape
+    Set s = ws.Shapes.AddShape(msoShapeRoundedRectangle, rng.Left, rng.Top, 140, 26)
+    s.Name = "vb_" & proc
+    s.OnAction = "'" & ThisWorkbook.Name & "'!" & proc
+    s.Fill.ForeColor.RGB = RGB(46, 125, 50)
+    s.Line.Visible = msoFalse
+    With s.TextFrame2
+        .TextRange.Text = cap
+        .TextRange.Font.Size = 10
+        .TextRange.Font.Bold = msoTrue
+        .TextRange.Font.Fill.ForeColor.RGB = RGB(255, 255, 255)
+        .VerticalAnchor = msoAnchorMiddle
+        .HorizontalAnchor = msoAnchorCenter
+        .WordWrap = msoFalse
+    End With
+End Sub
+
+Public Sub VolRefresh()
+    Application.CalculateFull
+End Sub
+
+'============ 小道具 ============
+Private Function LogSheet() As Worksheet
+    Set LogSheet = ThisWorkbook.Worksheets(SH_LOG)
+End Function
+
+Private Sub SetFlag(ByVal b As Boolean)
+    On Error Resume Next
+    LogSheet().Range(CELL_FLAG).Value = IIf(b, "RUN", "STOP")
+End Sub
+
+Private Function IsRunning() As Boolean
+    On Error Resume Next
+    IsRunning = (UCase$(Trim$(CStr(LogSheet().Range(CELL_FLAG).Value))) = "RUN")
+End Function
+
+Private Function NextTickTime() As Date
+    Dim t As Date
+    t = Int(Now) + TimeSerial(Hour(Now), Minute(Now), 0) + TimeSerial(0, 1, TICK_SEC)
+    If t <= Now Then t = t + TimeSerial(0, 1, 0)
+    NextTickTime = t
+End Function
+
+Private Function TodayAt(ByVal hhmmss As String) As Date
+    TodayAt = Int(Now) + TimeValue(hhmmss)
+End Function
+
+Private Function CountReady(wr As Worksheet) As Long
+    Dim a As Variant, i As Long, c As Long
+    a = wr.Range("C" & FIRST_ROW & ":C" & LAST_ROW).Value2
+    For i = 1 To UBound(a, 1)
+        If IsNum(a(i, 1)) Then
+            If CDbl(a(i, 1)) > 0 Then c = c + 1
+        End If
+    Next i
+    CountReady = c
+End Function
+
+Private Function IsNum(ByVal v As Variant) As Boolean
+    If IsError(v) Then Exit Function
+    If IsEmpty(v) Then Exit Function
+    If IsNull(v) Then Exit Function
+    If VarType(v) = vbDate Then IsNum = True: Exit Function
+    If Len(CStr(v)) = 0 Then Exit Function
+    IsNum = IsNumeric(v)
+End Function
+
+Private Function SafeNum(ByVal v As Variant) As Double
+    If Not IsNum(v) Then Exit Function
+    If VarType(v) = vbDate Then
+        SafeNum = CDbl(CDate(v))
+    Else
+        SafeNum = CDbl(v)
+    End If
+End Function
+
+Private Sub ShowBusy(ByVal s As String)
+    On Error Resume Next
+    ThisWorkbook.Worksheets(SH_MON).Range("D3").Value = s
+End Sub
+
+Private Sub WriteLog(ByVal msg As String)
+    Dim wl As Worksheet, r As Long
+    On Error Resume Next
+    Set wl = LogSheet()
+    r = wl.Cells(wl.Rows.Count, 1).End(xlUp).Row + 1
+    If r < 2 Then r = 2
+    wl.Cells(r, 1).Value = Now
+    wl.Cells(r, 1).NumberFormat = "yyyy/mm/dd hh:nn:ss"
+    wl.Cells(r, 2).Value = msg
+End Sub

@@ -1,0 +1,35 @@
+Option Explicit
+
+'=============================================================================
+' ThisWorkbook  —  0945_baibai.xlsm  完全版
+'
+' 差し替え手順:
+'   1. Alt+F11 で VBE を開く
+'   2. 左のツリーで ThisWorkbook をダブルクリック
+'   3. コードウィンドウ内で Ctrl+A （全選択）
+'   4. このファイルの中身を全部コピーして貼り付け
+'   5. Ctrl+S で保存
+'   6. デバッグ → VBAProject のコンパイル  でエラーが出ないことを確認
+'
+' 修正内容:
+'   - Workbook_BeforeClose が2つ定義されていたのを1つに統合した。
+'     VBA は同一モジュール内の同名プロシージャを許さず、
+'     「コンパイル エラー: 名前が適切ではありません」となり、
+'     ブック内の全マクロが動かなくなる状態だった。
+'   - 削除した側は Fix_OnTime_Cleanup モジュールの CancelAllTasks を
+'     呼んでいたが、そのモジュールは削除済みのため未定義参照でもあった。
+'     このブックには Application.OnTime が存在せず、元々不要な処理。
+'=============================================================================
+
+
+Private Sub Workbook_Open()
+    On Error Resume Next
+    VolNewDayCheck
+    VolStart
+End Sub
+
+
+Private Sub Workbook_BeforeClose(Cancel As Boolean)
+    On Error Resume Next
+    VolSaveSilent
+End Sub

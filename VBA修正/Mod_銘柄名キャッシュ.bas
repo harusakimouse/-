@@ -80,13 +80,20 @@ Private Sub NC_見出し整備(ByVal mws As Worksheet)
 End Sub
 
 '==============================================================================
-' ■ 銘柄名キャッシュ更新（ボタン割り当て可）
-'   銘柄管理!C列 / 終値!B列 / 分析!D列 のうち「まともな値」を拾って
+' ■ 銘柄名キャッシュの収集本体（ボタン割り当ては上の Sub 側で）
+'   銘柄管理!C列 / 終値!B列 / 分析!D列 / 検証明細!D列 のうち「まともな値」を拾って
 '   銘柄管理!AD列 に文字列で保存する。
 '   すでにキャッシュに正しい名前があるものは、無効値では上書きしない。
 '   戻り値 = 新しく保存できた件数
 '==============================================================================
-Public Function 銘柄名キャッシュ更新(Optional ByVal silent As Boolean = True) As Long
+' ■ 銘柄名キャッシュ更新（マクロ一覧に出るのはこの Sub です）
+'   Alt+F8 の「マクロ」一覧に出るのは「引数なしの Public Sub」だけです。
+'   Function は一覧に出ないため、実行用の入口を Sub で用意しています。
+Public Sub 銘柄名キャッシュ更新()
+    NC_キャッシュ収集 False
+End Sub
+
+Public Function NC_キャッシュ収集(Optional ByVal silent As Boolean = True) As Long
     Dim mws As Worksheet: Set mws = NC_Ws(NC_SHEET)
     If mws Is Nothing Then Exit Function
 
@@ -129,7 +136,7 @@ Public Function 銘柄名キャッシュ更新(Optional ByVal silent As Boolean = True) As
     Next r
 
 Fin:
-    銘柄名キャッシュ更新 = added
+    NC_キャッシュ収集 = added
     If Not silent Then
         MsgBox "銘柄名キャッシュを更新しました。" & vbCrLf & _
                "新しく保存できた銘柄名: " & added & " 件" & vbCrLf & vbCrLf & _
@@ -176,7 +183,7 @@ Public Function 名称辞書作成() As Object
 
     '取れる範囲でキャッシュを育ててから読む（RSSが死んでいても実害なし）
     On Error Resume Next
-    銘柄名キャッシュ更新 True
+    NC_キャッシュ収集 True
     On Error GoTo 0
 
     Dim last As Long
@@ -271,4 +278,49 @@ Public Sub 名称セル修復_全抽出シート()
     Next i
 
     MsgBox "銘柄名セルを修復しました： " & fixed & " 件", vbInformation, "銘柄名キャッシュ"
+End Sub
+
+'==============================================================================
+' ■ 銘柄名キャッシュ_状態確認
+'   キャッシュが何件たまっているか、どの銘柄がまだ未取得かを表示する。
+'   （マクロ一覧に出す用の引数なし Sub）
+'==============================================================================
+Public Sub 銘柄名キャッシュ_状態確認()
+    Dim mws As Worksheet: Set mws = NC_Ws(NC_SHEET)
+    If mws Is Nothing Then
+        MsgBox "「銘柄管理」シートが見つかりません。", vbExclamation, "銘柄名キャッシュ"
+        Exit Sub
+    End If
+
+    Dim last As Long
+    last = mws.Cells(mws.Rows.Count, NC_CODE_COL).End(xlUp).Row
+
+    Dim total As Long, okCnt As Long, ngList As String, ngCnt As Long
+    Dim r As Long
+    For r = NC_FIRST_ROW To last
+        Dim code As String: code = NC_安全文字(mws.Cells(r, NC_CODE_COL).Value)
+        If code <> "" And code <> "TOPX" Then
+            total = total + 1
+            If NC_名称が無効(NC_安全文字(mws.Cells(r, NC_CACHE_COL).Value)) Then
+                ngCnt = ngCnt + 1
+                If ngCnt <= 30 Then ngList = ngList & code & " "
+            Else
+                okCnt = okCnt + 1
+            End If
+        End If
+    Next r
+
+    Dim msg As String
+    msg = "銘柄名キャッシュの状態" & vbCrLf & vbCrLf & _
+          "　登録銘柄数　： " & total & vbCrLf & _
+          "　名前あり　　： " & okCnt & vbCrLf & _
+          "　名前なし　　： " & ngCnt & vbCrLf & vbCrLf
+    If ngCnt > 0 Then
+        msg = msg & "未取得の銘柄コード（先頭30件）:" & vbCrLf & ngList & vbCrLf & vbCrLf & _
+              "RSSが繋がっている取引時間中に「銘柄名キャッシュ更新」を" & vbCrLf & _
+              "実行すると埋まります。"
+    Else
+        msg = msg & "すべての銘柄名がキャッシュ済みです。"
+    End If
+    MsgBox msg, vbInformation, "銘柄名キャッシュ"
 End Sub

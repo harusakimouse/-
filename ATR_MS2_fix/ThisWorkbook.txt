@@ -1,0 +1,32 @@
+'============================================================
+' ThisWorkbook v7 / 2026-08-31
+'  ★C-1 対策: 「閉じる → 保存しますか？ → キャンセル」で
+'     gShuttingDown が True のまま残り、タイマーが二度と動かなくなる問題を修正。
+'     閉じるのをキャンセルするとブックは必ずアクティブに戻るので、
+'     Workbook_Activate でフラグを落とす。
+'============================================================
+Option Explicit
+
+Private Sub Workbook_Open()
+    On Error Resume Next
+    gShuttingDown = False
+    MS2_Cancel_Tick                 ' 前回の残骸予約を必ず掃除
+    Application.CalculateFull       ' RSS/数式を先に確定させる
+    MS2_Load_PrevDay                ' 前日値を J/K に反映
+    MS2_Schedule_AutoSave           ' 引け後の自動保存を予約（既定15:45）
+    MS2_Ensure_Sampler              ' ATR収集を自動開始（場外なら即自動停止）
+    On Error GoTo 0
+End Sub
+
+'★閉じる操作がキャンセルされたときの取り残し防止
+Private Sub Workbook_Activate()
+    gShuttingDown = False
+End Sub
+
+Private Sub Workbook_BeforeClose(Cancel As Boolean)
+    gShuttingDown = True            ' これ以降タイマーの再予約を禁止
+    On Error Resume Next
+    MS2_Cancel_AutoSave
+    MS2_Cancel_Tick                 ' タイマー解除（必須）
+    On Error GoTo 0
+End Sub

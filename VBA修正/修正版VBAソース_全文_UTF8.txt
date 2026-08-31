@@ -1,0 +1,3886 @@
+==============================================================================
+ 売抽出v13 修正版 VBAソース（全4モジュール・全文）  UTF-8 閲覧用
+
+ ※ このファイルは「読むため」のUTF-8版です。
+ ※ Excelに取り込むときは、同梱の .bas（Shift-JIS）をVBEでインポートしてください。
+==============================================================================
+
+
+##############################################################################
+#  Mod_銘柄名キャッシュ.bas   （275行）
+##############################################################################
+
+Attribute VB_Name = "Mod_銘柄名キャッシュ"
+'==============================================================================
+' Mod_銘柄名キャッシュ  v1.0 (2026/08/31)
+'
+' 【何のためのモジュールか】
+'   このBOOKの銘柄名は、すべて 銘柄管理!C列 の
+'       =@RssMarket($B6,"銘柄名称")
+'   という「RSSが生きているときしか値が返らない式」だけが出所でした。
+'   終値!B列 も 分析!D列 も、中身は 銘柄管理!C列 への参照です。
+'
+'   そのためRSSが止まっていると、銘柄名の出所が全滅します。
+'   実際にこのBOOKでは 銘柄管理!C列 が全行 "エラー" になっており、
+'   終値!B列 のうち 87銘柄分 が式のままなので、同じく "エラー" になります。
+'
+'   このモジュールは「一度でも取れた正しい銘柄名」を
+'   銘柄管理シートの AD列（既定・非表示）に文字列として貯めておき、
+'   RSSが死んでいる時間帯でもそこから名前を出せるようにします。
+'
+' 【使い方】
+'   ・RSSが繋がっている取引時間中に一度 銘柄名キャッシュ更新 を実行してください。
+'     （売り抽出／買い抽出からも自動で呼ばれるので、普通は意識不要です）
+'   ・キャッシュは既に正しく入っている名前を、空や "エラー" で上書きしません。
+'==============================================================================
+Option Explicit
+
+' 銘柄管理シートの列
+Public Const NC_SHEET      As String = "銘柄管理"
+Public Const NC_CODE_COL   As Long = 2      'B列：コード
+Public Const NC_NAME_COL   As Long = 3      'C列：銘柄名（RSS式）
+Public Const NC_CACHE_COL  As Long = 30     'AD列：★名称キャッシュ（このモジュールが管理）
+Public Const NC_HDR_ROW    As Long = 4
+Public Const NC_FIRST_ROW  As Long = 6      '5行目はTOPIX行なので6行目から
+Private Const NC_PW        As String = "ne19480314"
+
+'==============================================================================
+' 名称として使えない値かどうかを判定する
+'   "" / "エラー" / "#N/A" などのエラー文字 / 数値 は名称ではない。
+'   ★数値をはじくのが重要：以前は名前が取れないと "(3936)" と書いていたため、
+'     Excelが会計表記とみなして -3936 という数値に化けていました。
+'==============================================================================
+Public Function NC_名称が無効(ByVal s As String) As Boolean
+    Dim t As String
+    t = Trim$(s)
+    t = Replace(t, ChrW(&H3000), "")          '全角スペースだけの値も無効扱い
+    NC_名称が無効 = True
+    If t = "" Then Exit Function
+    If Left$(t, 1) = "#" Then Exit Function                 '#N/A #VALUE! #REF! …
+    If t = "エラー" Or UCase$(t) = "ERROR" Then Exit Function 'RSSが返すエラー文字
+    If t = "取得中" Or t = "待機中" Then Exit Function        'RSS初期化中の暫定値
+    If IsNumeric(t) Then Exit Function                       '数値は名称ではない
+    NC_名称が無効 = False
+End Function
+
+Public Function NC_安全文字(ByVal v As Variant) As String
+    If IsError(v) Or IsEmpty(v) Or IsNull(v) Then
+        NC_安全文字 = ""
+    Else
+        NC_安全文字 = Trim$(CStr(v))
+    End If
+End Function
+
+Private Function NC_Ws(ByVal n As String) As Worksheet
+    On Error Resume Next
+    Set NC_Ws = ThisWorkbook.Sheets(n)
+    On Error GoTo 0
+End Function
+
+'==============================================================================
+' キャッシュ列の見出しを整える（初回だけ意味がある）
+'==============================================================================
+Private Sub NC_見出し整備(ByVal mws As Worksheet)
+    On Error Resume Next
+    With mws.Cells(NC_HDR_ROW, NC_CACHE_COL)
+        If NC_安全文字(.Value) = "" Then .Value = "名称キャッシュ"
+        .Font.Bold = True
+    End With
+    mws.Columns(NC_CACHE_COL).NumberFormat = "@"
+    mws.Columns(NC_CACHE_COL).Hidden = True
+    On Error GoTo 0
+End Sub
+
+'==============================================================================
+' ■ 銘柄名キャッシュ更新（ボタン割り当て可）
+'   銘柄管理!C列 / 終値!B列 / 分析!D列 のうち「まともな値」を拾って
+'   銘柄管理!AD列 に文字列で保存する。
+'   すでにキャッシュに正しい名前があるものは、無効値では上書きしない。
+'   戻り値 = 新しく保存できた件数
+'==============================================================================
+Public Function 銘柄名キャッシュ更新(Optional ByVal silent As Boolean = True) As Long
+    Dim mws As Worksheet: Set mws = NC_Ws(NC_SHEET)
+    If mws Is Nothing Then Exit Function
+
+    On Error Resume Next
+    mws.Unprotect Password:=NC_PW
+    On Error GoTo 0
+    NC_見出し整備 mws
+
+    Dim clWs As Worksheet: Set clWs = NC_Ws("終値")
+    Dim anWs As Worksheet: Set anWs = NC_Ws("分析")
+    Dim kjWs As Worksheet: Set kjWs = NC_Ws("検証明細")   '過去の検証明細にも銘柄名が残っている
+
+    '各シートを「コード → 行」で引けるようにしておく
+    Dim clDic As Object: Set clDic = NC_行辞書(clWs, 1, 6)
+    Dim anDic As Object: Set anDic = NC_行辞書(anWs, 3, 3)
+    Dim kjDic As Object: Set kjDic = NC_行辞書(kjWs, 3, 4)
+
+    Dim last As Long
+    last = mws.Cells(mws.Rows.Count, NC_CODE_COL).End(xlUp).Row
+    If last < NC_FIRST_ROW Then GoTo Fin
+
+    Dim r As Long, added As Long
+    For r = NC_FIRST_ROW To last
+        Dim code As String: code = NC_安全文字(mws.Cells(r, NC_CODE_COL).Value)
+        If code <> "" And code <> "TOPX" Then
+            Dim cur As String: cur = NC_安全文字(mws.Cells(r, NC_CACHE_COL).Value)
+            If NC_名称が無効(cur) Then
+                Dim nm As String
+                nm = NC_安全文字(mws.Cells(r, NC_NAME_COL).Value)          '① 銘柄管理C列(RSS)
+                If NC_名称が無効(nm) Then nm = NC_他シートから(clWs, clDic, code, 2)  '② 終値B列
+                If NC_名称が無効(nm) Then nm = NC_他シートから(anWs, anDic, code, 4)  '③ 分析D列
+                If NC_名称が無効(nm) Then nm = NC_他シートから(kjWs, kjDic, code, 4)  '④ 検証明細D列
+                If Not NC_名称が無効(nm) Then
+                    mws.Cells(r, NC_CACHE_COL).NumberFormat = "@"
+                    mws.Cells(r, NC_CACHE_COL).Value = nm
+                    added = added + 1
+                End If
+            End If
+        End If
+    Next r
+
+Fin:
+    銘柄名キャッシュ更新 = added
+    If Not silent Then
+        MsgBox "銘柄名キャッシュを更新しました。" & vbCrLf & _
+               "新しく保存できた銘柄名: " & added & " 件" & vbCrLf & vbCrLf & _
+               "※ まだ埋まっていない銘柄は、RSSが繋がっている取引時間中に" & vbCrLf & _
+               "　 もう一度このボタンを押すと保存されます。", _
+               vbInformation, "銘柄名キャッシュ"
+    End If
+End Function
+
+Private Function NC_行辞書(ByVal ws As Worksheet, ByVal codeCol As Long, _
+                            ByVal firstRow As Long) As Object
+    Dim d As Object: Set d = CreateObject("Scripting.Dictionary")
+    Set NC_行辞書 = d
+    If ws Is Nothing Then Exit Function
+    Dim last As Long: last = ws.Cells(ws.Rows.Count, codeCol).End(xlUp).Row
+    Dim r As Long
+    For r = firstRow To last
+        Dim c As String: c = NC_安全文字(ws.Cells(r, codeCol).Value)
+        If c <> "" Then
+            If Not d.Exists(c) Then d.Add c, r
+        End If
+    Next r
+End Function
+
+Private Function NC_他シートから(ByVal ws As Worksheet, ByVal dic As Object, _
+                                  ByVal code As String, ByVal nameCol As Long) As String
+    NC_他シートから = ""
+    If ws Is Nothing Or dic Is Nothing Then Exit Function
+    If Not dic.Exists(code) Then Exit Function
+    NC_他シートから = NC_安全文字(ws.Cells(CLng(dic(code)), nameCol).Value)
+End Function
+
+'==============================================================================
+' ■ 名称辞書作成（抽出処理から呼ぶ本体）
+'   コード → 銘柄名 の辞書を返す。
+'   キャッシュを優先し、RSSが生きていればその値でキャッシュを育てる。
+'==============================================================================
+Public Function 名称辞書作成() As Object
+    Dim dic As Object: Set dic = CreateObject("Scripting.Dictionary")
+    Set 名称辞書作成 = dic
+
+    Dim mws As Worksheet: Set mws = NC_Ws(NC_SHEET)
+    If mws Is Nothing Then Exit Function
+
+    '取れる範囲でキャッシュを育ててから読む（RSSが死んでいても実害なし）
+    On Error Resume Next
+    銘柄名キャッシュ更新 True
+    On Error GoTo 0
+
+    Dim last As Long
+    last = mws.Cells(mws.Rows.Count, NC_CODE_COL).End(xlUp).Row
+    If last < NC_FIRST_ROW Then Exit Function
+
+    Dim r As Long
+    For r = NC_FIRST_ROW To last
+        Dim code As String: code = NC_安全文字(mws.Cells(r, NC_CODE_COL).Value)
+        If code <> "" And code <> "TOPX" Then
+            Dim nm As String
+            nm = NC_安全文字(mws.Cells(r, NC_NAME_COL).Value)        'RSSが生きていれば最新
+            If NC_名称が無効(nm) Then nm = NC_安全文字(mws.Cells(r, NC_CACHE_COL).Value)
+            If NC_名称が無効(nm) Then nm = ""
+            If Not dic.Exists(code) Then dic.Add code, nm
+        End If
+    Next r
+End Function
+
+'==============================================================================
+' ■ 銘柄名を1件解決する
+'   辞書 → 元シートの名称列 → 「コード（名称未取得）」の順で必ず文字列を返す。
+'   ★ここで絶対に "(3936)" 形式を返さないこと（Excelが -3936 に変換するため）
+'==============================================================================
+Public Function 銘柄名解決(ByVal code As String, ByVal nameDic As Object, _
+                            Optional ByVal srcWs As Worksheet, _
+                            Optional ByVal srcRow As Long = 0, _
+                            Optional ByVal srcNameCol As Long = 2) As String
+    Dim nm As String: nm = ""
+
+    If Not nameDic Is Nothing Then
+        If nameDic.Exists(code) Then nm = NC_安全文字(nameDic(code))
+    End If
+
+    If NC_名称が無効(nm) Then
+        If Not srcWs Is Nothing And srcRow > 0 Then
+            nm = NC_安全文字(srcWs.Cells(srcRow, srcNameCol).Value)
+        End If
+    End If
+
+    If NC_名称が無効(nm) Then
+        '全角カッコを使う。半角 "(1234)" はExcelが負数に変換してしまう。
+        nm = code & ChrW(&HFF08) & "名称未取得" & ChrW(&HFF09)
+    End If
+
+    銘柄名解決 = nm
+End Function
+
+'==============================================================================
+' ■ 名称セルへの書き込み（必ず文字列として書く）
+'   数値化・日付化を防ぐため、書く直前に表示形式を「文字列」に固定する。
+'==============================================================================
+Public Sub 名称セル書込(ByVal ws As Worksheet, ByVal r As Long, ByVal c As Long, _
+                        ByVal nm As String)
+    With ws.Cells(r, c)
+        .NumberFormat = "@"
+        .Value = nm
+    End With
+End Sub
+
+'==============================================================================
+' ■ 既に -3936 のように数値化してしまった名称セルを修復する
+'   買抽出v13 / 売抽出v13 / 厳選TOP2 のD列を見て、負の数値になっているものを
+'   キャッシュの銘柄名に戻す。
+'==============================================================================
+Public Sub 名称セル修復_全抽出シート()
+    Dim names As Variant
+    names = Array("買抽出v13", "売抽出v13", "厳選TOP2")
+    Dim dic As Object: Set dic = 名称辞書作成()
+
+    Dim i As Long, fixed As Long
+    For i = LBound(names) To UBound(names)
+        Dim ws As Worksheet: Set ws = NC_Ws(CStr(names(i)))
+        If Not ws Is Nothing Then
+            On Error Resume Next
+            ws.Unprotect Password:=NC_PW
+            On Error GoTo 0
+            Dim last As Long
+            last = ws.Cells(ws.Rows.Count, 3).End(xlUp).Row
+            Dim r As Long
+            For r = 4 To last
+                Dim code As String: code = NC_安全文字(ws.Cells(r, 3).Value)
+                If code <> "" Then
+                    Dim cur As String: cur = NC_安全文字(ws.Cells(r, 4).Value)
+                    If NC_名称が無効(cur) Then
+                        名称セル書込 ws, r, 4, 銘柄名解決(code, dic)
+                        fixed = fixed + 1
+                    End If
+                End If
+            Next r
+        End If
+    Next i
+
+    MsgBox "銘柄名セルを修復しました： " & fixed & " 件", vbInformation, "銘柄名キャッシュ"
+End Sub
+
+
+##############################################################################
+#  Mod_SellExtrac.bas   （1722行）
+##############################################################################
+
+Attribute VB_Name = "Mod_SellExtrac"
+' ==================================================================
+' ★ 100番ブック / Mod_SellExtrac  v3 （2026/08/23 検証反映版）
+'
+' 【！ 先に読んでください ！】
+'   このBOOKの実データ（300銘柄×250営業日）で売り側を検証したところ、
+'   どの設定でも期待値がマイナスかゼロ近辺でした。
+'
+'     入口の比較（スコア11・損切1.5ATR・RR2・同時2枠）
+'       翌日寄成          約54件 勝率37.0% 平均-0.246R 総-13.3R PF0.61
+'       指値 終値+0.25ATR 約49件 勝率28.6% 平均-0.293R 総-14.4R PF0.56
+'       指値 終値+0.75ATR 約45件 勝率46.7% 平均+0.046R 総 +2.1R PF1.10
+'
+'     スコア閾値を変えても改善しません（6以上でも15以上でもマイナス）。
+'     損切・RRを振っても、最良で 総+3.1R（PF1.16）＝誤差の範囲です。
+'
+'   同じ期間・同じ枠で、買い側は 平均+1.0R以上 出ています。
+'   資金枠が限られているなら、売りに枠を使うのは明確に不利です。
+'
+' 【ただし断定はできません】
+'   検証期間は +16% の上昇相場1年のみで、空売りに構造的に不利な期間です。
+'   「売りロジックがダメ」ではなく「この相場では機能しなかった」が正確です。
+'   下降相場のデータが手に入ったら、必ず検証し直してください。
+'
+' 【v3で直したこと】
+'   ① 抽出の冒頭にあった 分析シート／終値シートの強制再計算に歯止めを付けた。
+'      従来は無条件に Calculate していたため、RSSが死んでいる状態で抽出すると
+'      各シートのRSSキャッシュ値が一斉に消え、表示が飛んでいた（実際に起きた事故）。
+'      v3ではRSSが応答しているときだけ再計算する。
+'   ② ザラ場の出来高判定を直した。ザラ場中の出来高は途中までの累計なので、
+'      時刻に応じた進捗率で1日分に換算してから5日平均と比べる。
+'      15:00は1日の約78%しか出来ていないため、補正しないと出来高急増を拾えない。
+'   ③ 安全装置モジュールがあれば、実行前にRSSの生死を確認する。
+'      無ければ何もしない（従来どおり動く）。
+' ==================================================================
+
+Option Explicit
+'=============================================================================
+' Mod_売り抽出
+' 売り候補抽出モジュール v2 (2026/06/10)
+' 買いロジック(候補抽出v10)と同じ指標・同じ構造
+' シート：終値/始値/高値/安値/出来高/分析/銘柄管理 → 売抽出
+'=============================================================================
+
+Dim NextSellRunTime As Date
+
+' ===== スコア定数 =====
+Private Const S_DC_BONUS   As Long = 2   ' デッドクロス
+Private Const S_PD_BONUS   As Long = 2   ' パーフェクト下降
+Private Const S_VOL_BONUS  As Long = 2   ' 出来高急増+陰線
+Private Const S_ADX_BONUS  As Long = 1   ' ADX>25
+Private Const S_HIST_BONUS As Long = 1   ' MACDヒスト悪化
+Private Const S_MIN_SCORE  As Long = 11  ' 抽出最低スコア
+Private Const S_MAX_HIGH   As Long = 2   ' 高精度売りの上限（TOPからN件）
+Private Const S_MAX_NORMAL As Long = 5   ' 通常売りの上限（TOPからN件）
+Private Const S_MAX_EASE   As Long = 10  ' 緩和売りの上限（TOPからN件）
+
+' ===== 必須フィルタ =====
+Private Const S_REQUIRE_DOWNTREND As Boolean = True
+
+' ===== v3追加 =====
+Private Const S_PROBE_COL As Long = 60   'RSS点検に使う作業列（BH列）
+
+' ===== v4追加 =====
+Private Const S_PW        As String = "ne19480314"  'シート保護パスワード
+Private Const S_HDR_ROW   As Long = 3    '見出し行
+Private Const S_DATA_ROW  As Long = 4    'データ開始行
+Private Const S_LAST_COL  As Long = 18   'A～R列
+Private Const S_NAME_COL  As Long = 4    'D列＝銘柄名称
+Private Const S_HINT_C1   As Long = 21   'U列（推奨指値ブロック 左端）
+Private Const S_HINT_C2   As Long = 29   'AC列（推奨指値ブロック 右端）
+
+'=============================================================================
+' ■ 公開Sub（ボタンに割り当て）
+'=============================================================================
+Public Sub 売抽出更新()
+    Dim p As Boolean: p = gUnattended
+    gUnattended = True
+    On Error GoTo done
+    Dim h As Integer: h = Hour(Now)
+    Dim m As Integer: m = Minute(Now)
+    ' 営業時間内(9:00～15:30)はRSS現在値版、それ以外は保存済みデータ版
+    If (h >= 9 And h < 15) Or (h = 15 And m <= 30) Then
+        Call S_抽出実行_RSS(S_MIN_SCORE, True, "売り抽出[RSS現在値](スコア" & S_MIN_SCORE & "以上・上位2件)", S_MAX_HIGH)
+    Else
+        Call S_抽出実行(S_MIN_SCORE, True, "売り高精度(スコア" & S_MIN_SCORE & "以上・上位2件)", S_MAX_HIGH)
+    End If
+done:
+    gUnattended = p
+End Sub
+
+Public Sub 売り候補抽出()
+    If Not S_安全確認("売り候補抽出") Then Exit Sub
+    Call S_抽出実行(S_MIN_SCORE, True, "売り高精度(スコア" & S_MIN_SCORE & "以上・上位2件)", S_MAX_HIGH)
+End Sub
+
+'=============================================================================
+' ★v3追加：ザラ場売り抽出（15:00頃の見直し用）
+'   時刻に関係なく、必ずRSSの現在値・今日の出来高で抽出する。
+'   出来高は時刻に応じた進捗率で1日分に換算してから判定する。
+'=============================================================================
+Public Sub ザラ場売り抽出_今すぐ()
+    If Not S_安全確認("ザラ場売り抽出") Then Exit Sub
+    Dim vp As Double: vp = S_VolProgress()
+    Call S_抽出実行_RSS(S_MIN_SCORE, True, _
+         "ザラ場売り " & Format(Now, "hh:mm") & "(スコア" & S_MIN_SCORE & "以上・上位" & _
+         S_MAX_HIGH & "件・出来高進捗" & Format(vp * 100, "0") & "%換算)", S_MAX_HIGH)
+End Sub
+
+Public Sub 売り抽出_通常()
+    Call S_抽出実行(8, True, "売り通常(スコア8以上・上位5件)", S_MAX_NORMAL)
+End Sub
+
+Public Sub 売り抽出_緩和()
+    Call S_抽出実行(8, False, "売り緩和(スコア8以上・上位10件)", S_MAX_EASE)
+End Sub
+
+Public Sub 売抽出自動更新開始()
+    '★修正：以前は押すたびにタイマーが増えて多重実行になっていた。
+    '  先に古いタイマーを解除してから登録する。
+    Call 売抽出自動更新停止_静か
+    NextSellRunTime = Now + TimeValue("00:05:00")
+    Application.OnTime NextSellRunTime, "'" & ThisWorkbook.Name & "'!売抽出タイマー実行"
+    UI_Msg "自動更新開始（5分ごと）", vbInformation
+End Sub
+
+Private Sub 売抽出自動更新停止_静か()
+    If NextSellRunTime = 0 Then Exit Sub
+    On Error Resume Next
+    Application.OnTime NextSellRunTime, "'" & ThisWorkbook.Name & "'!売抽出タイマー実行", , False
+    On Error GoTo 0
+    NextSellRunTime = 0
+End Sub
+
+Public Sub 売抽出タイマー実行()
+    Dim p As Boolean: p = gUnattended
+    gUnattended = True
+    On Error Resume Next
+    Call 売り候補抽出
+    On Error GoTo 0
+    gUnattended = p
+    NextSellRunTime = Now + TimeValue("00:05:00")
+    Application.OnTime NextSellRunTime, "'" & ThisWorkbook.Name & "'!売抽出タイマー実行"
+
+End Sub
+
+Public Sub 売抽出自動更新停止()
+    Call 売抽出自動更新停止_静か
+    UI_Msg "自動更新停止", vbInformation
+End Sub
+
+'=============================================================================
+' ■ メイン処理
+'=============================================================================
+Private Sub S_抽出実行(ByVal minScore As Long, _
+                       ByVal doMark As Boolean, _
+                       ByVal titleText As String, _
+                       Optional ByVal maxCount As Long = 0)
+
+    If maxCount <= 0 Then maxCount = S_MAX_HIGH
+    Dim closeWs As Worksheet: Set closeWs = S_GetWs("終値")
+    Dim openWs  As Worksheet: Set openWs = S_GetWs("始値")
+    Dim highWs  As Worksheet: Set highWs = S_GetWs("高値")
+    Dim lowWs   As Worksheet: Set lowWs = S_GetWs("安値")
+    Dim volWs   As Worksheet: Set volWs = S_GetWs("出来高")
+    Dim extWs   As Worksheet: Set extWs = S_GetWs("売抽出v13")
+    Dim mws     As Worksheet: Set mws = S_GetWs("銘柄管理")
+    Dim anaWs   As Worksheet: Set anaWs = S_GetWs("分析")
+
+    If closeWs Is Nothing Or extWs Is Nothing Then
+        UI_Msg "「終値」または「売抽出v13」シートが見つかりません。", vbExclamation: Exit Sub
+    End If
+    If mws Is Nothing Then
+        UI_Msg "「銘柄管理」シートが見つかりません。", vbExclamation: Exit Sub
+    End If
+
+    '★v3：RSSが死んでいる状態でこの再計算をすると、分析シートや終値シートの
+    '  RSSキャッシュ値が一斉に消え、各シートの表示が飛ぶ。
+    '  RSSが応答しているときだけ再計算する。
+    If S_RSS生存(extWs) Then
+        On Error Resume Next
+        If Not anaWs Is Nothing Then anaWs.Calculate
+        closeWs.Calculate
+        On Error GoTo 0
+    End If
+
+    '★修正：以前は途中でエラーが起きると、再計算=手動／画面更新=OFF／
+    '  シート保護=解除 のまま Excel が取り残されていた（次の操作が全部おかしくなる）。
+    '  入口で状態を控え、正常終了でも異常終了でも必ず元に戻す。
+    Dim savCalc As XlCalculation: savCalc = Application.Calculation
+    Dim pExt As Boolean, pMei As Boolean, pAna As Boolean
+    pExt = extWs.ProtectContents
+    pMei = mws.ProtectContents
+    If Not anaWs Is Nothing Then pAna = anaWs.ProtectContents
+
+    Application.ScreenUpdating = False
+    Application.Calculation = xlCalculationManual
+
+    On Error Resume Next
+    extWs.Unprotect Password:=S_PW
+    mws.Unprotect Password:=S_PW
+    If Not anaWs Is Nothing Then anaWs.Unprotect Password:=S_PW
+    On Error GoTo 0
+
+    Dim errNo As Long, errMsg As String
+    On Error GoTo S_失敗
+
+    ' ヘッダー行を生成（3行目：買い抽出シートと同じ構造）
+    S_ヘッダー出力 extWs
+
+    ' データ行のクリア（4行目以降）＋右側の推奨指値ブロックも一緒に消す
+    S_データ消去 extWs
+
+    ' TOPIX
+    Dim topixTrend As String: topixTrend = S_SafeStr(mws.Cells(5, 6).Value)
+    Dim topixNow As Double: topixNow = S_SafeNum(mws.Cells(5, 3).Value, 0)
+    Dim topixRef As Double: topixRef = S_SafeNum(mws.Cells(5, 5).Value, 0)
+    Dim topixPct As Double: topixPct = 0
+    If topixRef > 0 And topixNow > 0 Then topixPct = (topixNow - topixRef) / topixRef * 100#
+
+    Dim topixMode As String
+    If topixPct <= -1.5 Then
+        topixMode = "LARGE"
+    ElseIf topixPct <= -0.5 Then
+        topixMode = "MID"
+    Else
+        topixMode = "OK"
+    End If
+    ' Futures filter for SELL: block short when futures surge
+    ' (修正: 先物急騰時は空売りを難しくする。LARGE=最も緩い判定なので誤り。OK=最も厳しい判定が正しい)
+    Dim futuresPct As Double
+    futuresPct = S_SafeNum(mws.Cells(5, 8).Value, 0)
+    If futuresPct > 1.5 Then
+        topixMode = "OK"
+    ElseIf futuresPct > 0.5 Then
+        If topixMode = "LARGE" Then topixMode = "MID"
+    End If
+
+    ' 銘柄名辞書
+    '★修正：銘柄管理C列は =RssMarket(...,"銘柄名称") なので、RSSが止まっていると
+    '  全行 "エラー" または空になる。名称キャッシュ経由で取得する。
+    Dim nameDic As Object: Set nameDic = 名称辞書作成()
+
+    ' 分析シート辞書
+    Dim anaDic As Object: Set anaDic = CreateObject("Scripting.Dictionary")
+    If Not anaWs Is Nothing Then
+        Dim anaLast As Long: anaLast = anaWs.Cells(anaWs.Rows.Count, 3).End(xlUp).Row
+        Dim k As Long
+        For k = 3 To anaLast
+            Dim anaCode As String: anaCode = Trim$(CStr(anaWs.Cells(k, 3).Value))
+            If anaCode <> "" And Not anaDic.Exists(anaCode) Then anaDic(anaCode) = k
+        Next k
+    End If
+
+    Dim lastRow As Long: lastRow = closeWs.Cells(closeWs.Rows.Count, 1).End(xlUp).Row
+    Dim outRow As Long: outRow = 4
+    Dim totalScore As Long, signals As String
+    Dim scannedCount As Long: scannedCount = 0
+    Dim i As Long
+
+    For i = 6 To lastRow
+        Dim code As String: code = Trim$(CStr(closeWs.Cells(i, 1).Value))
+        If code = "" Or code = "0" Or code = "TOPX" Then GoTo NextS
+
+        scannedCount = scannedCount + 1
+        Application.StatusBar = titleText & " : " & code
+        totalScore = 0: signals = ""
+
+        Dim closePrice As Double: closePrice = Val(closeWs.Cells(i, 5).Value)
+        If closePrice = 0 Then GoTo NextS
+
+        Dim highVal As Double: highVal = 0
+        Dim lowVal  As Double: lowVal = 0
+        If Not highWs Is Nothing Then highVal = Val(highWs.Cells(i, 5).Value)
+        If Not lowWs Is Nothing Then lowVal = Val(lowWs.Cells(i, 5).Value)
+
+        Dim closes As Variant, opens As Variant, highs As Variant, loWs As Variant, vols As Variant
+        closes = closeWs.Range(closeWs.Cells(i, 5), closeWs.Cells(i, 64)).Value
+        If Not openWs Is Nothing Then opens = openWs.Range(openWs.Cells(i, 5), openWs.Cells(i, 64)).Value
+        If Not highWs Is Nothing Then highs = highWs.Range(highWs.Cells(i, 5), highWs.Cells(i, 64)).Value
+        If Not lowWs Is Nothing Then loWs = lowWs.Range(lowWs.Cells(i, 5), lowWs.Cells(i, 64)).Value
+        If Not volWs Is Nothing Then vols = volWs.Range(volWs.Cells(i, 5), volWs.Cells(i, 64)).Value
+
+        Dim anaRow As Long: anaRow = 0
+        If anaDic.Exists(code) Then anaRow = CLng(anaDic(code))
+        ' RSI（分析シートから取得、なければVBAで直接計算）
+        Dim rsiVal As Double: rsiVal = 50
+        If anaRow > 0 Then rsiVal = S_SafeNum(anaWs.Cells(anaRow, 23).Value, 50)
+        If rsiVal = 50 Or anaRow = 0 Then rsiVal = S_ComputeRSI(closes, 14)
+        If rsiVal >= 70 Then
+            totalScore = totalScore + 2: signals = signals & "RSI買われ過ぎ "
+        ElseIf rsiVal >= 60 Then
+            totalScore = totalScore + 1: signals = signals & "RSI高 "
+        ElseIf rsiVal <= 30 Then
+            totalScore = totalScore - 1
+        End If
+
+        ' EMAトレンド（分析シートから取得、なければVBAで直接計算）
+        Dim emaTrend As String: emaTrend = ""
+        If anaRow > 0 Then emaTrend = S_SafeStr(anaWs.Cells(anaRow, 30).Value)
+        ' 分析シートにない場合はVBAで直接計算
+        If emaTrend = "" Then
+            Dim e5c As Double: e5c = S_EMA(closes, 5)
+            Dim e25c As Double: e25c = S_EMA(closes, 25)
+            Dim e75c As Double: e75c = S_EMA(closes, 75)
+            If e5c > 0 And e25c > 0 And e75c > 0 Then
+                If e5c > e25c And e25c > e75c Then
+                    emaTrend = "パーフェクト▲"
+                ElseIf e5c < e25c And e25c < e75c Then
+                    emaTrend = "下降トレンド▼"
+                ElseIf e5c > e25c Then
+                    emaTrend = "上昇トレンド▲"
+                Else
+                    emaTrend = "もみ合い→"
+                End If
+            End If
+        End If
+        If emaTrend = "下降トレンド▼" Then
+            totalScore = totalScore + 2: signals = signals & "下降トレンド▼ "
+        ElseIf emaTrend = "パーフェクト▲" Then
+            totalScore = totalScore - 1
+        End If
+
+        ' 戻り売り
+        Dim osime As String: osime = ""
+        If anaRow > 0 Then osime = S_SafeStr(anaWs.Cells(anaRow, 31).Value)
+        Dim uwamodori As String: uwamodori = "-"
+        If osime = "25日押し目★" Then
+            uwamodori = "25日線戻り売り●"
+            totalScore = totalScore + 2: signals = signals & "25日線戻り● "
+        ElseIf osime = "5日押し目○" Then
+            uwamodori = "5日線戻り売り○"
+            totalScore = totalScore + 1: signals = signals & "5日線戻り○ "
+        End If
+
+        ' 出来高（分析シートから取得、なければVBAで直接計算）
+        Dim volToday As Double: volToday = 0
+        Dim vol5avg  As Double: vol5avg = 0
+        Dim volRatio As Double: volRatio = 0
+        If Not volWs Is Nothing Then
+            volToday = Val(volWs.Cells(i, 5).Value)
+            If anaRow > 0 Then vol5avg = S_SafeNum(anaWs.Cells(anaRow, 13).Value, 0)
+            ' 分析シートにない場合は直近5日平均を計算
+            If vol5avg = 0 Then vol5avg = S_出来高5日平均(vols)
+            If vol5avg > 0 And volToday > 0 Then
+                volRatio = volToday / vol5avg
+                If volRatio >= 2# Then
+                    totalScore = totalScore + 3
+                    signals = signals & "出来高急増(" & Format(volRatio, "0.0") & "倍) "
+                ElseIf volRatio >= 1.5 Then
+                    totalScore = totalScore + 2
+                    signals = signals & "出来高増(" & Format(volRatio, "0.0") & "倍) "
+                End If
+            End If
+        End If
+
+        ' MACD（分析シートから取得、なければMACDシリーズ計算後に設定）
+        Dim macdVal As Double: macdVal = 0
+        If anaRow > 0 Then macdVal = S_SafeNum(anaWs.Cells(anaRow, 24).Value, 0)
+
+        ' 年初来安値更新
+        Dim lowUpdate As String: lowUpdate = ""
+        If anaRow > 0 Then lowUpdate = S_SafeStr(anaWs.Cells(anaRow, 22).Value)
+        If InStr(lowUpdate, "安値更新") > 0 Then
+            totalScore = totalScore + 2: signals = signals & "年初来安値更新▼ "
+        End If
+
+        ' MACDシリーズ
+        Dim ema12V As Double, ema26V As Double, macdNow As Double, signalNow As Double
+        Dim histNow As Double, histPrev As Double
+        S_ComputeMACD closes, ema12V, ema26V, macdNow, signalNow, histNow, histPrev
+
+        ' 分析シートにない場合はMACDシリーズの値を使用
+        If macdVal = 0 And anaRow = 0 Then macdVal = macdNow
+        If macdVal < 0 Then
+            totalScore = totalScore + 1: signals = signals & "MACD- "
+        ElseIf macdVal > 0 Then
+            totalScore = totalScore - 1
+        End If
+
+        Dim emaDown  As Boolean: emaDown = (ema12V < ema26V) And (ema26V > 0)
+        Dim macdDown As Boolean: macdDown = (macdNow < signalNow)
+        Dim rsiDown  As Boolean: rsiDown = (rsiVal < 50)
+
+        ' デッドクロス直近5日
+        Dim ok_DC As Boolean: ok_DC = S_IsDeadCross(closes, 5)
+        If ok_DC Then
+            totalScore = totalScore + S_DC_BONUS: signals = signals & "[DC直近5日] "
+        End If
+
+        ' パーフェクト下降
+        Dim ok_PD As Boolean: ok_PD = S_IsPerfectDown(closes)
+        If ok_PD Then
+            totalScore = totalScore + S_PD_BONUS: signals = signals & "[完全下降] "
+        End If
+
+        ' 出来高急増+陰線
+        Dim ok_VBB As Boolean: ok_VBB = False
+        If Not IsEmpty(opens) And Not IsEmpty(vols) Then
+            ok_VBB = S_IsVolBear(vols, closes, opens)
+            If ok_VBB Then
+                totalScore = totalScore + S_VOL_BONUS: signals = signals & "[Vol急増陰線] "
+            End If
+        End If
+
+        ' ADX
+        Dim adxVal As Double: adxVal = 0
+        Dim ok_ADX As Boolean: ok_ADX = False
+        If Not IsEmpty(highs) And Not IsEmpty(loWs) Then
+            adxVal = S_ComputeADX(highs, loWs, closes)
+            ok_ADX = (adxVal > 25#)
+            If ok_ADX Then
+                totalScore = totalScore + S_ADX_BONUS: signals = signals & "[ADX=" & Format(adxVal, "0") & "] "
+            End If
+        End If
+
+        ' MACDヒスト悪化
+        Dim ok_HE As Boolean: ok_HE = (histNow < histPrev) And (histNow < 0)
+        If ok_HE Then
+            totalScore = totalScore + S_HIST_BONUS: signals = signals & "[Hist悪化] "
+        End If
+
+        ' 売りモメンタム
+        Dim momCount As Long: momCount = 0
+        If emaDown Then momCount = momCount + 1: signals = signals & "EMA12<26 "
+        If macdDown Then momCount = momCount + 1: signals = signals & "MACD<Sig "
+        If rsiDown Then momCount = momCount + 1: signals = signals & "RSI<50 "
+        If momCount = 3 Then
+            totalScore = totalScore + 2: signals = signals & "[◎売りモメンタム完全] "
+        ElseIf momCount = 2 Then
+            totalScore = totalScore + 1: signals = signals & "[○売りモメンタム部分] "
+        End If
+
+        ' ローソク足（当日・前日）
+        totalScore = totalScore + S_CandleBear(opens, highs, loWs, closes, signals)
+        totalScore = totalScore + S_CandleBearPrev(opens, highs, loWs, closes, signals)
+
+        ' 対TOPIX相対弱度
+        Dim stockPct As Double: stockPct = 0
+        If Not IsEmpty(closes) Then
+            If UBound(closes, 2) >= 2 Then
+                Dim prevClose As Double: prevClose = S_SafeNum(closes(1, 2), 0)
+                If prevClose > 0 Then stockPct = (closePrice - prevClose) / prevClose * 100#
+            End If
+        End If
+        If stockPct < topixPct Then
+            totalScore = totalScore + 1: signals = signals & "[対TOPIX弱] "
+        End If
+
+        ' 抽出判定
+        Dim canExtract As Boolean: canExtract = False
+        If totalScore >= minScore Then
+            Select Case topixMode
+                Case "LARGE": canExtract = True
+                Case "MID": If emaTrend <> "パーフェクト▲" Then canExtract = True
+                Case Else: If emaTrend = "下降トレンド▼" Or ok_PD Then canExtract = True
+            End Select
+        End If
+        If canExtract And rsiVal < 15 Then canExtract = False
+        If canExtract And rsiVal >= 80 Then canExtract = False
+        If canExtract And stockPct >= topixPct Then canExtract = False
+        If doMark And canExtract Then
+            If momCount < 2 Then canExtract = False
+            If S_REQUIRE_DOWNTREND And Not ok_PD Then canExtract = False
+        End If
+
+        If canExtract And code <> "" Then
+            '★修正：以前は名前が取れないと "(" & code & ")" を書いていたため、
+            '  Excelが会計表記の負数とみなして -3936 のような数値に化けていた。
+            '  銘柄名解決 は必ず文字列を返し、書き込み側で表示形式を「文字列」に固定する。
+            Dim meiName As String
+            meiName = 銘柄名解決(code, nameDic, closeWs, i, 2)
+
+            Dim currentPrice As Double: currentPrice = Val(closeWs.Cells(i, 3).Value)
+            If currentPrice <= 0 Then currentPrice = closePrice
+            Dim currentHigh As Double: currentHigh = highVal
+            If Not highWs Is Nothing Then
+                Dim tmpH As Double: tmpH = Val(highWs.Cells(i, 3).Value)
+                If tmpH > 0 Then currentHigh = tmpH
+            End If
+            Dim currentLow As Double: currentLow = lowVal
+            If Not lowWs Is Nothing Then
+                Dim tmpL As Double: tmpL = Val(lowWs.Cells(i, 3).Value)
+                If tmpL > 0 Then currentLow = tmpL
+            End If
+            Dim currentVol As Double: currentVol = volToday
+            If Not volWs Is Nothing Then
+                Dim tmpV As Double: tmpV = Val(volWs.Cells(i, 3).Value)
+                If tmpV > 0 Then currentVol = tmpV
+            End If
+
+            S_WriteRow extWs, outRow, code, meiName, currentPrice, currentHigh, currentLow, _
+                       currentVol, rsiVal, emaTrend, uwamodori, volRatio, macdVal, _
+                       lowUpdate, totalScore, signals
+            outRow = outRow + 1
+        End If
+NextS:
+        DoEvents
+    Next i
+
+    '★修正：以前は Rows(n).Delete でシート行ごと削除していたため、
+    '  右側(U～AC列)の推奨指値ブロックまで一緒に巻き上がってズレていた。
+    '  A～R列だけを対象に詰め直す。
+    outRow = S_空行を詰める(extWs, outRow)
+
+    ' スコア降順ソート（結合セル回避）
+    '★修正：outRow > 6 だと2件のときソートされなかった（2件抽出が既定なので実質常に未ソート）
+    If outRow - 4 >= 2 Then
+        On Error Resume Next
+        extWs.Range(extWs.Cells(4, 1), extWs.Cells(outRow - 1, 18)).Sort _
+            Key1:=extWs.Cells(4, 17), Order1:=xlDescending, Header:=xlNo
+        On Error GoTo S_失敗
+    End If
+
+    '★上位N件だけ残す（スコア降順ソート後）
+    If outRow - 4 > maxCount Then
+        extWs.Range(extWs.Cells(4 + maxCount, 1), extWs.Cells(outRow - 1, 18)).ClearContents
+        extWs.Range(extWs.Cells(4 + maxCount, 1), extWs.Cells(outRow - 1, 18)).Interior.ColorIndex = xlNone
+        outRow = 4 + maxCount
+    End If
+
+    '★順位列（1,2,3…）を B列(2) に出力
+    extWs.Cells(3, 2).Value = "順位"
+    Dim rkRow As Long
+    For rkRow = 4 To outRow - 1
+        extWs.Cells(rkRow, 2).Value = rkRow - 3
+        extWs.Cells(rkRow, 2).HorizontalAlignment = xlCenter
+        extWs.Cells(rkRow, 2).Font.Bold = True
+    Next rkRow
+
+    Application.StatusBar = False
+
+    Dim extracted As Long: extracted = outRow - 4
+    Dim modeDesc As String
+    Select Case topixMode
+        Case "LARGE": modeDesc = "【相場下落】"
+        Case "MID":   modeDesc = "【中程度】"
+        Case Else:    modeDesc = "【通常】"
+    End Select
+    '★修正：RSSが止まっているとTOPIXが 0.00% として扱われ、
+    '  相場判定が常に【通常】になっていたことに気付けなかった。
+    '  取れていないときはその旨をはっきり書く。
+    If Not (topixRef > 0 And topixNow > 0) Then
+        modeDesc = modeDesc & "※TOPIX未取得(RSS停止中)"
+    End If
+
+    ' 2行目にTOPIX情報を書く（買い抽出シートと同じ構造）
+    On Error Resume Next
+    extWs.Cells(2, 1).MergeArea.UnMerge
+    On Error GoTo S_失敗
+    extWs.Range("A2:R2").Merge
+    extWs.Cells(2, 1).Value = "TOPIX: " & topixTrend & _
+        " (" & Format(topixPct, "+0.00;-0.00;0.00") & "%) " & modeDesc & _
+        "　最終更新: " & Format(Now(), "yyyy/mm/dd hh:mm")
+    With extWs.Cells(2, 1)
+        .Font.Name = "Meiryo UI"
+        .Font.Size = 11
+        .Font.Color = RGB(255, 215, 0)
+        .Interior.Color = RGB(40, 0, 0)
+        .HorizontalAlignment = xlRight
+    End With
+
+    '★修正：右側(U～AC)の推奨指値は抽出とは別ボタンだったため、
+    '  再抽出すると前回の銘柄の指値が残ったまま新しい行の横に並んでいた。
+    Application.Calculation = savCalc
+    S_推奨指値を更新
+
+    S_後始末 extWs, mws, anaWs, pExt, pMei, pAna, savCalc
+
+    UI_Msg "【売り候補抽出 v2】" & vbCrLf & _
+           "TOPIX: " & Format(topixPct, "+0.00;-0.00;0.00") & "% " & modeDesc & vbCrLf & _
+           "スキャン: " & scannedCount & " 銘柄" & vbCrLf & _
+           "抽出:    " & extracted & " 件 (スコア" & minScore & "点以上)" & vbCrLf & _
+           S_名称注意書き(extWs, outRow), _
+           vbInformation, "売り抽出完了"
+    Exit Sub
+
+S_失敗:
+    errNo = Err.Number: errMsg = Err.Description
+    S_後始末 extWs, mws, anaWs, pExt, pMei, pAna, savCalc
+    UI_Msg "売り抽出を中断しました。" & vbCrLf & _
+           "（再計算・画面更新・シート保護は元に戻しました）" & vbCrLf & vbCrLf & _
+           "エラー " & errNo & " : " & errMsg, vbExclamation, "売り抽出"
+End Sub
+
+'=============================================================================
+' RSS現在値版抽出（営業時間内用）
+'=============================================================================
+Private Sub S_抽出実行_RSS(ByVal minScore As Long, _
+                            ByVal doMark As Boolean, _
+                            ByVal titleText As String, _
+                            Optional ByVal maxCount As Long = 0)
+
+    If maxCount <= 0 Then maxCount = S_MAX_HIGH
+    Dim closeWs As Worksheet: Set closeWs = S_GetWs("終値")
+    Dim openWs  As Worksheet: Set openWs = S_GetWs("始値")
+    Dim highWs  As Worksheet: Set highWs = S_GetWs("高値")
+    Dim lowWs   As Worksheet: Set lowWs = S_GetWs("安値")
+    Dim volWs   As Worksheet: Set volWs = S_GetWs("出来高")
+    Dim extWs   As Worksheet: Set extWs = S_GetWs("売抽出v13")
+    Dim mws     As Worksheet: Set mws = S_GetWs("銘柄管理")
+    Dim anaWs   As Worksheet: Set anaWs = S_GetWs("分析")
+
+    If closeWs Is Nothing Or extWs Is Nothing Then
+        UI_Msg "「終値」または「売抽出v13」シートが見つかりません。", vbExclamation: Exit Sub
+    End If
+    '★修正：RSS版だけ銘柄管理シートの存在確認が抜けていて、
+    '  シートが無いと mws.Cells(...) で実行時エラーになっていた。
+    If mws Is Nothing Then
+        UI_Msg "「銘柄管理」シートが見つかりません。", vbExclamation: Exit Sub
+    End If
+
+    '★v3：RSSが死んでいる状態でこの再計算をすると、分析シートや終値シートの
+    '  RSSキャッシュ値が一斉に消え、各シートの表示が飛ぶ。
+    '  RSSが応答しているときだけ再計算する。
+    If S_RSS生存(extWs) Then
+        On Error Resume Next
+        If Not anaWs Is Nothing Then anaWs.Calculate
+        closeWs.Calculate
+        On Error GoTo 0
+    End If
+
+    '★修正：以前は途中でエラーが起きると、再計算=手動／画面更新=OFF／
+    '  シート保護=解除 のまま Excel が取り残されていた（次の操作が全部おかしくなる）。
+    '  入口で状態を控え、正常終了でも異常終了でも必ず元に戻す。
+    Dim savCalc As XlCalculation: savCalc = Application.Calculation
+    Dim pExt As Boolean, pMei As Boolean, pAna As Boolean
+    pExt = extWs.ProtectContents
+    pMei = mws.ProtectContents
+    If Not anaWs Is Nothing Then pAna = anaWs.ProtectContents
+
+    Application.ScreenUpdating = False
+    Application.Calculation = xlCalculationManual
+
+    On Error Resume Next
+    extWs.Unprotect Password:=S_PW
+    mws.Unprotect Password:=S_PW
+    If Not anaWs Is Nothing Then anaWs.Unprotect Password:=S_PW
+    On Error GoTo 0
+
+    Dim errNo As Long, errMsg As String
+    On Error GoTo S_失敗
+
+    '★修正：ヘッダーは3行目。以前は4行目に書いた直後に4行目以降をクリアしていたため、
+    '  取引時間中（RSS版）はヘッダーが消え、データが本来のヘッダー行から始まっていた。
+    '  見出し語も保存済みデータ版と統一する（銘柄コード／銘柄名称）。
+    S_ヘッダー出力 extWs
+
+    ' データ行のクリア（4行目以降）＋右側の推奨指値ブロックも一緒に消す
+    S_データ消去 extWs
+
+    ' TOPIX
+    Dim topixTrend As String: topixTrend = S_SafeStr(mws.Cells(5, 6).Value)
+    Dim topixNow As Double: topixNow = S_SafeNum(mws.Cells(5, 3).Value, 0)
+    Dim topixRef As Double: topixRef = S_SafeNum(mws.Cells(5, 5).Value, 0)
+    Dim topixPct As Double: topixPct = 0
+    If topixRef > 0 And topixNow > 0 Then topixPct = (topixNow - topixRef) / topixRef * 100#
+    Dim topixMode As String
+    If topixPct <= -1.5 Then
+        topixMode = "LARGE"
+    ElseIf topixPct <= -0.5 Then
+        topixMode = "MID"
+    Else
+        topixMode = "OK"
+    End If
+    ' Futures filter for SELL: block short when futures surge
+    ' (修正: 先物急騰時は空売りを難しくする。LARGE=最も緩い判定なので誤り。OK=最も厳しい判定が正しい)
+    Dim futuresPct As Double
+    futuresPct = S_SafeNum(mws.Cells(5, 8).Value, 0)
+    If futuresPct > 1.5 Then
+        topixMode = "OK"
+    ElseIf futuresPct > 0.5 Then
+        If topixMode = "LARGE" Then topixMode = "MID"
+    End If
+
+    ' 銘柄名辞書
+    '★修正：銘柄管理C列は =RssMarket(...,"銘柄名称") なので、RSSが止まっていると
+    '  全行 "エラー" または空になる。名称キャッシュ経由で取得する。
+    Dim nameDic As Object: Set nameDic = 名称辞書作成()
+
+    ' 分析シート辞書
+    Dim anaDic As Object: Set anaDic = CreateObject("Scripting.Dictionary")
+    If Not anaWs Is Nothing Then
+        Dim anaLast As Long: anaLast = anaWs.Cells(anaWs.Rows.Count, 3).End(xlUp).Row
+        Dim k As Long
+        For k = 3 To anaLast
+            Dim anaCode As String: anaCode = Trim$(CStr(anaWs.Cells(k, 3).Value))
+            If anaCode <> "" And Not anaDic.Exists(anaCode) Then anaDic(anaCode) = k
+        Next k
+    End If
+
+    Dim lastRow As Long: lastRow = closeWs.Cells(closeWs.Rows.Count, 1).End(xlUp).Row
+    Dim outRow As Long: outRow = 4
+    Dim totalScore As Long, signals As String
+    Dim scannedCount As Long: scannedCount = 0
+    Dim i As Long
+
+    For i = 6 To lastRow
+        Dim code As String: code = Trim$(CStr(closeWs.Cells(i, 1).Value))
+        If code = "" Or code = "0" Or code = "TOPX" Then GoTo NextRSS
+
+        scannedCount = scannedCount + 1
+        Application.StatusBar = titleText & " : " & code
+        totalScore = 0: signals = ""
+
+        '★ RSS現在値(C列)を先頭に使用
+        Dim rssClose As Double: rssClose = Val(closeWs.Cells(i, 3).Value)
+        Dim closePrice As Double
+        If rssClose > 0 Then
+            closePrice = rssClose
+        Else
+            closePrice = Val(closeWs.Cells(i, 5).Value)
+        End If
+        If closePrice = 0 Then GoTo NextRSS
+
+        Dim highVal As Double: highVal = 0
+        Dim lowVal  As Double: lowVal = 0
+        If Not highWs Is Nothing Then
+            Dim rssH As Double: rssH = Val(highWs.Cells(i, 3).Value)
+            highVal = IIf(rssH > 0, rssH, Val(highWs.Cells(i, 5).Value))
+        End If
+        If Not lowWs Is Nothing Then
+            Dim rssL As Double: rssL = Val(lowWs.Cells(i, 3).Value)
+            lowVal = IIf(rssL > 0, rssL, Val(lowWs.Cells(i, 5).Value))
+        End If
+
+        '★ RSS現在値を先頭にした配列
+        Dim closes As Variant, opens As Variant, highs As Variant, loWs As Variant, vols As Variant
+        closes = S_RssMerge(closeWs, i)
+        If Not openWs Is Nothing Then opens = S_RssMerge(openWs, i)
+        If Not highWs Is Nothing Then highs = S_RssMerge(highWs, i)
+        If Not lowWs Is Nothing Then loWs = S_RssMerge(lowWs, i)
+        If Not volWs Is Nothing Then vols = S_RssMerge(volWs, i)
+
+        Dim anaRow As Long: anaRow = 0
+        If anaDic.Exists(code) Then anaRow = CLng(anaDic(code))
+        ' RSI（分析シートから取得、なければVBAで直接計算）
+        Dim rsiVal As Double: rsiVal = 50
+        If anaRow > 0 Then rsiVal = S_SafeNum(anaWs.Cells(anaRow, 23).Value, 50)
+        If rsiVal = 50 Or anaRow = 0 Then rsiVal = S_ComputeRSI(closes, 14)
+        If rsiVal >= 70 Then
+            totalScore = totalScore + 2: signals = signals & "RSI買われ過ぎ "
+        ElseIf rsiVal >= 60 Then
+            totalScore = totalScore + 1: signals = signals & "RSI高 "
+        ElseIf rsiVal <= 30 Then
+            totalScore = totalScore - 1
+        End If
+
+        ' EMAトレンド（分析シートから取得、なければVBAで直接計算）
+        Dim emaTrend As String: emaTrend = ""
+        If anaRow > 0 Then emaTrend = S_SafeStr(anaWs.Cells(anaRow, 30).Value)
+        ' 分析シートにない場合はVBAで直接計算
+        If emaTrend = "" Then
+            Dim e5c As Double: e5c = S_EMA(closes, 5)
+            Dim e25c As Double: e25c = S_EMA(closes, 25)
+            Dim e75c As Double: e75c = S_EMA(closes, 75)
+            If e5c > 0 And e25c > 0 And e75c > 0 Then
+                If e5c > e25c And e25c > e75c Then
+                    emaTrend = "パーフェクト▲"
+                ElseIf e5c < e25c And e25c < e75c Then
+                    emaTrend = "下降トレンド▼"
+                ElseIf e5c > e25c Then
+                    emaTrend = "上昇トレンド▲"
+                Else
+                    emaTrend = "もみ合い→"
+                End If
+            End If
+        End If
+        If emaTrend = "下降トレンド▼" Then
+            totalScore = totalScore + 2: signals = signals & "下降トレンド▼ "
+        ElseIf emaTrend = "パーフェクト▲" Then
+            totalScore = totalScore - 1
+        End If
+
+        ' 戻り売り
+        Dim osime As String: osime = ""
+        If anaRow > 0 Then osime = S_SafeStr(anaWs.Cells(anaRow, 31).Value)
+        Dim uwamodori As String: uwamodori = "-"
+        If osime = "25日押し目★" Then
+            uwamodori = "25日線戻り売り●"
+            totalScore = totalScore + 2: signals = signals & "25日線戻り● "
+        ElseIf osime = "5日押し目○" Then
+            uwamodori = "5日線戻り売り○"
+            totalScore = totalScore + 1: signals = signals & "5日線戻り○ "
+        End If
+
+        ' 出来高
+        Dim volToday As Double: volToday = 0
+        Dim vol5avg  As Double: vol5avg = 0
+        Dim volRatio As Double: volRatio = 0
+        If Not volWs Is Nothing Then
+            Dim rssV As Double: rssV = Val(volWs.Cells(i, 3).Value)
+            volToday = IIf(rssV > 0, rssV, Val(volWs.Cells(i, 5).Value))
+            '★v3：ザラ場は途中までの出来高なので1日分に換算してから比べる
+            Dim volCalc As Double
+            volCalc = IIf(rssV > 0, volToday / S_VolProgress(), volToday)
+            If anaRow > 0 Then vol5avg = S_SafeNum(anaWs.Cells(anaRow, 13).Value, 0)
+            '★修正：保存済みデータ版にはあった「分析シートに無ければ自前で5日平均」の
+            '  フォールバックがRSS版だけ抜けていた。分析シートに行が無い銘柄は
+            '  出来高倍率が常に0＝加点なしになっていた。
+            If vol5avg = 0 Then vol5avg = S_出来高5日平均(vols)
+            If vol5avg > 0 And volCalc > 0 Then
+                volRatio = volCalc / vol5avg
+                If volRatio >= 2# Then
+                    totalScore = totalScore + 3
+                    signals = signals & "出来高急増(" & Format(volRatio, "0.0") & "倍) "
+                ElseIf volRatio >= 1.5 Then
+                    totalScore = totalScore + 2
+                    signals = signals & "出来高増(" & Format(volRatio, "0.0") & "倍) "
+                End If
+            End If
+        End If
+
+        ' MACD（分析シートから取得、なければMACDシリーズ計算後に設定）
+        Dim macdVal As Double: macdVal = 0
+        If anaRow > 0 Then macdVal = S_SafeNum(anaWs.Cells(anaRow, 24).Value, 0)
+
+        ' 年初来安値更新
+        Dim lowUpdate As String: lowUpdate = ""
+        If anaRow > 0 Then lowUpdate = S_SafeStr(anaWs.Cells(anaRow, 22).Value)
+        If InStr(lowUpdate, "安値更新") > 0 Then
+            totalScore = totalScore + 2: signals = signals & "年初来安値更新▼ "
+        End If
+
+        ' MACDシリーズ
+        Dim ema12V As Double, ema26V As Double, macdNow As Double, signalNow As Double
+        Dim histNow As Double, histPrev As Double
+        S_ComputeMACD closes, ema12V, ema26V, macdNow, signalNow, histNow, histPrev
+
+        ' 分析シートにない場合はMACDシリーズの値を使用
+        If macdVal = 0 And anaRow = 0 Then macdVal = macdNow
+        If macdVal < 0 Then
+            totalScore = totalScore + 1: signals = signals & "MACD- "
+        ElseIf macdVal > 0 Then
+            totalScore = totalScore - 1
+        End If
+
+        Dim emaDown  As Boolean: emaDown = (ema12V < ema26V) And (ema26V > 0)
+        Dim macdDown As Boolean: macdDown = (macdNow < signalNow)
+        Dim rsiDown  As Boolean: rsiDown = (rsiVal < 50)
+
+        Dim ok_DC As Boolean: ok_DC = S_IsDeadCross(closes, 5)
+        If ok_DC Then totalScore = totalScore + S_DC_BONUS: signals = signals & "[DC直近5日] "
+
+        Dim ok_PD As Boolean: ok_PD = S_IsPerfectDown(closes)
+        If ok_PD Then totalScore = totalScore + S_PD_BONUS: signals = signals & "[完全下降] "
+
+        Dim ok_VBB As Boolean: ok_VBB = False
+        If Not IsEmpty(opens) And Not IsEmpty(vols) Then
+            ok_VBB = S_IsVolBear(vols, closes, opens)
+            If ok_VBB Then totalScore = totalScore + S_VOL_BONUS: signals = signals & "[Vol急増陰線] "
+        End If
+
+        Dim adxVal As Double: adxVal = 0
+        Dim ok_ADX As Boolean: ok_ADX = False
+        If Not IsEmpty(highs) And Not IsEmpty(loWs) Then
+            adxVal = S_ComputeADX(highs, loWs, closes)
+            ok_ADX = (adxVal > 25#)
+            If ok_ADX Then totalScore = totalScore + S_ADX_BONUS: signals = signals & "[ADX=" & Format(adxVal, "0") & "] "
+        End If
+
+        Dim ok_HE As Boolean: ok_HE = (histNow < histPrev) And (histNow < 0)
+        If ok_HE Then totalScore = totalScore + S_HIST_BONUS: signals = signals & "[Hist悪化] "
+
+        Dim momCount As Long: momCount = 0
+        If emaDown Then momCount = momCount + 1: signals = signals & "EMA12<26 "
+        If macdDown Then momCount = momCount + 1: signals = signals & "MACD<Sig "
+        If rsiDown Then momCount = momCount + 1: signals = signals & "RSI<50 "
+        If momCount = 3 Then
+            totalScore = totalScore + 2: signals = signals & "[◎売りモメンタム完全] "
+        ElseIf momCount = 2 Then
+            totalScore = totalScore + 1: signals = signals & "[○売りモメンタム部分] "
+        End If
+
+        totalScore = totalScore + S_CandleBear(opens, highs, loWs, closes, signals)
+        totalScore = totalScore + S_CandleBearPrev(opens, highs, loWs, closes, signals)
+
+        Dim stockPct As Double: stockPct = 0
+        If Not IsEmpty(closes) Then
+            If UBound(closes, 2) >= 2 Then
+                Dim prevClose As Double: prevClose = S_SafeNum(closes(1, 2), 0)
+                If prevClose > 0 Then stockPct = (closePrice - prevClose) / prevClose * 100#
+            End If
+        End If
+        If stockPct < topixPct Then
+            totalScore = totalScore + 1: signals = signals & "[対TOPIX弱] "
+        End If
+
+        Dim canExtract As Boolean: canExtract = False
+        If totalScore >= minScore Then
+            Select Case topixMode
+                Case "LARGE": canExtract = True
+                Case "MID": If emaTrend <> "パーフェクト▲" Then canExtract = True
+                Case Else: If emaTrend = "下降トレンド▼" Or ok_PD Then canExtract = True
+            End Select
+        End If
+        If canExtract And rsiVal < 15 Then canExtract = False
+        If canExtract And rsiVal >= 80 Then canExtract = False
+        If canExtract And stockPct >= topixPct Then canExtract = False
+        If doMark And canExtract Then
+            If momCount < 2 Then canExtract = False
+            If S_REQUIRE_DOWNTREND And Not ok_PD Then canExtract = False
+        End If
+
+        If canExtract And code <> "" Then
+            '★修正：以前は名前が取れないと "(" & code & ")" を書いていたため、
+            '  Excelが会計表記の負数とみなして -3936 のような数値に化けていた。
+            '  銘柄名解決 は必ず文字列を返し、書き込み側で表示形式を「文字列」に固定する。
+            Dim meiName As String
+            meiName = 銘柄名解決(code, nameDic, closeWs, i, 2)
+
+            Dim currentPrice As Double: currentPrice = closePrice
+            Dim currentHigh As Double: currentHigh = highVal
+            Dim currentLow  As Double: currentLow = lowVal
+            Dim currentVol  As Double: currentVol = volToday
+
+            S_WriteRow extWs, outRow, code, meiName, currentPrice, currentHigh, currentLow, _
+                       currentVol, rsiVal, emaTrend, uwamodori, volRatio, macdVal, _
+                       lowUpdate, totalScore, signals
+            outRow = outRow + 1
+        End If
+NextRSS:
+        DoEvents
+    Next i
+
+    '★修正：以前は Rows(n).Delete でシート行ごと削除していたため、
+    '  右側(U～AC列)の推奨指値ブロックまで一緒に巻き上がってズレていた。
+    '  A～R列だけを対象に詰め直す。
+    outRow = S_空行を詰める(extWs, outRow)
+
+    ' ソート
+    '★修正：outRow > 6 だと2件のときソートされなかった
+    If outRow - 4 >= 2 Then
+        On Error Resume Next
+        extWs.Range(extWs.Cells(4, 1), extWs.Cells(outRow - 1, 18)).Sort _
+            Key1:=extWs.Cells(4, 17), Order1:=xlDescending, Header:=xlNo
+        On Error GoTo S_失敗
+    End If
+
+    '★上位N件だけ残す（スコア降順ソート後）
+    If outRow - 4 > maxCount Then
+        extWs.Range(extWs.Cells(4 + maxCount, 1), extWs.Cells(outRow - 1, 18)).ClearContents
+        extWs.Range(extWs.Cells(4 + maxCount, 1), extWs.Cells(outRow - 1, 18)).Interior.ColorIndex = xlNone
+        outRow = 4 + maxCount
+    End If
+
+    '★順位列（1,2,3…）を B列(2) に出力
+    extWs.Cells(3, 2).Value = "順位"
+    Dim rkRow As Long
+    For rkRow = 4 To outRow - 1
+        extWs.Cells(rkRow, 2).Value = rkRow - 3
+        extWs.Cells(rkRow, 2).HorizontalAlignment = xlCenter
+        extWs.Cells(rkRow, 2).Font.Bold = True
+    Next rkRow
+
+    Application.StatusBar = False
+
+    Dim extracted As Long: extracted = outRow - 4
+    Dim modeDesc As String
+    Select Case topixMode
+        Case "LARGE": modeDesc = "【相場下落】"
+        Case "MID":   modeDesc = "【中程度】"
+        Case Else:    modeDesc = "【通常】"
+    End Select
+    '★修正：RSSが止まっているとTOPIXが 0.00% として扱われ、
+    '  相場判定が常に【通常】になっていたことに気付けなかった。
+    '  取れていないときはその旨をはっきり書く。
+    If Not (topixRef > 0 And topixNow > 0) Then
+        modeDesc = modeDesc & "※TOPIX未取得(RSS停止中)"
+    End If
+
+    ' 2行目にTOPIX情報を書く（買い抽出シートと同じ構造）
+    On Error Resume Next
+    extWs.Cells(2, 1).MergeArea.UnMerge
+    On Error GoTo S_失敗
+    extWs.Range("A2:R2").Merge
+    extWs.Cells(2, 1).Value = "TOPIX: " & topixTrend & _
+        " (" & Format(topixPct, "+0.00;-0.00;0.00") & "%) " & modeDesc & _
+        "　最終更新: " & Format(Now(), "yyyy/mm/dd hh:mm")
+    With extWs.Cells(2, 1)
+        .Font.Name = "Meiryo UI"
+        .Font.Size = 11
+        .Font.Color = RGB(255, 215, 0)
+        .Interior.Color = RGB(40, 0, 0)
+        .HorizontalAlignment = xlRight
+    End With
+
+    Application.Calculation = savCalc
+    S_推奨指値を更新
+
+    S_後始末 extWs, mws, anaWs, pExt, pMei, pAna, savCalc
+
+    UI_Msg "【売り候補抽出 RSS現在値版】" & vbCrLf & _
+           "TOPIX: " & Format(topixPct, "+0.00;-0.00;0.00") & "% " & modeDesc & vbCrLf & _
+           "スキャン: " & scannedCount & " 銘柄" & vbCrLf & _
+           "抽出:    " & extracted & " 件 (スコア" & minScore & "点以上)" & vbCrLf & _
+           "※RSS現在値使用" & vbCrLf & _
+           S_名称注意書き(extWs, outRow), _
+           vbInformation, "売り抽出完了(RSS版)"
+    Exit Sub
+
+S_失敗:
+    errNo = Err.Number: errMsg = Err.Description
+    S_後始末 extWs, mws, anaWs, pExt, pMei, pAna, savCalc
+    UI_Msg "売り抽出(RSS版)を中断しました。" & vbCrLf & _
+           "（再計算・画面更新・シート保護は元に戻しました）" & vbCrLf & vbCrLf & _
+           "エラー " & errNo & " : " & errMsg, vbExclamation, "売り抽出"
+End Sub
+
+'=============================================================================
+' RSS現在値を先頭にした配列作成
+'=============================================================================
+Private Function S_RssMerge(ByVal ws As Worksheet, ByVal r As Long) As Variant
+    Dim histLen As Long: histLen = 60
+    Dim arr() As Double
+    ReDim arr(1 To 1, 1 To 1 + histLen)
+    Dim rssV As Variant: rssV = ws.Cells(r, 3).Value
+    If IsNumeric(rssV) Then
+        If CDbl(rssV) > 0 Then arr(1, 1) = CDbl(rssV)
+    End If
+    If arr(1, 1) = 0 Then
+        Dim fb As Variant: fb = ws.Cells(r, 5).Value
+        If IsNumeric(fb) Then arr(1, 1) = CDbl(fb)
+    End If
+    Dim hist As Variant
+    hist = ws.Range(ws.Cells(r, 5), ws.Cells(r, 104)).Value
+    Dim j As Long
+    For j = 1 To histLen
+        If IsNumeric(hist(1, j)) Then arr(1, 1 + j) = CDbl(hist(1, j))
+    Next j
+    S_RssMerge = arr
+End Function
+
+'=============================================================================
+' 出力行書き込み
+'=============================================================================
+Private Sub S_WriteRow(ByVal ws As Worksheet, ByVal r As Long, _
+                        ByVal code As String, ByVal meiName As String, _
+                        ByVal closePrice As Double, ByVal highVal As Double, _
+                        ByVal lowVal As Double, ByVal volToday As Double, _
+                        ByVal rsiVal As Double, ByVal emaTrend As String, _
+                        ByVal modori As String, ByVal volRatio As Double, _
+                        ByVal macdVal As Double, ByVal lowUpdate As String, _
+                        ByVal totalScore As Long, ByVal signals As String)
+    With ws
+        .Cells(r, 1).Formula = "=HYPERLINK(""https://kabutan.jp/stock/?code=""&TEXT(C" & r & ",""0000""),""株探"")"
+        .Cells(r, 1).Interior.Color = RGB(128, 0, 0)
+        .Cells(r, 1).Font.Color = RGB(255, 255, 255)
+        .Cells(r, 1).Font.Bold = True
+        .Cells(r, 1).HorizontalAlignment = xlCenter
+        .Cells(r, 3).Value = code
+        .Cells(r, 3).NumberFormat = "0000"
+        '★修正：表示形式を文字列に固定してから書く。
+        '  そうしないと "3936（名称未取得）" のような値や "(3936)" が数値に化ける。
+        .Cells(r, 4).NumberFormat = "@"
+        .Cells(r, 4).Value = meiName
+        .Cells(r, 4).Font.Bold = True
+        .Cells(r, 5).Value = closePrice
+        .Cells(r, 5).NumberFormat = "#,##0"
+        .Cells(r, 6).Value = highVal
+        .Cells(r, 6).NumberFormat = "#,##0"
+        .Cells(r, 7).Value = lowVal
+        .Cells(r, 7).NumberFormat = "#,##0"
+        .Cells(r, 8).Value = volToday
+        .Cells(r, 8).NumberFormat = "#,##0"
+        .Cells(r, 9).Value = Format(rsiVal, "0.0")
+        .Cells(r, 10).Value = emaTrend
+        Select Case emaTrend
+            Case "下降トレンド▼"
+                .Cells(r, 10).Interior.Color = RGB(192, 0, 0)
+                .Cells(r, 10).Font.Color = RGB(255, 255, 255)
+                .Cells(r, 10).Font.Bold = True
+            Case "パーフェクト▲"
+                .Cells(r, 10).Interior.Color = RGB(0, 176, 80)
+                .Cells(r, 10).Font.Color = RGB(255, 255, 255)
+        End Select
+        .Cells(r, 11).Value = modori
+        .Cells(r, 11).HorizontalAlignment = xlCenter
+        If modori = "25日線戻り売り●" Then
+            .Cells(r, 11).Interior.Color = RGB(192, 0, 0)
+            .Cells(r, 11).Font.Color = RGB(255, 255, 255)
+            .Cells(r, 11).Font.Bold = True
+        ElseIf modori = "5日線戻り売り○" Then
+            .Cells(r, 11).Interior.Color = RGB(255, 150, 150)
+        End If
+        .Cells(r, 12).Value = IIf(volRatio > 0, Format(volRatio, "0.00") & "倍", "-")
+        .Cells(r, 13).Value = Format(macdVal, "0.00")
+        .Cells(r, 14).Value = lowUpdate
+        .Cells(r, 14).HorizontalAlignment = xlCenter
+        If InStr(lowUpdate, "安値更新") > 0 Then
+            .Cells(r, 14).Font.Color = RGB(192, 0, 0)
+            .Cells(r, 14).Font.Bold = True
+        End If
+        .Cells(r, 15).Value = Round(closePrice * 0.92, 0)  'O:利確ライン -8%
+        .Cells(r, 15).NumberFormat = "#,##0"
+        .Cells(r, 16).Value = Round(closePrice * 1.04, 0)  'P:損切ライン +4%
+        .Cells(r, 16).NumberFormat = "#,##0"
+        .Cells(r, 17).Value = totalScore
+        Dim bg As Long
+        Select Case totalScore
+            Case Is >= 14: bg = RGB(80, 0, 0)
+            Case Is >= 12: bg = RGB(128, 0, 0)
+            Case Is >= 10: bg = RGB(192, 0, 0)
+            Case Is >= 8:  bg = RGB(237, 85, 49)
+            Case Else:     bg = RGB(200, 100, 50)
+        End Select
+        .Cells(r, 17).Interior.Color = bg
+        .Cells(r, 17).Font.Color = RGB(255, 255, 255)
+        .Cells(r, 17).Font.Bold = True
+        .Cells(r, 17).HorizontalAlignment = xlCenter
+        .Cells(r, 18).Value = Trim$(signals)
+        .Range(.Cells(r, 1), .Cells(r, 18)).Font.Name = "Meiryo UI"
+        .Range(.Cells(r, 1), .Cells(r, 18)).Font.Size = 18
+        ' 行の背景色：奇数行=白、偶数行=薄いピンク
+        Dim cc As Long
+        For cc = 2 To 18
+            If cc <> 10 And cc <> 11 And cc <> 14 And cc <> 17 Then
+                If r Mod 2 = 0 Then
+                    .Cells(r, cc).Interior.Color = RGB(255, 220, 220)
+                Else
+                    .Cells(r, cc).Interior.Color = RGB(255, 255, 255)
+                End If
+            End If
+        Next cc
+    End With
+End Sub
+
+'=============================================================================
+' ヘルパー関数
+'=============================================================================
+Private Function S_ComputeRSI(ByRef prices As Variant, ByVal period As Long) As Double
+    S_ComputeRSI = 50
+    On Error GoTo ExitF
+    If IsEmpty(prices) Then Exit Function
+    Dim n As Long: n = UBound(prices, 2)
+    If n < period + 1 Then Exit Function
+    Dim gains As Double: gains = 0
+    Dim losses As Double: losses = 0
+    Dim i As Long
+    ' 最新のperiod日分を逆順で計算
+    For i = 1 To period
+        If UBound(prices, 2) >= i + 1 Then
+            Dim chg As Double
+            chg = CDbl(prices(1, i)) - CDbl(prices(1, i + 1))
+            If chg > 0 Then gains = gains + chg Else losses = losses - chg
+        End If
+    Next i
+    gains = gains / period
+    losses = losses / period
+    If losses = 0 Then S_ComputeRSI = 100: Exit Function
+    S_ComputeRSI = 100 - (100 / (1 + gains / losses))
+ExitF:
+End Function
+
+Private Function S_GetWs(ByVal n As String) As Worksheet
+    On Error Resume Next
+    Set S_GetWs = ThisWorkbook.Sheets(n)
+    On Error GoTo 0
+End Function
+
+Private Function S_SafeStr(ByVal v As Variant) As String
+    If IsError(v) Or IsEmpty(v) Or IsNull(v) Then
+        S_SafeStr = ""
+    Else
+        S_SafeStr = Trim$(CStr(v))
+    End If
+End Function
+
+Private Function S_SafeNum(ByVal v As Variant, ByVal d As Double) As Double
+    If IsError(v) Or IsEmpty(v) Or IsNull(v) Then
+        S_SafeNum = d
+    ElseIf IsNumeric(v) Then
+        S_SafeNum = CDbl(v)
+    Else
+        S_SafeNum = d
+    End If
+End Function
+
+Private Function S_CandleBear(ByRef opens As Variant, ByRef highs As Variant, _
+                               ByRef loWs As Variant, ByRef closes As Variant, _
+                               ByRef sig As String) As Long
+    S_CandleBear = 0
+    On Error GoTo ExitF
+    If IsEmpty(opens) Or IsEmpty(highs) Or IsEmpty(loWs) Or IsEmpty(closes) Then Exit Function
+    Dim o As Double: o = CDbl(opens(1, 1))
+    Dim h As Double: h = CDbl(highs(1, 1))
+    Dim L As Double: L = CDbl(loWs(1, 1))
+    Dim c As Double: c = CDbl(closes(1, 1))
+    If o <= 0 Or h <= 0 Or L <= 0 Or c <= 0 Then Exit Function
+    Dim rng As Double: rng = h - L
+    If rng <= 0 Then Exit Function
+    Dim body As Double: body = Abs(c - o)
+    Dim up As Double: up = h - WorksheetFunction.Max(o, c)
+    Dim lo As Double: lo = WorksheetFunction.Min(o, c) - L
+    If body > 0 And up >= body * 2# And lo <= body * 0.5 And c < o Then
+        S_CandleBear = 2: sig = sig & "[上ヒゲ陰線▼+2] "
+    ElseIf c < o And body >= rng * 0.7 Then
+        S_CandleBear = 2: sig = sig & "[大陰線▼+2] "
+    ElseIf up >= rng * 0.5 And lo <= rng * 0.2 Then
+        S_CandleBear = 1: sig = sig & "[長い上ヒゲ+1] "
+    ElseIf body > 0 And lo >= body * 2# And up <= body * 0.5 Then
+        S_CandleBear = -2: sig = sig & "[下ヒゲ陽線-2] "
+    End If
+ExitF:
+End Function
+
+Private Function S_CandleBearPrev(ByRef opens As Variant, ByRef highs As Variant, _
+                                   ByRef loWs As Variant, ByRef closes As Variant, _
+                                   ByRef sig As String) As Long
+    S_CandleBearPrev = 0
+    On Error GoTo ExitF
+    If IsEmpty(opens) Or IsEmpty(highs) Or IsEmpty(loWs) Or IsEmpty(closes) Then Exit Function
+    If UBound(opens, 2) < 2 Then Exit Function
+    Dim o As Double: o = CDbl(opens(1, 2))
+    Dim h As Double: h = CDbl(highs(1, 2))
+    Dim L As Double: L = CDbl(loWs(1, 2))
+    Dim c As Double: c = CDbl(closes(1, 2))
+    If o <= 0 Or h <= 0 Or L <= 0 Or c <= 0 Then Exit Function
+    Dim rng As Double: rng = h - L
+    If rng <= 0 Then Exit Function
+    Dim body As Double: body = Abs(c - o)
+    Dim up As Double: up = h - WorksheetFunction.Max(o, c)
+    Dim lo As Double: lo = WorksheetFunction.Min(o, c) - L
+    If body > 0 And up >= body * 2# And lo <= body * 0.5 And c < o Then
+        S_CandleBearPrev = 2: sig = sig & "[前日:上ヒゲ陰線▼+2] "
+    ElseIf c < o And body >= rng * 0.7 Then
+        S_CandleBearPrev = 2: sig = sig & "[前日:大陰線▼+2] "
+    ElseIf up >= rng * 0.5 And lo <= rng * 0.2 Then
+        S_CandleBearPrev = 1: sig = sig & "[前日:長い上ヒゲ+1] "
+    ElseIf body > 0 And lo >= body * 2# And up <= body * 0.5 Then
+        S_CandleBearPrev = -2: sig = sig & "[前日:下ヒゲ陽線-2] "
+    End If
+ExitF:
+End Function
+
+Private Function S_IsDeadCross(ByRef prices As Variant, ByVal lookback As Long) As Boolean
+    S_IsDeadCross = False
+    On Error GoTo ExitF
+    If IsEmpty(prices) Then Exit Function
+    Dim n As Long: n = UBound(prices, 2)
+    If n < 26 Then Exit Function
+    Dim k5 As Double: k5 = 2# / 6#
+    Dim k25 As Double: k25 = 2# / 26#
+    ReDim e5Arr(1 To n) As Double
+    ReDim e25Arr(1 To n) As Double
+    Dim e5 As Double: e5 = 0
+    Dim e25 As Double: e25 = 0
+    Dim seeded As Boolean: seeded = False
+    Dim cnt As Long: cnt = 0
+    Dim i As Long, pv As Double, v As Variant
+    For i = n To 1 Step -1
+        v = prices(1, i)
+        If IsNumeric(v) Then
+            pv = CDbl(v)
+            If pv > 0 Then
+                If Not seeded Then
+                    e5 = pv: e25 = pv: seeded = True
+                Else
+                    e5 = k5 * pv + (1# - k5) * e5
+                    e25 = k25 * pv + (1# - k25) * e25
+                End If
+                cnt = cnt + 1
+                e5Arr(cnt) = e5: e25Arr(cnt) = e25
+            End If
+        End If
+    Next i
+    If cnt < 2 Then Exit Function
+    If e5Arr(cnt) >= e25Arr(cnt) Then Exit Function
+    Dim lookStart As Long: lookStart = cnt - lookback
+    If lookStart < 1 Then lookStart = 1
+    Dim j As Long
+    For j = lookStart To cnt - 1
+        If e5Arr(j) >= e25Arr(j) Then
+            S_IsDeadCross = True: Exit Function
+        End If
+    Next j
+ExitF:
+End Function
+
+Private Function S_IsPerfectDown(ByRef prices As Variant) As Boolean
+    S_IsPerfectDown = False
+    On Error GoTo ExitF
+    If IsEmpty(prices) Then Exit Function
+    Dim e5  As Double: e5 = S_EMA(prices, 5)
+    Dim e25 As Double: e25 = S_EMA(prices, 25)
+    Dim e75 As Double: e75 = S_EMA(prices, 75)
+    If e5 > 0 And e25 > 0 And e75 > 0 Then
+        S_IsPerfectDown = (e5 < e25) And (e25 < e75)
+    End If
+ExitF:
+End Function
+
+Private Function S_EMA(ByRef prices As Variant, ByVal period As Long) As Double
+    S_EMA = 0
+    On Error GoTo ExitF
+    If IsEmpty(prices) Then Exit Function
+    Dim n As Long: n = UBound(prices, 2)
+    If n < 2 Then Exit Function
+    Dim k As Double: k = 2# / (period + 1#)
+    Dim ema As Double: ema = 0
+    Dim seeded As Boolean: seeded = False
+    Dim i As Long, pv As Double, v As Variant
+    For i = n To 1 Step -1
+        v = prices(1, i)
+        If IsNumeric(v) Then
+            pv = CDbl(v)
+            If Not seeded Then
+                ema = pv: seeded = True
+            Else
+                ema = k * pv + (1# - k) * ema
+            End If
+        End If
+    Next i
+    S_EMA = ema
+ExitF:
+End Function
+
+Private Function S_IsVolBear(ByRef vols As Variant, ByRef closes As Variant, _
+                              ByRef opens As Variant) As Boolean
+    S_IsVolBear = False
+    On Error GoTo ExitF
+    If IsEmpty(vols) Or IsEmpty(closes) Or IsEmpty(opens) Then Exit Function
+    Dim n As Long: n = UBound(vols, 2)
+    If n < 2 Then Exit Function
+    If Not IsNumeric(vols(1, 1)) Then Exit Function
+    If Not IsNumeric(closes(1, 1)) Then Exit Function
+    If Not IsNumeric(opens(1, 1)) Then Exit Function
+    Dim todayVol   As Double: todayVol = CDbl(vols(1, 1))
+    Dim todayClose As Double: todayClose = CDbl(closes(1, 1))
+    Dim todayOpen  As Double: todayOpen = CDbl(opens(1, 1))
+    If todayVol <= 0 Or todayClose <= 0 Or todayOpen <= 0 Then Exit Function
+    If todayClose >= todayOpen Then Exit Function
+    Dim endIdx As Long: endIdx = IIf(n < 21, n, 21)
+    Dim sm As Double: sm = 0
+    Dim cnt As Long: cnt = 0
+    Dim j As Long
+    For j = 2 To endIdx
+        If IsNumeric(vols(1, j)) Then
+            Dim vV As Double: vV = CDbl(vols(1, j))
+            If vV > 0 Then sm = sm + vV: cnt = cnt + 1
+        End If
+    Next j
+    If cnt < 5 Then Exit Function
+    S_IsVolBear = (todayVol >= (sm / cnt) * 1.5)
+ExitF:
+End Function
+
+Private Sub S_ComputeMACD(ByRef prices As Variant, _
+                           ByRef ema12 As Double, ByRef ema26 As Double, _
+                           ByRef macdV As Double, ByRef sigV As Double, _
+                           ByRef histNow As Double, ByRef histPrev As Double)
+    ema12 = 0: ema26 = 0: macdV = 0: sigV = 0: histNow = 0: histPrev = 0
+    On Error GoTo ExitP
+    If IsEmpty(prices) Then Exit Sub
+    Dim n As Long: n = UBound(prices, 2)
+    If n < 13 Then Exit Sub
+    Dim k12 As Double: k12 = 2# / 13#
+    Dim k26 As Double: k26 = 2# / 27#
+    Dim k9  As Double: k9 = 2# / 10#
+    ReDim macdArr(1 To n) As Double
+    Dim e12 As Double: e12 = 0
+    Dim e26 As Double: e26 = 0
+    Dim seeded As Boolean: seeded = False
+    Dim mCnt As Long: mCnt = 0
+    Dim i As Long, pv As Double, v As Variant
+    For i = n To 1 Step -1
+        v = prices(1, i)
+        If IsNumeric(v) Then
+            pv = CDbl(v)
+            If pv > 0 Then
+                If Not seeded Then
+                    e12 = pv: e26 = pv: seeded = True
+                Else
+                    e12 = k12 * pv + (1# - k12) * e12
+                    e26 = k26 * pv + (1# - k26) * e26
+                End If
+                mCnt = mCnt + 1
+                macdArr(mCnt) = e12 - e26
+            End If
+        End If
+    Next i
+    If mCnt < 2 Then Exit Sub
+    ema12 = e12: ema26 = e26: macdV = macdArr(mCnt)
+    Dim sg As Double: sg = macdArr(1)
+    Dim sgPrev As Double: sgPrev = sg
+    Dim j As Long
+    For j = 2 To mCnt
+        sgPrev = sg
+        sg = k9 * macdArr(j) + (1# - k9) * sg
+    Next j
+    sigV = sg
+    histNow = macdArr(mCnt) - sg
+    histPrev = macdArr(mCnt - 1) - sgPrev
+ExitP:
+End Sub
+
+Private Function S_ComputeADX(ByRef highs As Variant, ByRef loWs As Variant, _
+                                ByRef closes As Variant) As Double
+    S_ComputeADX = 0
+    On Error GoTo ExitF
+    If IsEmpty(highs) Or IsEmpty(loWs) Or IsEmpty(closes) Then Exit Function
+    Dim n As Long: n = UBound(highs, 2)
+    If n < 28 Then Exit Function
+    Const p As Long = 14
+    ReDim hA(1 To n) As Double
+    ReDim lA(1 To n) As Double
+    ReDim cA(1 To n) As Double
+    Dim cnt As Long: cnt = 0
+    Dim i As Long
+    For i = n To 1 Step -1
+        If IsNumeric(highs(1, i)) And IsNumeric(loWs(1, i)) And IsNumeric(closes(1, i)) Then
+            Dim hv As Double: hv = CDbl(highs(1, i))
+            Dim lv As Double: lv = CDbl(loWs(1, i))
+            Dim cv As Double: cv = CDbl(closes(1, i))
+            If hv > 0 And lv > 0 And cv > 0 Then
+                cnt = cnt + 1
+                hA(cnt) = hv: lA(cnt) = lv: cA(cnt) = cv
+            End If
+        End If
+    Next i
+    If cnt < 28 Then Exit Function
+    ReDim trA(2 To cnt) As Double
+    ReDim pdA(2 To cnt) As Double
+    ReDim mdA(2 To cnt) As Double
+    Dim j As Long
+    For j = 2 To cnt
+        Dim hd As Double: hd = hA(j) - hA(j - 1)
+        Dim ld As Double: ld = lA(j - 1) - lA(j)
+        pdA(j) = IIf(hd > ld And hd > 0, hd, 0)
+        mdA(j) = IIf(ld > hd And ld > 0, ld, 0)
+        Dim t1 As Double: t1 = hA(j) - lA(j)
+        Dim t2 As Double: t2 = Abs(hA(j) - cA(j - 1))
+        Dim t3 As Double: t3 = Abs(lA(j) - cA(j - 1))
+        trA(j) = t1
+        If t2 > trA(j) Then trA(j) = t2
+        If t3 > trA(j) Then trA(j) = t3
+    Next j
+    If cnt < 2 + p - 1 Then Exit Function
+    Dim atr As Double: atr = 0
+    Dim pdm As Double: pdm = 0
+    Dim mdm As Double: mdm = 0
+    For j = 2 To 1 + p
+        atr = atr + trA(j): pdm = pdm + pdA(j): mdm = mdm + mdA(j)
+    Next j
+    ReDim dxA(1 To cnt) As Double
+    Dim dxCnt As Long: dxCnt = 0
+    Dim pDI As Double, mDI As Double, sDI As Double
+    If atr > 0 Then
+        pDI = 100# * pdm / atr: mDI = 100# * mdm / atr: sDI = pDI + mDI
+        If sDI > 0 Then dxCnt = dxCnt + 1: dxA(dxCnt) = 100# * Abs(pDI - mDI) / sDI
+    End If
+    For j = 2 + p To cnt
+        atr = atr - (atr / p) + trA(j)
+        pdm = pdm - (pdm / p) + pdA(j)
+        mdm = mdm - (mdm / p) + mdA(j)
+        If atr > 0 Then
+            pDI = 100# * pdm / atr: mDI = 100# * mdm / atr: sDI = pDI + mDI
+            If sDI > 0 Then dxCnt = dxCnt + 1: dxA(dxCnt) = 100# * Abs(pDI - mDI) / sDI
+        End If
+    Next j
+    If dxCnt < p Then Exit Function
+    Dim adx As Double: adx = 0
+    For j = 1 To p: adx = adx + dxA(j): Next j
+    adx = adx / p
+    For j = p + 1 To dxCnt: adx = (adx * (p - 1) + dxA(j)) / p: Next j
+    S_ComputeADX = adx
+ExitF:
+End Function
+
+'=============================================================================
+' ★v3追加：補助
+'=============================================================================
+'   RSSが応答しているかを実際に問い合わせて確かめる。
+'   作業セル1つに RssMarket の式を入れ、そのシートだけを計算して確認する。
+'   他のシート・他のBOOKには一切触らない。
+Private Function S_RSS生存(ByVal ws As Worksheet) As Boolean
+    S_RSS生存 = False
+    If ws Is Nothing Then Exit Function
+    On Error GoTo Fail
+    Dim sc As Range
+    Set sc = ws.Cells(1, S_PROBE_COL)
+    sc.Formula = "=IFERROR(RssMarket(""7203"",""現在値""),-1)"
+    ws.Calculate
+    S_RSS生存 = (Val(sc.Value) > 0)
+    sc.ClearContents
+    Exit Function
+Fail:
+    On Error Resume Next
+    ws.Cells(1, S_PROBE_COL).ClearContents
+    On Error GoTo 0
+End Function
+
+'   出来高の進捗率。いまの時刻までに1日の出来高の何割が出来ているかの目安。
+'   ※ 実測ではなく一般的な目安。値を変えたいときはこの表を直す。
+Private Function S_VolProgress() As Double
+    Dim hh As Variant, pp As Variant
+    hh = Array("09:00", "09:05", "09:30", "10:00", "11:00", "11:30", _
+               "12:30", "13:00", "14:00", "14:30", "15:00", "15:20", "15:25", "15:30")
+    pp = Array(0.02, 0.1, 0.25, 0.33, 0.42, 0.47, _
+               0.47, 0.52, 0.62, 0.68, 0.78, 0.88, 0.93, 1#)
+
+    Dim t As Double: t = CDbl(TimeValue(Format(Now, "hh:mm:ss")))
+    Dim i As Long, t0 As Double, t1 As Double
+
+    If t < CDbl(TimeValue(CStr(hh(0)))) Then S_VolProgress = 1#: Exit Function
+    If t >= CDbl(TimeValue(CStr(hh(UBound(hh))))) Then S_VolProgress = 1#: Exit Function
+
+    For i = 0 To UBound(hh) - 1
+        t0 = CDbl(TimeValue(CStr(hh(i))))
+        t1 = CDbl(TimeValue(CStr(hh(i + 1))))
+        If t >= t0 And t < t1 Then
+            If t1 > t0 Then
+                S_VolProgress = CDbl(pp(i)) + (CDbl(pp(i + 1)) - CDbl(pp(i))) * (t - t0) / (t1 - t0)
+            Else
+                S_VolProgress = CDbl(pp(i))
+            End If
+            Exit Function
+        End If
+    Next i
+    S_VolProgress = 1#
+End Function
+
+'   安全装置（Mod_安全装置）があれば実行前にRSSの生死を確認する。
+'   無ければ何もせず True を返すので、従来どおり動く。
+Private Function S_安全確認(ByVal nm As String) As Boolean
+    S_安全確認 = True
+    If gUnattended Then Exit Function
+    Dim r As Variant
+    On Error Resume Next
+    r = Application.Run("安全装置_RSS必要", nm)
+    If Err.Number = 0 Then S_安全確認 = CBool(r)
+    Err.Clear
+    On Error GoTo 0
+End Function
+
+'=============================================================================
+' ★v4追加：共通ヘルパー
+'   保存済みデータ版とRSS版でコードが枝分かれしていたせいで、
+'   片方だけ直っていない／片方だけ壊れている、という状態が生まれていた。
+'   両方から呼ぶ形にして食い違いを無くす。
+'=============================================================================
+
+'   見出し行（3行目）を作る。
+'   ★以前はRSS版だけ4行目に書いていて、その直後に4行目以降をクリアしていたため
+'     取引時間中はヘッダーが消え、データが本来のヘッダー行から始まっていた。
+Private Sub S_ヘッダー出力(ByVal ws As Worksheet)
+    Dim hdr As Variant
+    hdr = Array("株探", "順位", "銘柄コード", "銘柄名称", "現在値", "高値", "安値", _
+                "出来高", "RSI(14)", "EMAトレンド", "戻り売り判定", "出来高倍率", _
+                "MACD", "安値更新", "利確ライン", "損切ライン", "スコア", "シグナル内容")
+    Dim hc As Long
+    For hc = 0 To S_LAST_COL - 1
+        With ws.Cells(S_HDR_ROW, hc + 1)
+            .Value = hdr(hc)
+            .Font.Name = "Meiryo UI"
+            .Font.Size = 18
+            .Font.Bold = True
+            .Font.Color = RGB(255, 255, 255)
+            .Interior.Color = RGB(80, 0, 0)
+            .HorizontalAlignment = xlCenter
+            .WrapText = True
+        End With
+    Next hc
+    ws.Rows(S_HDR_ROW).RowHeight = 40
+
+    '★銘柄名称の列は表示形式を「文字列」に固定しておく。
+    '  これをしないと "(3936)" のような値をExcelが -3936 という数値に変換してしまう。
+    On Error Resume Next
+    ws.Columns(S_NAME_COL).NumberFormat = "@"
+    On Error GoTo 0
+End Sub
+
+'   データ行を消す。右側(U～AC)の推奨指値ブロックも一緒に消す。
+'   ★以前はA～R列しか消していなかったので、再抽出すると
+'     前回の銘柄の指値が新しい行の横に残り、別銘柄の数字が並んで見えていた。
+Private Sub S_データ消去(ByVal ws As Worksheet)
+    Dim last As Long
+    last = ws.Cells(ws.Rows.Count, 3).End(xlUp).Row
+    If last < S_DATA_ROW Then last = S_DATA_ROW
+    last = last + 500
+    If last > ws.Rows.Count Then last = ws.Rows.Count
+
+    With ws.Range(ws.Cells(S_DATA_ROW, 1), ws.Cells(last, S_LAST_COL))
+        .ClearContents
+        .Interior.ColorIndex = xlNone
+        .Font.ColorIndex = xlAutomatic
+        .Font.Bold = False
+    End With
+
+    On Error Resume Next
+    With ws.Range(ws.Cells(S_DATA_ROW, S_HINT_C1), ws.Cells(last, S_HINT_C2))
+        .ClearContents
+        .Interior.ColorIndex = xlNone
+    End With
+    On Error GoTo 0
+End Sub
+
+'   コード欄が空の行を詰める。
+'   ★以前は Rows(n).Delete でシート行ごと消していたため、
+'     右側(U～AC)の推奨指値ブロックまで一緒に巻き上がって行がズレていた。
+Private Function S_空行を詰める(ByVal ws As Worksheet, ByVal outRow As Long) As Long
+    Dim w As Long: w = S_DATA_ROW
+    Dim r As Long
+    For r = S_DATA_ROW To outRow - 1
+        If Trim$(CStr(ws.Cells(r, 3).Value)) <> "" Then
+            If w <> r Then
+                ws.Range(ws.Cells(r, 1), ws.Cells(r, S_LAST_COL)).Copy _
+                    Destination:=ws.Cells(w, 1)
+            End If
+            w = w + 1
+        End If
+    Next r
+    If w <= outRow - 1 Then
+        With ws.Range(ws.Cells(w, 1), ws.Cells(outRow - 1, S_LAST_COL))
+            .ClearContents
+            .Interior.ColorIndex = xlNone
+        End With
+    End If
+    Application.CutCopyMode = False
+    S_空行を詰める = w
+End Function
+
+'   直近5日の出来高平均（分析シートに値が無いときの自前計算）
+Private Function S_出来高5日平均(ByRef vols As Variant) As Double
+    S_出来高5日平均 = 0
+    On Error GoTo ExitF
+    If IsEmpty(vols) Then Exit Function
+    Dim vi As Long, vsum As Double, vcnt As Long
+    For vi = 2 To 6
+        If UBound(vols, 2) >= vi Then
+            If IsNumeric(vols(1, vi)) Then
+                If CDbl(vols(1, vi)) > 0 Then
+                    vsum = vsum + CDbl(vols(1, vi)): vcnt = vcnt + 1
+                End If
+            End If
+        End If
+    Next vi
+    If vcnt > 0 Then S_出来高5日平均 = vsum / vcnt
+ExitF:
+End Function
+
+'   Excelの状態を必ず元に戻す（正常終了・異常終了どちらからも呼ぶ）
+Private Sub S_後始末(ByVal extWs As Worksheet, ByVal mws As Worksheet, _
+                     ByVal anaWs As Worksheet, _
+                     ByVal pExt As Boolean, ByVal pMei As Boolean, ByVal pAna As Boolean, _
+                     ByVal savCalc As XlCalculation)
+    On Error Resume Next
+    Application.StatusBar = False
+    Application.Calculation = savCalc
+    Application.ScreenUpdating = True
+    Application.CutCopyMode = False
+    If pExt Then extWs.Protect Password:=S_PW, DrawingObjects:=True, Contents:=True, Scenarios:=True
+    If pMei Then mws.Protect Password:=S_PW, DrawingObjects:=True, Contents:=True, Scenarios:=True
+    If pAna Then anaWs.Protect Password:=S_PW, DrawingObjects:=True, Contents:=True, Scenarios:=True
+    Err.Clear
+    On Error GoTo 0
+End Sub
+
+'   右側(U～AC)の推奨指値ブロックを、いま出ている銘柄で作り直す。
+'   Mod_推奨指値 に無言版が無い環境では何もしない（ブロックは消えたまま）。
+Private Sub S_推奨指値を更新()
+    On Error Resume Next
+    Application.Run "推奨指値_売抽出v13_無言"
+    Err.Clear
+    On Error GoTo 0
+End Sub
+
+'   銘柄名が取れなかった行があれば、完了メッセージに一言添える。
+Private Function S_名称注意書き(ByVal ws As Worksheet, ByVal outRow As Long) As String
+    S_名称注意書き = ""
+    Dim r As Long, n As Long
+    For r = S_DATA_ROW To outRow - 1
+        If InStr(CStr(ws.Cells(r, S_NAME_COL).Value), "名称未取得") > 0 Then n = n + 1
+    Next r
+    If n > 0 Then
+        S_名称注意書き = "※ 銘柄名が未取得の行が " & n & " 件あります。" & vbCrLf & _
+                         "　 RSSが繋がっている取引時間中に「銘柄名キャッシュ更新」を" & vbCrLf & _
+                         "　 一度実行すると、以降は名前が出るようになります。"
+    End If
+End Function
+
+'=============================================================================
+' ★v4追加：銘柄名を後から直すボタン
+'   すでに出ている抽出結果の銘柄名だけを、キャッシュを使って埋め直す。
+'   抽出をやり直さないので、指値や順位はそのまま。
+'=============================================================================
+Public Sub 売抽出_銘柄名を直す()
+    Dim ws As Worksheet: Set ws = S_GetWs("売抽出v13")
+    If ws Is Nothing Then
+        UI_Msg "「売抽出v13」シートが見つかりません。", vbExclamation: Exit Sub
+    End If
+
+    Dim pWs As Boolean: pWs = ws.ProtectContents
+    On Error Resume Next
+    ws.Unprotect Password:=S_PW
+    On Error GoTo 0
+
+    ws.Columns(S_NAME_COL).NumberFormat = "@"
+
+    Dim dic As Object: Set dic = 名称辞書作成()
+    Dim closeWs As Worksheet: Set closeWs = S_GetWs("終値")
+
+    Dim last As Long: last = ws.Cells(ws.Rows.Count, 3).End(xlUp).Row
+    Dim r As Long, fixedCnt As Long
+    For r = S_DATA_ROW To last
+        Dim code As String: code = Trim$(CStr(ws.Cells(r, 3).Value))
+        If code <> "" Then
+            Dim cur As String: cur = S_SafeStr(ws.Cells(r, S_NAME_COL).Value)
+            If NC_名称が無効(cur) Then
+                名称セル書込 ws, r, S_NAME_COL, 銘柄名解決(code, dic)
+                fixedCnt = fixedCnt + 1
+            End If
+        End If
+    Next r
+
+    On Error Resume Next
+    If pWs Then ws.Protect Password:=S_PW, DrawingObjects:=True, Contents:=True, Scenarios:=True
+    On Error GoTo 0
+
+    UI_Msg "銘柄名を " & fixedCnt & " 件 埋め直しました。", vbInformation, "売り抽出"
+End Sub
+
+
+##############################################################################
+#  Mod_推奨指値.bas   （719行）
+##############################################################################
+
+Attribute VB_Name = "Mod_推奨指値"
+'==============================================================================
+' 総合売買抽出BOOK　推奨指値モジュール  v1.0  (2026/08/15)
+'
+'   買抽出v13 / 売抽出v13 / 厳選TOP2 / 個別銘柄 の4シートに
+'   「いくらで入るか」を表示する。
+'
+'------------------------------------------------------------------------------
+' 【検証の根拠】300銘柄 × 250営業日（2025/07/31～2026/08/14）の実データ
+'
+'  ■ 買い（シグナル6,975件）
+'     ・寄付で買うと 95.8% が当日一度は含み損（中央 -1.33%）
+'     ・翌日安値は当日終値から 中央 0.46ATR 下まで落ちる
+'     ・下落幅は%では条件により10倍変わるが、ATRで割ると 0.41～0.60 でほぼ一定
+'     ・毎日 上位10候補すべてに 終値-0.75ATR の指値／3営業日有効 が最良
+'          翌日寄付で成行 : 平均 +0.179R  勝率 46.2%  年間494取引
+'          指値 -0.75ATR : 平均 +0.413R  勝率 53.1%  年間477取引
+'       期間前半/後半・建玉1～5銘柄・高精度シグナル限定 いずれでも優劣は不変
+'     ・「急騰銘柄はもっと深く指す」「過熱銘柄は見送る」は逆効果だった
+'          一律0.75ATR +0.408R → 過熱度連動 +0.357R → 過熱は見送り +0.296R
+'
+'  ■ 売り（シグナル3,571件）── 買いとは非対称
+'     ・翌日高値は当日終値から 中央 0.39ATR 上まで戻る（終値超え率 84.0%）
+'     ・しかし「戻りを待つ指値売り」は成績が落ちた
+'          翌日寄付で成行  : 平均 +0.062R  勝率 48.1%
+'          指値 +0.50ATR  : 平均 +0.010R
+'          指値 +0.75ATR  : 平均 -0.044R
+'          逆指値 -0.25ATR: 平均 -0.056R  （下抜け確認も改善しない）
+'       → 売りは寄付成行のまま。ただし検証期間は +16.2% の上昇相場1年のみで、
+'         空売りに構造的に不利な期間。売りの結論は信頼度が低い。
+'
+'  ■ 決済（V811設定に合わせている）
+'     損切 = 建値 -/+ 2ATR（建値の3%～10%に制限）／ 利確 = 損切幅 × 2
+'
+'  ※ 約定はすべて「安値/高値が指値にタッチすれば約定」として計算している。
+'     板の順番で刺さらないことがあるため、実効約定率は表示より低くなる。
+'------------------------------------------------------------------------------
+' 【使い方】
+'   1. VBEで [ファイル]→[ファイルのインポート] からこの .bas を読み込む
+'   2. 推奨指値_全シート更新 を実行（またはボタン設置を1回だけ実行）
+'   3. 買抽出v13 と 売抽出v13 は U～AC列、厳選TOP2 は N～Q列、
+'      個別銘柄 は A24～C29 に出力される（既存の列は一切書き換えない）
+'==============================================================================
+Option Explicit
+
+'--- 買いの指値（ATR倍数） --------------------------------------------------
+Public Const BUY_K_LIGHT As Double = 0.5     '第1指値（浅い・約定しやすい）
+Public Const BUY_K_MAIN  As Double = 0.75    '★本命指値（検証で最良）
+Public Const BUY_K_DEEP  As Double = 1.25    '深押し指値
+Public Const BUY_K_MAIN_HIGHSCORE As Double = 1#  '高精度シグナル(16以上)はここまで引ける
+Public Const BUY_VALID_DAYS As Long = 3      '指値の有効日数（営業日）
+
+'--- 売りの参考水準（ATR倍数・エントリーは寄付成行） ------------------------
+Public Const SELL_K_MID  As Double = 0.39    '翌日高値の中央到達点
+Public Const SELL_K_HIGH As Double = 0.7     '同 P75
+
+'--- 決済（V811設定と同じ） -------------------------------------------------
+Public Const ATR_PERIOD   As Long = 14
+Public Const STOP_ATR     As Double = 2#
+Public Const STOP_MIN_PCT As Double = 0.03
+Public Const STOP_MAX_PCT As Double = 0.1
+Public Const REWARD_RATIO As Double = 2#
+Public Const HITRATE_LOOKBACK As Long = 120  '到達率を測る過去日数
+
+'--- シート・レイアウト -----------------------------------------------------
+Private Const SH_BUY  As String = "買抽出v13"
+Private Const SH_SELL As String = "売抽出v13"
+Private Const SH_TOP2 As String = "厳選TOP2"
+Private Const SH_ONE  As String = "個別銘柄"
+Private Const SH_HI   As String = "高値"
+Private Const SH_LO   As String = "安値"
+Private Const SH_CL   As String = "終値"
+
+Private Const EXT_DATA_ROW As Long = 4       '買抽出v13 / 売抽出v13 のデータ開始行
+Private Const EXT_CODE_COL As Long = 3       '　同 銘柄コード列(C)
+Private Const OUT_COL      As Long = 21      '　同 出力開始列(U)
+Private Const OUT_WIDTH    As Long = 9       '　同 出力列数(U～AC)
+
+Private Const TOP2_BUY_HDR  As Long = 17     '厳選TOP2 買い候補ヘッダー行
+Private Const TOP2_BUY_ROWS As Long = 5      '　同 データ5行(18～22)
+Private Const TOP2_SEL_HDR  As Long = 25     '厳選TOP2 売り候補ヘッダー行
+Private Const TOP2_SEL_ROWS As Long = 5      '　同 データ5行(26～30)
+Private Const TOP2_CODE_COL As Long = 2      '　同 銘柄コード列(B)
+Private Const TOP2_OUT_COL  As Long = 14     '　同 出力開始列(N～Q)
+
+Private Const ONE_CODE_CELL As String = "B3" '個別銘柄 銘柄コード入力セル
+Private Const ONE_OUT_ROW   As Long = 24     '　同 出力開始行(24～29)
+
+Private Const STOCK_DATA_START As Long = 6   '高値/安値/終値 のデータ開始行
+Private Const HIST_FIRST_COL   As Long = 5   '　同 E列＝最新日
+Private Const SHEET_PW As String = "ne19480314"
+
+Private Const COL_HDR   As Long = 8281600    'RGB(0,70,127) 濃紺
+Private Const COL_WHITE As Long = 16777215
+Private Const COL_GOLD  As Long = 55295      'RGB(255,215,0)
+Private Const COL_RED   As Long = 192
+
+'==============================================================================
+' メイン
+'==============================================================================
+Public Sub 推奨指値_全シート更新()
+    Dim t As Double: t = Timer
+    Dim msg As String
+    Dim nBuy As Long, nSell As Long, nTop2 As Long
+    Dim okOne As Boolean
+
+    Application.ScreenUpdating = False
+    Application.StatusBar = "推奨指値を計算中..."
+
+    If Not DataSheetsReady() Then
+        Application.ScreenUpdating = True
+        Application.StatusBar = False
+        MsgBox "「高値」「安値」「終値」シートが必要です。", vbExclamation, "推奨指値"
+        Exit Sub
+    End If
+
+    nBuy = 更新_抽出シート(SH_BUY, True)
+    nSell = 更新_抽出シート(SH_SELL, False)
+    nTop2 = 更新_厳選TOP2()
+    okOne = 更新_個別銘柄()
+
+    Application.StatusBar = False
+    Application.ScreenUpdating = True
+
+    msg = "推奨指値を更新しました。（" & Format(Timer - t, "0.0") & "秒）" & vbCrLf & vbCrLf
+    msg = msg & "　買抽出v13 ： " & nBuy & " 銘柄　→ U～AC列" & vbCrLf
+    msg = msg & "　売抽出v13 ： " & nSell & " 銘柄　→ U～AC列" & vbCrLf
+    msg = msg & "　厳選TOP2 　： " & nTop2 & " 銘柄　→ N～Q列" & vbCrLf
+    msg = msg & "　個別銘柄 　： " & IIf(okOne, "表示中", "対象なし") & "　→ A24～C29" & vbCrLf & vbCrLf
+    msg = msg & "【買い】指値 = 終値 － " & BUY_K_MAIN & " × ATR14 を " & BUY_VALID_DAYS & "営業日有効で出す。" & vbCrLf
+    msg = msg & "　　　　刺さらなければ取り消して翌日の候補へ。" & vbCrLf
+    msg = msg & "【売り】検証では寄付成行が最良。戻り待ちの指値売りは成績が落ちる。"
+    MsgBox msg, vbInformation, "推奨指値 v1.0"
+End Sub
+
+Public Sub 推奨指値_買抽出v13()
+    If Not DataSheetsReady() Then Exit Sub
+    MsgBox 更新_抽出シート(SH_BUY, True) & " 銘柄を更新しました（U～AC列）。", vbInformation, "推奨指値"
+End Sub
+
+Public Sub 推奨指値_売抽出v13()
+    If Not DataSheetsReady() Then Exit Sub
+    MsgBox 更新_抽出シート(SH_SELL, False) & " 銘柄を更新しました（U～AC列）。", vbInformation, "推奨指値"
+End Sub
+
+' ★v1.1追加：メッセージを出さない版。
+'   売り抽出／買い抽出の最後から自動で呼ばれる。
+'   （抽出のたびに手で押さないと、右側U～AC列に前回の銘柄の指値が残ってしまうため）
+Public Sub 推奨指値_売抽出v13_無言()
+    If Not DataSheetsReady() Then Exit Sub
+    更新_抽出シート SH_SELL, False
+End Sub
+
+Public Sub 推奨指値_買抽出v13_無言()
+    If Not DataSheetsReady() Then Exit Sub
+    更新_抽出シート SH_BUY, True
+End Sub
+
+Public Sub 推奨指値_厳選TOP2()
+    If Not DataSheetsReady() Then Exit Sub
+    MsgBox 更新_厳選TOP2() & " 銘柄を更新しました（N～Q列）。", vbInformation, "推奨指値"
+End Sub
+
+Public Sub 推奨指値_個別銘柄()
+    If Not DataSheetsReady() Then Exit Sub
+    If 更新_個別銘柄() Then
+        MsgBox "個別銘柄シートを更新しました（A24～C29）。", vbInformation, "推奨指値"
+    Else
+        MsgBox "その銘柄コードは 終値シートに見つかりませんでした。", vbExclamation, "推奨指値"
+    End If
+End Sub
+
+'==============================================================================
+' 買抽出v13 / 売抽出v13
+'==============================================================================
+Private Function 更新_抽出シート(ByVal sheetName As String, ByVal isBuy As Boolean) As Long
+    更新_抽出シート = 0
+    Dim ws As Worksheet: Set ws = GetWsX(sheetName)
+    If ws Is Nothing Then Exit Function
+
+    Dim hiWs As Worksheet: Set hiWs = GetWsX(SH_HI)
+    Dim loWs As Worksheet: Set loWs = GetWsX(SH_LO)
+    Dim clWs As Worksheet: Set clWs = GetWsX(SH_CL)
+
+    On Error Resume Next
+    ws.Unprotect Password:=SHEET_PW
+    On Error GoTo 0
+
+    HeaderOut ws, 2, OUT_COL, isBuy
+
+    Dim lastRow As Long
+    lastRow = ws.Cells(ws.Rows.Count, EXT_CODE_COL).End(xlUp).Row
+    If lastRow < EXT_DATA_ROW Then lastRow = EXT_DATA_ROW
+    ws.Range(ws.Cells(EXT_DATA_ROW, OUT_COL), _
+             ws.Cells(lastRow + 300, OUT_COL + OUT_WIDTH - 1)).Clear
+
+    Dim dic As Object: Set dic = BuildCodeIndex(clWs)
+    Dim r As Long, cnt As Long
+    For r = EXT_DATA_ROW To lastRow
+        Dim code As String: code = NormCode(ws.Cells(r, EXT_CODE_COL).Value)
+        If code <> "" Then
+            If dic.Exists(code) Then
+                Dim sc As Double: sc = SafeNumX(ws.Cells(r, 17).Value, 0)   'Q列＝スコア
+                If OneRow(ws, r, OUT_COL, CLng(dic(code)), hiWs, loWs, clWs, isBuy, sc) Then
+                    cnt = cnt + 1
+                End If
+            End If
+        End If
+    Next r
+
+    ws.Range(ws.Cells(EXT_DATA_ROW, OUT_COL), ws.Cells(lastRow, OUT_COL + OUT_WIDTH - 1)).Font.Size = 11
+    On Error Resume Next
+    ws.Columns(OUT_COL).Resize(, OUT_WIDTH).AutoFit
+    On Error GoTo 0
+    更新_抽出シート = cnt
+End Function
+
+Private Sub HeaderOut(ByVal ws As Worksheet, ByVal titleRow As Long, ByVal c0 As Long, ByVal isBuy As Boolean)
+    Dim h As Variant, i As Long
+    If isBuy Then
+        ws.Cells(titleRow, c0).Value = "▼ 推奨指値 v1.0 ： 終値 － " & BUY_K_MAIN & " × ATR14 を " & _
+                                       BUY_VALID_DAYS & "営業日有効で出す（平均 +0.413R / 勝率 53.1%）"
+        h = Array("基準終値", "ATR14", "第1指値" & vbLf & "-" & BUY_K_LIGHT & "ATR", _
+                  "★本命指値" & vbLf & "-" & BUY_K_MAIN & "ATR", "深押し" & vbLf & "-" & BUY_K_DEEP & "ATR", _
+                  "本命" & vbLf & "到達率", "約定時" & vbLf & "損切", "約定時" & vbLf & "利確", "ひとこと")
+    Else
+        ws.Cells(titleRow, c0).Value = "▼ 推奨エントリー v1.0 ： 売りは寄付成行が最良（+0.062R）。" & _
+                                       "戻り待ちの指値売りは成績が落ちる（+0.75ATRで -0.044R）"
+        h = Array("基準終値", "ATR14", "戻り目安" & vbLf & "+" & SELL_K_MID & "ATR", _
+                  "戻り上限" & vbLf & "+" & SELL_K_HIGH & "ATR", "★エントリー" & vbLf & "寄付成行", _
+                  "戻り" & vbLf & "到達率", "建値時" & vbLf & "損切", "建値時" & vbLf & "利確", "ひとこと")
+    End If
+    ws.Cells(titleRow, c0).Font.Bold = True
+    For i = 0 To UBound(h)
+        With ws.Cells(3, c0 + i)
+            .Value = h(i)
+            .Font.Bold = True
+            .Font.Size = 11
+            .Interior.Color = COL_HDR
+            .Font.Color = COL_WHITE
+            .HorizontalAlignment = xlCenter
+            .VerticalAlignment = xlCenter
+            .WrapText = True
+        End With
+    Next i
+End Sub
+
+Private Function OneRow(ByVal ws As Worksheet, ByVal r As Long, ByVal c0 As Long, _
+                        ByVal srcRow As Long, ByVal hiWs As Worksheet, ByVal loWs As Worksheet, _
+                        ByVal clWs As Worksheet, ByVal isBuy As Boolean, ByVal scoreVal As Double) As Boolean
+    OneRow = False
+    Dim h() As Double, L() As Double, c() As Double, a() As Double, cnt As Long
+    If Not LoadBars(hiWs, loWs, clWs, srcRow, h, L, c, a, cnt) Then Exit Function
+
+    Dim px As Double: px = c(cnt)
+    Dim atrNow As Double: atrNow = a(cnt)
+    If px <= 0 Or atrNow <= 0 Then Exit Function
+
+    Dim kMain As Double: kMain = BUY_K_MAIN
+    If isBuy And scoreVal >= 16 Then kMain = BUY_K_MAIN_HIGHSCORE
+
+    Dim p1 As Double, p2 As Double, p3 As Double, entry As Double, hit As Double, sd As Double
+    If isBuy Then
+        p1 = TickDown(px - BUY_K_LIGHT * atrNow)
+        p2 = TickDown(px - kMain * atrNow)
+        p3 = TickDown(px - BUY_K_DEEP * atrNow)
+        entry = p2
+        hit = HitRateDown(h, L, c, a, cnt, kMain)
+        sd = StopDist(entry, atrNow)
+    Else
+        p1 = TickUp(px + SELL_K_MID * atrNow)
+        p2 = TickUp(px + SELL_K_HIGH * atrNow)
+        p3 = px                                   '★エントリー＝寄付成行（基準は直近終値）
+        entry = px
+        hit = HitRateUp(h, L, c, a, cnt, SELL_K_MID)
+        sd = StopDist(entry, atrNow)
+    End If
+
+    With ws
+        .Cells(r, c0).Value = px
+        .Cells(r, c0 + 1).Value = Round(atrNow, 1)
+        .Cells(r, c0 + 2).Value = p1
+        .Cells(r, c0 + 3).Value = p2
+        .Cells(r, c0 + 4).Value = p3
+        .Cells(r, c0 + 5).Value = Format(hit, "0.0") & "%"
+        If isBuy Then
+            .Cells(r, c0 + 6).Value = TickDown(entry - sd)
+            .Cells(r, c0 + 7).Value = TickUp(entry + REWARD_RATIO * sd)
+        Else
+            .Cells(r, c0 + 6).Value = TickUp(entry + sd)
+            .Cells(r, c0 + 7).Value = TickDown(entry - REWARD_RATIO * sd)
+        End If
+        .Cells(r, c0 + 8).Value = Hitokoto(px, atrNow, c, cnt, isBuy, scoreVal, kMain)
+
+        .Range(.Cells(r, c0), .Cells(r, c0 + 4)).NumberFormat = "#,##0"
+        .Range(.Cells(r, c0 + 6), .Cells(r, c0 + 7)).NumberFormat = "#,##0"
+        .Range(.Cells(r, c0), .Cells(r, c0 + 8)).HorizontalAlignment = xlRight
+        .Cells(r, c0 + 8).HorizontalAlignment = xlLeft
+
+        Dim hi As Range
+        If isBuy Then Set hi = .Cells(r, c0 + 3) Else Set hi = .Cells(r, c0 + 4)
+        hi.Interior.Color = COL_GOLD
+        hi.Font.Bold = True
+    End With
+    OneRow = True
+End Function
+
+'==============================================================================
+' 厳選TOP2
+'==============================================================================
+Private Function 更新_厳選TOP2() As Long
+    更新_厳選TOP2 = 0
+    Dim ws As Worksheet: Set ws = GetWsX(SH_TOP2)
+    If ws Is Nothing Then Exit Function
+    Dim hiWs As Worksheet: Set hiWs = GetWsX(SH_HI)
+    Dim loWs As Worksheet: Set loWs = GetWsX(SH_LO)
+    Dim clWs As Worksheet: Set clWs = GetWsX(SH_CL)
+
+    On Error Resume Next
+    ws.Unprotect Password:=SHEET_PW
+    On Error GoTo 0
+
+    Top2Header ws, TOP2_BUY_HDR, True
+    Top2Header ws, TOP2_SEL_HDR, False
+
+    ws.Range(ws.Cells(TOP2_BUY_HDR + 1, TOP2_OUT_COL), _
+             ws.Cells(TOP2_BUY_HDR + TOP2_BUY_ROWS, TOP2_OUT_COL + 3)).Clear
+    ws.Range(ws.Cells(TOP2_SEL_HDR + 1, TOP2_OUT_COL), _
+             ws.Cells(TOP2_SEL_HDR + TOP2_SEL_ROWS, TOP2_OUT_COL + 3)).Clear
+
+    Dim dic As Object: Set dic = BuildCodeIndex(clWs)
+    Dim cnt As Long
+    cnt = cnt + Top2Block(ws, TOP2_BUY_HDR + 1, TOP2_BUY_ROWS, True, dic, hiWs, loWs, clWs)
+    cnt = cnt + Top2Block(ws, TOP2_SEL_HDR + 1, TOP2_SEL_ROWS, False, dic, hiWs, loWs, clWs)
+    On Error Resume Next
+    ws.Columns(TOP2_OUT_COL).Resize(, 4).AutoFit
+    On Error GoTo 0
+    更新_厳選TOP2 = cnt
+End Function
+
+Private Sub Top2Header(ByVal ws As Worksheet, ByVal hdrRow As Long, ByVal isBuy As Boolean)
+    Dim h As Variant, i As Long
+    If isBuy Then
+        h = Array("ATR14", "★本命指値" & vbLf & "-" & BUY_K_MAIN & "ATR", "到達率", "約定時損切")
+    Else
+        h = Array("ATR14", "★エントリー" & vbLf & "寄付成行", "戻り目安" & vbLf & "+" & SELL_K_MID & "ATR", "建値時損切")
+    End If
+    For i = 0 To UBound(h)
+        With ws.Cells(hdrRow, TOP2_OUT_COL + i)
+            .Value = h(i)
+            .Font.Bold = True
+            .Interior.Color = COL_HDR
+            .Font.Color = COL_WHITE
+            .HorizontalAlignment = xlCenter
+            .VerticalAlignment = xlCenter
+            .WrapText = True
+        End With
+    Next i
+End Sub
+
+Private Function Top2Block(ByVal ws As Worksheet, ByVal r0 As Long, ByVal nRows As Long, _
+                           ByVal isBuy As Boolean, ByVal dic As Object, _
+                           ByVal hiWs As Worksheet, ByVal loWs As Worksheet, _
+                           ByVal clWs As Worksheet) As Long
+    Dim i As Long, cnt As Long
+    For i = 0 To nRows - 1
+        Dim r As Long: r = r0 + i
+        Dim code As String: code = NormCode(ws.Cells(r, TOP2_CODE_COL).Value)
+        If code <> "" Then
+            If dic.Exists(code) Then
+                Dim h() As Double, L() As Double, c() As Double, a() As Double, cntB As Long
+                If LoadBars(hiWs, loWs, clWs, CLng(dic(code)), h, L, c, a, cntB) Then
+                    Dim px As Double: px = c(cntB)
+                    Dim atrNow As Double: atrNow = a(cntB)
+                    If px > 0 And atrNow > 0 Then
+                        Dim sd As Double
+                        With ws
+                            .Cells(r, TOP2_OUT_COL).Value = Round(atrNow, 1)
+                            If isBuy Then
+                                Dim lim As Double: lim = TickDown(px - BUY_K_MAIN * atrNow)
+                                sd = StopDist(lim, atrNow)
+                                .Cells(r, TOP2_OUT_COL + 1).Value = lim
+                                .Cells(r, TOP2_OUT_COL + 2).Value = _
+                                    Format(HitRateDown(h, L, c, a, cntB, BUY_K_MAIN), "0.0") & "%"
+                                .Cells(r, TOP2_OUT_COL + 3).Value = TickDown(lim - sd)
+                            Else
+                                sd = StopDist(px, atrNow)
+                                .Cells(r, TOP2_OUT_COL + 1).Value = px
+                                .Cells(r, TOP2_OUT_COL + 2).Value = TickUp(px + SELL_K_MID * atrNow)
+                                .Cells(r, TOP2_OUT_COL + 3).Value = TickUp(px + sd)
+                            End If
+                            .Range(.Cells(r, TOP2_OUT_COL), .Cells(r, TOP2_OUT_COL + 3)).NumberFormat = "#,##0"
+                            .Cells(r, TOP2_OUT_COL + 2).NumberFormat = "General"
+                            With .Cells(r, TOP2_OUT_COL + 1)
+                                .Interior.Color = COL_GOLD
+                                .Font.Bold = True
+                            End With
+                        End With
+                        cnt = cnt + 1
+                    End If
+                End If
+            End If
+        End If
+    Next i
+    Top2Block = cnt
+End Function
+
+'==============================================================================
+' 個別銘柄
+'==============================================================================
+Private Function 更新_個別銘柄() As Boolean
+    更新_個別銘柄 = False
+    Dim ws As Worksheet: Set ws = GetWsX(SH_ONE)
+    If ws Is Nothing Then Exit Function
+    Dim hiWs As Worksheet: Set hiWs = GetWsX(SH_HI)
+    Dim loWs As Worksheet: Set loWs = GetWsX(SH_LO)
+    Dim clWs As Worksheet: Set clWs = GetWsX(SH_CL)
+
+    On Error Resume Next
+    ws.Unprotect Password:=SHEET_PW
+    On Error GoTo 0
+
+    Dim r As Long
+    ws.Range(ws.Cells(ONE_OUT_ROW, 1), ws.Cells(ONE_OUT_ROW + 5, 3)).Clear
+
+    With ws.Cells(ONE_OUT_ROW, 1)
+        .Value = "■ 推奨指値（ATR連動 v1.0）"
+        .Font.Bold = True
+    End With
+
+    Dim code As String: code = NormCode(ws.Range(ONE_CODE_CELL).Value)
+    If code = "" Then
+        ws.Cells(ONE_OUT_ROW + 1, 1).Value = "銘柄コードを B3 に入力してください"
+        Exit Function
+    End If
+
+    Dim dic As Object: Set dic = BuildCodeIndex(clWs)
+    If Not dic.Exists(code) Then
+        ws.Cells(ONE_OUT_ROW + 1, 1).Value = "終値シートにこの銘柄がありません"
+        Exit Function
+    End If
+
+    Dim h() As Double, L() As Double, c() As Double, a() As Double, cnt As Long
+    If Not LoadBars(hiWs, loWs, clWs, CLng(dic(code)), h, L, c, a, cnt) Then
+        ws.Cells(ONE_OUT_ROW + 1, 1).Value = "株価データが不足しています（ATR14の計算に15日必要）"
+        Exit Function
+    End If
+    Dim px As Double: px = c(cnt)
+    Dim atrNow As Double: atrNow = a(cnt)
+    If px <= 0 Or atrNow <= 0 Then Exit Function
+
+    Dim labs As Variant, vals As Variant, memo As Variant
+    labs = Array("基準終値", "ATR14", "買 第1 －" & BUY_K_LIGHT & "ATR", _
+                 "買 ★本命 －" & BUY_K_MAIN & "ATR", "買 深押し －" & BUY_K_DEEP & "ATR")
+    vals = Array(px, Round(atrNow, 1), TickDown(px - BUY_K_LIGHT * atrNow), _
+                 TickDown(px - BUY_K_MAIN * atrNow), TickDown(px - BUY_K_DEEP * atrNow))
+    memo = Array("売りは寄付成行が最良（検証結果）", _
+                 "ボラティリティ " & Format(atrNow / px * 100, "0.0") & "%", _
+                 "到達率 " & Format(HitRateDown(h, L, c, a, cnt, BUY_K_LIGHT), "0.0") & "%", _
+                 "到達率 " & Format(HitRateDown(h, L, c, a, cnt, BUY_K_MAIN), "0.0") & "%　" & _
+                 BUY_VALID_DAYS & "営業日有効で出す", _
+                 "到達率 " & Format(HitRateDown(h, L, c, a, cnt, BUY_K_DEEP), "0.0") & "%")
+
+    Dim i As Long
+    For i = 0 To 4
+        r = ONE_OUT_ROW + 1 + i
+        ws.Cells(r, 1).Value = labs(i)
+        ws.Cells(r, 2).Value = vals(i)
+        ws.Cells(r, 2).NumberFormat = "#,##0"
+        ws.Cells(r, 3).Value = memo(i)
+        ws.Cells(r, 3).Font.Size = 9
+    Next i
+    With ws.Cells(ONE_OUT_ROW + 4, 2)
+        .Interior.Color = COL_GOLD
+        .Font.Bold = True
+    End With
+    更新_個別銘柄 = True
+End Function
+
+'==============================================================================
+' 株価系列とATR
+'==============================================================================
+'   シートは E列＝最新 なので、配列は 1=最古 … cnt=最新 に詰め直す
+Private Function LoadBars(ByVal hiWs As Worksheet, ByVal loWs As Worksheet, ByVal clWs As Worksheet, _
+                          ByVal srcRow As Long, ByRef h() As Double, ByRef L() As Double, _
+                          ByRef c() As Double, ByRef a() As Double, ByRef cnt As Long) As Boolean
+    LoadBars = False
+    On Error GoTo Fail
+    Dim lastCol As Long: lastCol = HistLastCol(clWs)
+    Dim maxN As Long: maxN = lastCol - HIST_FIRST_COL + 1
+    If maxN < ATR_PERIOD + 2 Then Exit Function
+    If maxN > HITRATE_LOOKBACK + ATR_PERIOD + 10 Then maxN = HITRATE_LOOKBACK + ATR_PERIOD + 10
+    lastCol = HIST_FIRST_COL + maxN - 1
+
+    Dim hv As Variant, lv As Variant, cv As Variant
+    hv = hiWs.Range(hiWs.Cells(srcRow, HIST_FIRST_COL), hiWs.Cells(srcRow, lastCol)).Value
+    lv = loWs.Range(loWs.Cells(srcRow, HIST_FIRST_COL), loWs.Cells(srcRow, lastCol)).Value
+    cv = clWs.Range(clWs.Cells(srcRow, HIST_FIRST_COL), clWs.Cells(srcRow, lastCol)).Value
+
+    ReDim h(1 To maxN): ReDim L(1 To maxN): ReDim c(1 To maxN)
+    cnt = 0
+    Dim k As Long, h1 As Double, l1 As Double, c1 As Double
+    For k = maxN To 1 Step -1
+        h1 = SafeNumX(hv(1, k), 0): l1 = SafeNumX(lv(1, k), 0): c1 = SafeNumX(cv(1, k), 0)
+        If h1 > 0 And l1 > 0 And c1 > 0 And h1 >= l1 Then
+            cnt = cnt + 1
+            h(cnt) = h1: L(cnt) = l1: c(cnt) = c1
+        End If
+    Next k
+    If cnt < ATR_PERIOD + 2 Then Exit Function
+
+    ReDim a(1 To cnt)
+    Dim tr As Double, a1 As Double, seeded As Boolean
+    a(1) = 0
+    For k = 2 To cnt
+        tr = h(k) - L(k)
+        If Abs(h(k) - c(k - 1)) > tr Then tr = Abs(h(k) - c(k - 1))
+        If Abs(L(k) - c(k - 1)) > tr Then tr = Abs(L(k) - c(k - 1))
+        If Not seeded Then
+            a1 = tr: seeded = True
+        Else
+            a1 = (a1 * (ATR_PERIOD - 1) + tr) / ATR_PERIOD
+        End If
+        a(k) = a1
+    Next k
+    LoadBars = (a(cnt) > 0)
+    Exit Function
+Fail:
+End Function
+
+'   その銘柄で「翌日安値 ≦ 終値 － k×ATR」になった実績の割合
+Private Function HitRateDown(ByRef h() As Double, ByRef L() As Double, ByRef c() As Double, _
+                             ByRef a() As Double, ByVal cnt As Long, ByVal k As Double) As Double
+    Dim i As Long, n As Long, hitN As Long
+    Dim first As Long: first = cnt - HITRATE_LOOKBACK
+    If first < ATR_PERIOD + 1 Then first = ATR_PERIOD + 1
+    For i = first To cnt - 1
+        If a(i) > 0 Then
+            n = n + 1
+            If L(i + 1) <= c(i) - k * a(i) Then hitN = hitN + 1
+        End If
+    Next i
+    If n > 0 Then HitRateDown = hitN / n * 100#
+End Function
+
+'   その銘柄で「翌日高値 ≧ 終値 + k×ATR」になった実績の割合
+Private Function HitRateUp(ByRef h() As Double, ByRef L() As Double, ByRef c() As Double, _
+                           ByRef a() As Double, ByVal cnt As Long, ByVal k As Double) As Double
+    Dim i As Long, n As Long, hitN As Long
+    Dim first As Long: first = cnt - HITRATE_LOOKBACK
+    If first < ATR_PERIOD + 1 Then first = ATR_PERIOD + 1
+    For i = first To cnt - 1
+        If a(i) > 0 Then
+            n = n + 1
+            If h(i + 1) >= c(i) + k * a(i) Then hitN = hitN + 1
+        End If
+    Next i
+    If n > 0 Then HitRateUp = hitN / n * 100#
+End Function
+
+Private Function StopDist(ByVal entry As Double, ByVal atrNow As Double) As Double
+    Dim sd As Double: sd = STOP_ATR * atrNow
+    If sd < entry * STOP_MIN_PCT Then sd = entry * STOP_MIN_PCT
+    If sd > entry * STOP_MAX_PCT Then sd = entry * STOP_MAX_PCT
+    StopDist = sd
+End Function
+
+Private Function Hitokoto(ByVal px As Double, ByVal atrNow As Double, ByRef c() As Double, _
+                          ByVal cnt As Long, ByVal isBuy As Boolean, ByVal scoreVal As Double, _
+                          ByVal kMain As Double) As String
+    Dim s As String
+    Dim atrPct As Double: atrPct = atrNow / px * 100#
+    If isBuy And scoreVal >= 16 Then s = s & "高精度→" & kMain & "ATRまで引ける "
+    If cnt >= 2 Then
+        Dim chg As Double: chg = (c(cnt) / c(cnt - 1) - 1) * 100#
+        If chg >= 9 Then
+            s = s & "前日比" & Format(chg, "+0.0") & "% 急騰直後 "
+        ElseIf chg <= -9 Then
+            s = s & "前日比" & Format(chg, "+0.0") & "% 急落直後 "
+        End If
+    End If
+    Dim e25 As Double: e25 = EMAx(c, cnt, 25)
+    If e25 > 0 Then
+        Dim dev As Double: dev = (px / e25 - 1) * 100#
+        If isBuy Then
+            If dev >= 15 Then s = s & "25日EMA乖離" & Format(dev, "+0") & "% 高値警戒 "
+            If dev < 0 Then s = s & "25日EMA割れ 見送り推奨 "
+        Else
+            If dev <= -15 Then s = s & "25日EMA乖離" & Format(dev, "+0") & "% 売られ過ぎ "
+            If dev > 0 Then s = s & "25日EMA上 売りには不利 "
+        End If
+    End If
+    If atrPct >= 5 Then
+        s = s & "高ボラ(ATR" & Format(atrPct, "0.0") & "%) 株数を絞る "
+    ElseIf atrPct <= 1.5 Then
+        s = s & "低ボラ(ATR" & Format(atrPct, "0.0") & "%) 指値は浅めで可 "
+    End If
+    If s = "" Then s = "標準"
+    Hitokoto = Trim$(s)
+End Function
+
+Private Function EMAx(ByRef c() As Double, ByVal cnt As Long, ByVal period As Long) As Double
+    If cnt < 2 Then Exit Function
+    Dim k As Double: k = 2# / (period + 1#)
+    Dim e As Double: e = c(1)
+    Dim i As Long
+    For i = 2 To cnt
+        e = k * c(i) + (1# - k) * e
+    Next i
+    EMAx = e
+End Function
+
+'==============================================================================
+' 補助
+'==============================================================================
+Private Function DataSheetsReady() As Boolean
+    DataSheetsReady = Not (GetWsX(SH_HI) Is Nothing Or GetWsX(SH_LO) Is Nothing Or GetWsX(SH_CL) Is Nothing)
+End Function
+
+Private Function BuildCodeIndex(ByVal ws As Worksheet) As Object
+    Dim dic As Object: Set dic = CreateObject("Scripting.Dictionary")
+    If ws Is Nothing Then
+        Set BuildCodeIndex = dic
+        Exit Function
+    End If
+    Dim last As Long: last = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+    Dim i As Long, c As String
+    For i = STOCK_DATA_START To last
+        c = NormCode(ws.Cells(i, 1).Value)
+        If c <> "" Then
+            If Not dic.Exists(c) Then dic.Add c, i
+        End If
+    Next i
+    Set BuildCodeIndex = dic
+End Function
+
+Private Function NormCode(ByVal v As Variant) As String
+    Dim s As String
+    If IsError(v) Then Exit Function
+    s = Trim$(CStr(v))
+    If s = "" Or s = "0" Or UCase$(s) = "TOPX" Then Exit Function
+    If IsNumeric(s) And Len(s) < 4 Then s = Format(Val(s), "0000")
+    NormCode = s
+End Function
+
+Private Function HistLastCol(ByVal ws As Worksheet) As Long
+    Dim c As Long
+    c = ws.Cells(3, ws.Columns.Count).End(xlToLeft).Column
+    If c < HIST_FIRST_COL Then c = HIST_FIRST_COL
+    HistLastCol = c
+End Function
+
+'   東証の呼値（一般刻み）。買い指値は切り捨て、売り指値は切り上げ。
+Public Function TickSize(ByVal p As Double) As Double
+    Select Case p
+        Case Is < 3000: TickSize = 1
+        Case Is < 5000: TickSize = 5
+        Case Is < 30000: TickSize = 10
+        Case Is < 50000: TickSize = 50
+        Case Else: TickSize = 100
+    End Select
+End Function
+
+Public Function TickDown(ByVal p As Double) As Double
+    Dim t As Double: t = TickSize(p)
+    TickDown = Int(p / t) * t
+End Function
+
+Public Function TickUp(ByVal p As Double) As Double
+    Dim t As Double: t = TickSize(p)
+    TickUp = -Int(-p / t) * t
+End Function
+
+Private Function SafeNumX(ByVal v As Variant, ByVal dflt As Double) As Double
+    If IsError(v) Then
+        SafeNumX = dflt
+    ElseIf IsEmpty(v) Or IsNull(v) Then
+        SafeNumX = dflt
+    ElseIf IsNumeric(v) Then
+        SafeNumX = CDbl(v)
+    Else
+        SafeNumX = dflt
+    End If
+End Function
+
+Private Function GetWsX(ByVal n As String) As Worksheet
+    On Error Resume Next
+    Set GetWsX = ThisWorkbook.Sheets(n)
+    On Error GoTo 0
+End Function
+
+'==============================================================================
+' ボタン設置（1回だけ実行すればよい）
+'==============================================================================
+Public Sub 推奨指値ボタン設置()
+    PutButton SH_BUY, "btn推奨指値", "推奨指値を計算", "Mod_推奨指値.推奨指値_全シート更新", 600, 5
+    PutButton SH_SELL, "btn推奨指値", "推奨指値を計算", "Mod_推奨指値.推奨指値_全シート更新", 600, 5
+    PutButton SH_ONE, "btn推奨指値", "推奨指値を計算", "Mod_推奨指値.推奨指値_個別銘柄", 380, 5
+    MsgBox "ボタンを設置しました。", vbInformation, "推奨指値"
+End Sub
+
+Private Sub PutButton(ByVal sheetName As String, ByVal btnName As String, ByVal caption As String, _
+                      ByVal action As String, ByVal x As Double, ByVal y As Double)
+    Dim ws As Worksheet: Set ws = GetWsX(sheetName)
+    If ws Is Nothing Then Exit Sub
+    On Error Resume Next
+    ws.Shapes(btnName).Delete
+    On Error GoTo 0
+    Dim b As Shape
+    Set b = ws.Shapes.AddFormControl(xlButtonControl, x, y, 170, 34)
+    With b
+        .Name = btnName
+        .TextFrame.Characters.Text = caption
+        .TextFrame.Characters.Font.Size = 13
+        .TextFrame.Characters.Font.Bold = True
+        .OnAction = action
+    End With
+End Sub
+
+
+##############################################################################
+#  Mod_買抽出v13.bas   （1145行）
+##############################################################################
+
+Attribute VB_Name = "Mod_買抽出v13"
+' ==================================================================
+' ★ 100番ブック / Mod_買抽出v13  v14.1 （2026/08/23 検証反映版）
+'
+'  【v14で変えたこと】
+'   ① しきい値を1か所にまとめた（BUY_MIN_SCORE）。16 → 11 に変更。
+'      理由: 300銘柄×250営業日の実データで検証したところ
+'        スコア16以上 … 年5取引 勝率20.0% 平均-0.284R 総-1.4R
+'        スコア13以上 … 年94取引 勝率54.3% 平均+0.743R 総+69.8R
+'        スコア11以上 … 年130取引 勝率53.8% 平均+0.723R 総+94.0R
+'      スコアには順位付けの力がほとんど無く（8以上でも13以上でも平均Rは横ばい）、
+'      14以上に絞ると成績が崩れる。16は良い候補を捨てているだけだった。
+'      一方、必須フィルタ5つは平均Rを +0.278R → +0.700R に上げており本物。
+'      よってフィルタは維持し、しきい値だけ下げる。
+'
+'   ② ザラ場（場中）の出来高判定を直した。
+'      従来はRSSモードでも出来高だけ E列（前営業日）を見ていたため、
+'      「今日の出来高急増」を前日の数字で判定していた。
+'      v14では C列（RSSの今日の累計出来高）を使い、
+'      さらに時刻に応じた進捗率で1日分に換算してから比較する。
+'      15:00 時点では1日の約78%しか出来ていないので、
+'      補正しないと出来高急増がほとんど検出できない。
+'
+'   ③ ザラ場抽出_今すぐ を追加。時刻に関係なくRSS現在値で抽出する。
+'      15:00頃の見直し用。
+'
+'   ④ 安全装置モジュールがあれば、実行前にRSSの生死を確認する。
+'      無ければ何もしない（従来どおり動く）。
+'
+'   ⑤ v14.1：抽出の冒頭にあった 分析シート／終値シートの強制再計算に歯止めを付けた。
+'      従来は無条件に Calculate していたため、RSSが死んでいる状態で抽出を実行すると
+'      各シートのRSSキャッシュ値が一斉に消え、表示が飛んでいた（実際に起きた事故）。
+'      v14.1ではRSSが応答しているときだけ再計算する。
+'
+'  【検証の限界】
+'   1年・上昇相場・約130取引・対象は現在のウォッチリスト（生存バイアス）。
+'   絶対的な数字は再現しない。ただし「フィルタは効く／16は効かない」は
+'   同じデータ内で条件だけ変えた比較なので、結論はひっくり返りにくい。
+' ==================================================================
+
+Option Explicit
+'=============================================================================
+' 打ち出の無限こづち　候補抽出モジュール　v13 (2026/06/17) → v13.1 絞り込み強化
+'=============================================================================
+Public Const MAX_STOCKS       As Long = 500
+Public Const ANA_DATA_START   As Long = 3
+Public Const STOCK_DATA_START As Long = 6
+Public Const MEI_DATA_START   As Long = 5
+
+'★ここだけ変えればしきい値が変わる（v14で 16 → 11）
+Public Const BUY_MIN_SCORE     As Long = 11  '抽出するスコアの下限
+
+'★①追加：1日の最大抽出件数（1にすれば1銘柄だけ）
+Public Const MAX_EXTRACT_COUNT As Long = 2   '高精度抽出の上限（TOPからN件）
+Public Const MAX_EXTRACT_BUY   As Long = 5   '買い抽出の上限（TOPからN件）
+Public Const MAX_EXTRACT_EASE  As Long = 10  '緩和抽出の上限（TOPからN件）
+
+Public Const TOPIX_SMALL_DROP_PCT As Double = -0.5
+Public Const TOPIX_LARGE_DROP_PCT As Double = -1.5
+Public Const BUY_REQUIRE_MOMENTUM_COUNT As Long = 2
+Public Const MOMENTUM_FULL_BONUS    As Long = 2
+Public Const MOMENTUM_PARTIAL_BONUS As Long = 1
+
+'★②ここを変更：必須フィルタを3つON
+Public Const BUY_REQUIRE_GOLDEN_CROSS  As Boolean = False
+Public Const BUY_REQUIRE_PERFECT_ORDER As Boolean = True   'False→True
+Public Const BUY_REQUIRE_VOL_BURST     As Boolean = True   'False→True
+Public Const BUY_REQUIRE_ADX           As Boolean = False
+Public Const BUY_REQUIRE_HIST_EXPAND   As Boolean = True   'False→True
+Public Const BUY_REQUIRE_RS_VS_TOPIX   As Boolean = False
+
+Public Const GOLDEN_CROSS_LOOKBACK As Long = 3
+Public Const VOLUME_BURST_RATIO    As Double = 1.5
+Public Const ADX_THRESHOLD         As Double = 25#
+Public Const GC_BONUS     As Long = 2
+Public Const PO_BONUS     As Long = 2
+Public Const VOL_BONUS    As Long = 2
+Public Const ADX_BONUS    As Long = 1
+Public Const HIST_BONUS   As Long = 1
+Public Const RS_BONUS     As Long = 1
+Public Const CANDLE_LOWER_TAIL_YOSEN As Long = 2
+Public Const CANDLE_BIG_YOSEN        As Long = 2
+Public Const CANDLE_LONG_LOWER_TAIL  As Long = 1
+Public Const CANDLE_UPPER_TAIL_WARN  As Long = -2
+Private Const COL_NAVY  As Long = 6299648
+Private Const COL_WHITE As Long = 16777215
+Private Const COL_BLACK As Long = 2105376
+Private Const EXT_DATA_ROW As Long = 4
+Private Const EXT_LAST_COL As Long = 18
+Private Const RSS_PROBE_COL As Long = 60     'v14.1 RSS点検に使う作業列（BH列。データは18列目まで）
+Public Const BUY_REQUIRE_OSIME As Boolean = True
+Public Const FAKE_BREAKOUT_VOL_RATIO As Double = 1.5
+
+'=============================================================================
+' ボタン設置マクロ
+Public Sub 買抽出v13ボタン設置()
+    Dim ws As Worksheet: Set ws = GetWs("買抽出v13")
+    If ws Is Nothing Then
+        UI_Msg "「買抽出v13」シートが見つかりません。", vbExclamation
+        Exit Sub
+    End If
+    Dim shp As Shape
+    For Each shp In ws.Shapes
+        If shp.Type = msoFormControl Then shp.Delete
+    Next shp
+
+    Dim nm As Variant, cp As Variant, ac As Variant, wd As Variant
+    nm = Array("btn抽出", "btnザラ場抽出", "btnザラ場緩め", "btn通常抽出", "btn緩和抽出")
+    cp = Array("抽出(" & BUY_MIN_SCORE & "以上/上位" & MAX_EXTRACT_COUNT & "件)", _
+               "★ザラ場抽出(いま/上位" & MAX_EXTRACT_COUNT & "件)", _
+               "ザラ場 緩め(上位" & MAX_EXTRACT_EASE & "件)", _
+               "終値で抽出(上位" & MAX_EXTRACT_BUY & "件)", _
+               "緩和抽出(上位" & MAX_EXTRACT_EASE & "件)")
+    ac = Array("Mod_買抽出v13.高精度抽出_手動", _
+               "Mod_買抽出v13.ザラ場抽出_今すぐ", _
+               "Mod_買抽出v13.ザラ場抽出_緩め", _
+               "Mod_買抽出v13.買い抽出_スコア4", _
+               "Mod_買抽出v13.買い抽出_スコア4_緩和")
+    wd = Array(200, 210, 190, 190, 190)
+
+    Dim i As Long, x As Double
+    x = 10
+    For i = 0 To UBound(nm)
+        Dim btn As Shape
+        Set btn = ws.Shapes.AddFormControl(xlButtonControl, x, 5, CDbl(wd(i)), 35)
+        With btn
+            .Name = CStr(nm(i))
+            .TextFrame.Characters.Text = CStr(cp(i))
+            .TextFrame.Characters.Font.Size = 13
+            .TextFrame.Characters.Font.Bold = True
+            .OnAction = CStr(ac(i))
+        End With
+        x = x + CDbl(wd(i)) + 10
+    Next i
+
+    UI_Msg "ボタンを再設置しました。" & vbCrLf & vbCrLf & _
+           "・抽出        … 時刻で自動判定（ザラ場ならRSS現在値、場外なら終値）" & vbCrLf & _
+           "・★ザラ場抽出 … 時刻に関係なく今のRSS現在値で抽出（15:00頃の見直し用）" & vbCrLf & _
+           "・終値で抽出  … 前日終値ベース", vbInformation, "完了"
+End Sub
+
+'=============================================================================
+' 抽出メイン
+'=============================================================================
+Public Sub 株価抽出()
+    Dim p As Boolean: p = gUnattended
+    gUnattended = True
+    On Error GoTo done
+    If IsZaraba() Then
+        Call 抽出実行_RSS(BUY_MIN_SCORE, True, _
+             "抽出[RSS現在値](スコア" & BUY_MIN_SCORE & "以上・上位" & MAX_EXTRACT_COUNT & "件)")
+    Else
+        Call 抽出実行(BUY_MIN_SCORE, True, _
+             "抽出(スコア" & BUY_MIN_SCORE & "以上・全フィルター必須・上位" & MAX_EXTRACT_COUNT & "件)")
+    End If
+done:
+    gUnattended = p
+End Sub
+
+Public Sub 高精度抽出_手動()
+    '★ボタン用（無人モードにしないのでポップアップが出る。中身は株価抽出と同じ）
+    If Not 安全確認("抽出") Then Exit Sub
+    If IsZaraba() Then
+        抽出実行_RSS BUY_MIN_SCORE, True, _
+            "抽出[RSS現在値](スコア" & BUY_MIN_SCORE & "以上・上位" & MAX_EXTRACT_COUNT & "件)", _
+            MAX_EXTRACT_COUNT
+    Else
+        抽出実行 BUY_MIN_SCORE, True, _
+            "抽出(スコア" & BUY_MIN_SCORE & "以上・全フィルター必須・上位" & MAX_EXTRACT_COUNT & "件)", _
+            False, MAX_EXTRACT_COUNT
+    End If
+End Sub
+
+'=============================================================================
+' ★v14追加：ザラ場抽出（15:00頃の見直し用）
+'   時刻に関係なく、必ずRSSの現在値・今日の出来高で抽出する。
+'   出来高は時刻に応じた進捗率で1日分に換算してから判定する。
+'=============================================================================
+Public Sub ザラ場抽出_今すぐ()
+    If Not 安全確認("ザラ場抽出") Then Exit Sub
+    Dim vp As Double: vp = VolProgress()
+    抽出実行_RSS BUY_MIN_SCORE, True, _
+        "ザラ場抽出 " & Format(Now, "hh:mm") & "(スコア" & BUY_MIN_SCORE & "以上・上位" & _
+        MAX_EXTRACT_COUNT & "件・出来高進捗" & Format(vp * 100, "0") & "%換算)", _
+        MAX_EXTRACT_COUNT
+End Sub
+
+Public Sub ザラ場抽出_緩め()
+    'もっと候補を見たいとき（上限10件・必須フィルタは同じ）
+    If Not 安全確認("ザラ場抽出(緩め)") Then Exit Sub
+    抽出実行_RSS BUY_MIN_SCORE, True, _
+        "ザラ場抽出 " & Format(Now, "hh:mm") & "(スコア" & BUY_MIN_SCORE & "以上・上位" & _
+        MAX_EXTRACT_EASE & "件)", MAX_EXTRACT_EASE
+End Sub
+
+'   いまがザラ場か（東証 9:00-11:30 / 12:30-15:30）
+Private Function IsZaraba() As Boolean
+    Dim t As Date
+    IsZaraba = False
+    If Weekday(Date, vbMonday) >= 6 Then Exit Function
+    t = TimeValue(Format(Now, "hh:mm:ss"))
+    If (t >= TimeSerial(9, 0, 0) And t <= TimeSerial(11, 30, 0)) Or _
+       (t >= TimeSerial(12, 30, 0) And t <= TimeSerial(15, 30, 0)) Then
+        IsZaraba = True
+    End If
+End Function
+
+'=============================================================================
+' ★v14.1追加：RSSが応答しているかを実際に問い合わせて確かめる
+'   作業セル1つに RssMarket の式を入れ、そのシートだけを計算して確認する。
+'   他のシート・他のBOOKには一切触らない。
+'=============================================================================
+Private Function RSS生存(ByVal ws As Worksheet) As Boolean
+    RSS生存 = False
+    If ws Is Nothing Then Exit Function
+    On Error GoTo Fail
+    Dim sc As Range
+    Set sc = ws.Cells(1, RSS_PROBE_COL)
+    sc.Formula = "=IFERROR(RssMarket(""7203"",""現在値""),-1)"
+    ws.Calculate
+    RSS生存 = (Val(sc.Value) > 0)
+    sc.ClearContents
+    Exit Function
+Fail:
+    On Error Resume Next
+    ws.Cells(1, RSS_PROBE_COL).ClearContents
+    On Error GoTo 0
+End Function
+
+'=============================================================================
+' ★v14追加：出来高の進捗率
+'   いまの時刻までに、1日の出来高の何割が出来ているかの目安。
+'   ザラ場中の出来高をこの値で割ると「1日換算」になり、
+'   5日平均との比較（1.5倍・2.0倍）がそのまま使える。
+'   ※ 実測ではなく一般的な目安。銘柄によってずれる。
+'      値を変えたいときはこの表を直す。
+'=============================================================================
+Private Function VolProgress() As Double
+    Dim hh As Variant, pp As Variant
+    hh = Array("09:00", "09:05", "09:30", "10:00", "11:00", "11:30", _
+               "12:30", "13:00", "14:00", "14:30", "15:00", "15:20", "15:25", "15:30")
+    pp = Array(0.02, 0.1, 0.25, 0.33, 0.42, 0.47, _
+               0.47, 0.52, 0.62, 0.68, 0.78, 0.88, 0.93, 1#)
+
+    Dim t As Double: t = CDbl(TimeValue(Format(Now, "hh:mm:ss")))
+    Dim i As Long
+    Dim t0 As Double, t1 As Double
+
+    '--- 場が始まる前・引けた後は補正しない
+    If t < CDbl(TimeValue(CStr(hh(0)))) Then VolProgress = 1#: Exit Function
+    If t >= CDbl(TimeValue(CStr(hh(UBound(hh))))) Then VolProgress = 1#: Exit Function
+
+    For i = 0 To UBound(hh) - 1
+        t0 = CDbl(TimeValue(CStr(hh(i))))
+        t1 = CDbl(TimeValue(CStr(hh(i + 1))))
+        If t >= t0 And t < t1 Then
+            If t1 > t0 Then
+                VolProgress = CDbl(pp(i)) + (CDbl(pp(i + 1)) - CDbl(pp(i))) * (t - t0) / (t1 - t0)
+            Else
+                VolProgress = CDbl(pp(i))
+            End If
+            Exit Function
+        End If
+    Next i
+    VolProgress = 1#
+End Function
+
+'=============================================================================
+' ★v14追加：安全装置（Mod_安全装置）があれば実行前にRSSの生死を確認する。
+'   無ければ何もせず True を返すので、従来どおり動く。
+'=============================================================================
+Private Function 安全確認(ByVal nm As String) As Boolean
+    安全確認 = True
+    If gUnattended Then Exit Function      '無人実行のときは止めない
+    Dim r As Variant
+    On Error Resume Next
+    r = Application.Run("安全装置_RSS必要", nm)
+    If Err.Number = 0 Then 安全確認 = CBool(r)
+    Err.Clear
+    On Error GoTo 0
+End Function
+
+Public Sub 買い抽出_スコア4()
+    抽出実行 11, True, "買い抽出(スコア11以上・中程度・上位5件)", False, MAX_EXTRACT_BUY
+End Sub
+
+Public Sub 買い抽出_スコア4_緩和()
+    抽出実行 11, False, "買い抽出(スコア11以上・緩和・上位10件)", False, MAX_EXTRACT_EASE
+End Sub
+
+Private Sub 抽出実行(ByVal minScore As Long, _
+                     ByVal doMark As Boolean, _
+                     ByVal titleText As String, _
+                     Optional ByVal useRSS As Boolean = False, _
+                     Optional ByVal maxCount As Long = 0)
+    If maxCount <= 0 Then maxCount = MAX_EXTRACT_COUNT
+    Dim closeWs As Worksheet: Set closeWs = GetWs("終値")
+    Dim openWs  As Worksheet: Set openWs = GetWs("始値")
+    Dim highWs  As Worksheet: Set highWs = GetWs("高値")
+    Dim lowWs   As Worksheet: Set lowWs = GetWs("安値")
+    Dim volWs   As Worksheet: Set volWs = GetWs("出来高")
+    Dim extWs   As Worksheet: Set extWs = GetWs("買抽出v13")
+    Dim mws     As Worksheet: Set mws = GetWs("銘柄管理")
+    Dim anaWs   As Worksheet: Set anaWs = GetWs("分析")
+    If closeWs Is Nothing Or extWs Is Nothing Then
+        UI_Msg "「終値」または「買抽出v13」シートが見つかりません。", vbExclamation
+        Exit Sub
+    End If
+    If mws Is Nothing Then
+        UI_Msg "「銘柄管理」シートが見つかりません。", vbExclamation
+        Exit Sub
+    End If
+    '★v14.1：RSSが死んでいる状態でこの再計算をすると、分析シートや終値シートの
+    '  RSSキャッシュ値が一斉に消え、各シートの表示が飛ぶ（実際に起きた事故）。
+    '  RSSが応答しているときだけ再計算する。
+    If RSS生存(extWs) Then
+        On Error Resume Next
+        If Not anaWs Is Nothing Then anaWs.Calculate
+        closeWs.Calculate
+        On Error GoTo 0
+    End If
+    Application.ScreenUpdating = False
+    Application.Calculation = xlCalculationManual
+    On Error Resume Next
+    extWs.Unprotect Password:="ne19480314"
+    mws.Unprotect Password:="ne19480314"
+    If Not anaWs Is Nothing Then anaWs.Unprotect Password:="ne19480314"
+    On Error GoTo 0
+    Dim extLast As Long
+    extLast = extWs.Cells(extWs.Rows.Count, 2).End(xlUp).Row
+    Dim clearLast As Long
+    clearLast = WorksheetFunction.Max(extLast, EXT_DATA_ROW + MAX_STOCKS)
+    With extWs.Range(extWs.Cells(EXT_DATA_ROW, 1), extWs.Cells(clearLast, EXT_LAST_COL))
+        .ClearContents
+        .Interior.ColorIndex = xlNone
+        .Font.ColorIndex = xlAutomatic
+        .Font.Bold = False
+    End With
+    Dim topixTrend As String: topixTrend = CStr(mws.Cells(5, 6).Value)
+    Dim topixNow As Double, topixRef As Double, topixPct As Double
+    topixNow = SafeNum(mws.Cells(5, 3).Value, 0)
+    topixRef = SafeNum(mws.Cells(5, 5).Value, 0)
+    If topixRef > 0 And topixNow > 0 Then
+        topixPct = (topixNow - topixRef) / topixRef * 100#
+    Else
+        topixPct = 0
+    End If
+    Dim topixMode As String
+    If topixPct <= TOPIX_LARGE_DROP_PCT Then
+        topixMode = "LARGE"
+    ElseIf topixPct <= TOPIX_SMALL_DROP_PCT Then
+        topixMode = "MID"
+    Else
+        topixMode = "OK"
+    End If
+    ' Futures filter: H5 = RssIndexMarket(N225.FUT01.OS, prev day %)
+    Dim futuresPct As Double
+    futuresPct = SafeNum(mws.Cells(5, 8).Value, 0)
+    If futuresPct < -1.5 Then
+        topixMode = "LARGE"
+    ElseIf futuresPct < -0.5 Then
+        If topixMode = "OK" Then topixMode = "MID"
+    End If
+    '★修正：銘柄管理C列は =RssMarket(...,"銘柄名称") なので、RSSが止まっていると
+    '  全行 "エラー" または空になる。名称キャッシュ経由で取得する。
+    Dim nameDic As Object: Set nameDic = 名称辞書作成()
+    Dim anaDic As Object: Set anaDic = CreateObject("Scripting.Dictionary")
+    If Not anaWs Is Nothing Then
+        Dim anaLast As Long
+        anaLast = anaWs.Cells(anaWs.Rows.Count, 3).End(xlUp).Row
+        If anaLast < ANA_DATA_START Then anaLast = ANA_DATA_START
+        If anaLast > ANA_DATA_START + MAX_STOCKS Then anaLast = ANA_DATA_START + MAX_STOCKS
+        Dim k As Long, anaCode As String
+        For k = ANA_DATA_START To anaLast
+            anaCode = Trim$(CStr(anaWs.Cells(k, 3).Value))
+            If anaCode <> "" And Not anaDic.Exists(anaCode) Then anaDic(anaCode) = k
+        Next k
+    End If
+    Dim lastRow As Long
+    lastRow = closeWs.Cells(closeWs.Rows.Count, 1).End(xlUp).Row
+    If lastRow > STOCK_DATA_START + MAX_STOCKS Then lastRow = STOCK_DATA_START + MAX_STOCKS
+    Dim outRow As Long: outRow = EXT_DATA_ROW
+    Dim totalScore As Long, signals As String
+    Dim scannedCount As Long: scannedCount = 0
+    Dim i As Long
+    Dim cntGC As Long, cntPO As Long, cntVB As Long
+    Dim cntADX As Long, cntHE As Long, cntRS As Long
+    For i = STOCK_DATA_START To lastRow
+        Dim code As String
+        code = Trim$(CStr(closeWs.Cells(i, 1).Value))
+        If code = "" Or code = "0" Or code = "TOPX" Then GoTo NextStock
+        scannedCount = scannedCount + 1
+        Application.StatusBar = titleText & " : " & scannedCount & " 件目 (" & code & ")"
+        totalScore = 0: signals = ""
+        Dim closePrice As Double
+        Dim highVal As Double: highVal = 0
+        Dim lowVal  As Double: lowVal = 0
+        Dim closes As Variant, opens As Variant, highs As Variant, loWs As Variant, vols As Variant
+        If useRSS Then
+            '★ RSS現在値(C列)を先頭にした配列
+            Dim rssClose As Double: rssClose = Val(closeWs.Cells(i, 3).Value)
+            closePrice = IIf(rssClose > 0, rssClose, Val(closeWs.Cells(i, 5).Value))
+            If Not highWs Is Nothing Then
+                Dim rssH As Double: rssH = Val(highWs.Cells(i, 3).Value)
+                highVal = IIf(rssH > 0, rssH, Val(highWs.Cells(i, 5).Value))
+            End If
+            If Not lowWs Is Nothing Then
+                Dim rssL As Double: rssL = Val(lowWs.Cells(i, 3).Value)
+                lowVal = IIf(rssL > 0, rssL, Val(lowWs.Cells(i, 5).Value))
+            End If
+            closes = RssMerge(closeWs, i)
+            If Not openWs Is Nothing Then opens = RssMerge(openWs, i)
+            If Not highWs Is Nothing Then highs = RssMerge(highWs, i)
+            If Not lowWs Is Nothing Then loWs = RssMerge(lowWs, i)
+            If Not volWs Is Nothing Then vols = RssMerge(volWs, i)
+        Else
+            closePrice = Val(closeWs.Cells(i, 5).Value)
+            If Not highWs Is Nothing Then highVal = Val(highWs.Cells(i, 5).Value)
+            If Not lowWs Is Nothing Then lowVal = Val(lowWs.Cells(i, 5).Value)
+            closes = closeWs.Range(closeWs.Cells(i, 5), closeWs.Cells(i, 104)).Value
+            If Not openWs Is Nothing Then opens = openWs.Range(openWs.Cells(i, 5), openWs.Cells(i, 104)).Value
+            If Not highWs Is Nothing Then highs = highWs.Range(highWs.Cells(i, 5), highWs.Cells(i, 104)).Value
+            If Not lowWs Is Nothing Then loWs = lowWs.Range(lowWs.Cells(i, 5), lowWs.Cells(i, 104)).Value
+            If Not volWs Is Nothing Then vols = volWs.Range(volWs.Cells(i, 5), volWs.Cells(i, 104)).Value
+        End If
+        If closePrice = 0 Then GoTo NextStock
+        Dim anaRow As Long: anaRow = 0
+        If anaDic.Exists(code) Then anaRow = CLng(anaDic(code))
+        Dim rsiVal As Double: rsiVal = 50
+        If anaRow > 0 Then rsiVal = SafeNum(anaWs.Cells(anaRow, 23).Value, 50)
+        If rsiVal <= 30 Then
+            totalScore = totalScore + 2: signals = signals & "RSI売られ過ぎ "
+        ElseIf rsiVal <= 40 Then
+            totalScore = totalScore + 1: signals = signals & "RSI安 "
+        ElseIf rsiVal >= 70 Then
+            totalScore = totalScore - 1: signals = signals & "RSI過熱 "
+        End If
+        Dim emaTrend As String: emaTrend = ""
+        If anaRow > 0 Then emaTrend = SafeStr(anaWs.Cells(anaRow, 30).Value)
+        If emaTrend = "パーフェクト▲" Then
+            totalScore = totalScore + 2: signals = signals & "パーフェクト▲ "
+        ElseIf emaTrend = "上昇トレンド▲" Then
+            totalScore = totalScore + 1: signals = signals & "上昇▲ "
+        ElseIf emaTrend = "下降トレンド▼" Then
+            totalScore = totalScore - 1
+        End If
+        Dim osime As String: osime = ""
+        If anaRow > 0 Then osime = SafeStr(anaWs.Cells(anaRow, 31).Value)
+        If osime = "25日押し目★" Then
+            totalScore = totalScore + 2: signals = signals & "25日押し目● "
+        ElseIf osime = "5日押し目○" Then
+            totalScore = totalScore + 1: signals = signals & "5日押し目○ "
+        End If
+        Dim volToday As Double: volToday = 0     '表示用（実測値）
+        Dim volCalc  As Double: volCalc = 0      '判定用（ザラ場は1日換算）
+        Dim vol5avg  As Double: vol5avg = 0
+        Dim volRatio As Double: volRatio = 0
+        If Not volWs Is Nothing Then
+            If useRSS Then
+                '★v14：ザラ場は C列（RSSの今日の累計出来高）を使う。
+                '  従来は E列（前営業日）を見ていたため判定がずれていた。
+                volToday = Val(volWs.Cells(i, 3).Value)
+                If volToday <= 0 Then volToday = Val(volWs.Cells(i, 5).Value)
+                volCalc = volToday / VolProgress()      '1日分に換算
+            Else
+                volToday = Val(volWs.Cells(i, 5).Value)
+                volCalc = volToday
+            End If
+            If anaRow > 0 Then vol5avg = SafeNum(anaWs.Cells(anaRow, 13).Value, 0)
+            If vol5avg > 0 And volCalc > 0 Then
+                volRatio = volCalc / vol5avg
+                If volRatio >= 2# Then
+                    totalScore = totalScore + 3
+                    signals = signals & "出来高急増(" & Format(volRatio, "0.0") & "倍) "
+                ElseIf volRatio >= 1.5 Then
+                    totalScore = totalScore + 2
+                    signals = signals & "出来高増(" & Format(volRatio, "0.0") & "倍) "
+                End If
+            End If
+        End If
+        Dim macdVal As Double: macdVal = 0
+        If anaRow > 0 Then macdVal = SafeNum(anaWs.Cells(anaRow, 24).Value, 0)
+        If macdVal > 0 Then
+            totalScore = totalScore + 1: signals = signals & "MACD+ "
+        ElseIf macdVal < 0 Then
+            totalScore = totalScore - 1
+        End If
+        Dim highUpdate As String: highUpdate = ""
+        If anaRow > 0 Then highUpdate = SafeStr(anaWs.Cells(anaRow, 22).Value)
+        Dim isFakeBreakout As Boolean: isFakeBreakout = False
+        If highUpdate = "年初来高値更新●" Then
+            If (volRatio > 0 And volRatio < FAKE_BREAKOUT_VOL_RATIO) Or _
+               (highVal > 0 And closePrice < highVal * 0.95) Then
+                isFakeBreakout = True
+                signals = signals & "高値更新ダマシ警戒 "
+            Else
+                totalScore = totalScore + 2
+                signals = signals & "年初来高値更新● "
+            End If
+        End If
+        Dim ema12V As Double, ema26V As Double, macdNow As Double, signalNow As Double
+        Dim histNow As Double, histPrev As Double
+        ComputeMACDSeries closes, ema12V, ema26V, macdNow, signalNow, histNow, histPrev
+        Dim emaUp As Boolean:  emaUp = (ema12V > ema26V) And (ema26V > 0)
+        Dim macdUp As Boolean: macdUp = (macdNow > signalNow)
+        Dim rsiUp As Boolean:  rsiUp = (rsiVal > 50)
+        Dim momCount As Long: momCount = 0
+        If emaUp Then momCount = momCount + 1: signals = signals & "EMA12>26 "
+        If macdUp Then momCount = momCount + 1: signals = signals & "MACD>Sig "
+        If rsiUp Then momCount = momCount + 1: signals = signals & "RSI>50 "
+        If momCount = 3 Then
+            totalScore = totalScore + MOMENTUM_FULL_BONUS
+            signals = signals & "[◎モメンタム完全] "
+        ElseIf momCount = 2 Then
+            totalScore = totalScore + MOMENTUM_PARTIAL_BONUS
+            signals = signals & "[○モメンタム部分] "
+        End If
+        Dim ok_GC As Boolean, ok_PO As Boolean, ok_VB As Boolean
+        Dim ok_ADX As Boolean, ok_HE As Boolean, ok_RS As Boolean
+        Dim adxVal As Double: adxVal = 0
+        ok_GC = IsGoldenCrossRecent(closes, GOLDEN_CROSS_LOOKBACK)
+        If ok_GC Then
+            totalScore = totalScore + GC_BONUS
+            signals = signals & "[GC直近" & GOLDEN_CROSS_LOOKBACK & "日] "
+            cntGC = cntGC + 1
+        End If
+        ok_PO = IsPerfectOrder(closes)
+        If ok_PO Then
+            totalScore = totalScore + PO_BONUS
+            signals = signals & "[Perfect5>25>75] "
+            cntPO = cntPO + 1
+        End If
+        If Not IsEmpty(opens) And Not IsEmpty(vols) Then
+            ok_VB = IsVolumeBurstBullish(vols, closes, opens, VOLUME_BURST_RATIO, _
+                                         IIf(useRSS, VolProgress(), 1#))
+            If ok_VB Then
+                totalScore = totalScore + VOL_BONUS
+                signals = signals & "[Vol急増陽線] "
+                cntVB = cntVB + 1
+            End If
+        End If
+        If Not IsEmpty(highs) And Not IsEmpty(loWs) Then
+            adxVal = ComputeADX(highs, loWs, closes)
+            ok_ADX = (adxVal > ADX_THRESHOLD)
+            If ok_ADX Then
+                totalScore = totalScore + ADX_BONUS
+                signals = signals & "[ADX=" & Format(adxVal, "0") & "] "
+                cntADX = cntADX + 1
+            End If
+        End If
+        ok_HE = (histNow > histPrev) And (histNow > 0)
+        If ok_HE Then
+            totalScore = totalScore + HIST_BONUS
+            signals = signals & "[Hist拡大] "
+            cntHE = cntHE + 1
+        End If
+        Dim stockPctChg As Double: stockPctChg = 0
+        If IsArrOk(closes) Then
+            If UBound(closes, 2) >= 2 Then
+                Dim prevClose As Double: prevClose = SafeNum(closes(1, 2), 0)
+                If prevClose > 0 Then stockPctChg = (closePrice - prevClose) / prevClose * 100#
+            End If
+        End If
+        ok_RS = (stockPctChg > topixPct)
+        If ok_RS Then
+            totalScore = totalScore + RS_BONUS
+            signals = signals & "[対TOPIX勝 +" & Format(stockPctChg - topixPct, "0.00") & "%] "
+            cntRS = cntRS + 1
+        End If
+        totalScore = totalScore + CandleScoreBuy(opens, highs, loWs, closes, signals)
+        totalScore = totalScore + CandleScoreBuyPrev(opens, highs, loWs, closes, signals)
+        Dim canExtract As Boolean: canExtract = False
+        If totalScore >= minScore Then
+            Select Case topixMode
+                Case "LARGE"
+                    If totalScore >= minScore + 3 Then canExtract = True
+                Case "MID"
+                    If totalScore >= minScore + 1 Then canExtract = True
+                Case Else
+                    canExtract = True
+            End Select
+        End If
+        If canExtract And momCount < 2 Then canExtract = False
+        If doMark And canExtract Then
+            If BUY_REQUIRE_GOLDEN_CROSS And Not ok_GC Then canExtract = False
+            If BUY_REQUIRE_PERFECT_ORDER And Not ok_PO Then canExtract = False
+            If BUY_REQUIRE_VOL_BURST And Not ok_VB Then canExtract = False
+            If BUY_REQUIRE_ADX And Not ok_ADX Then canExtract = False
+            If BUY_REQUIRE_HIST_EXPAND And Not ok_HE Then canExtract = False
+            If BUY_REQUIRE_RS_VS_TOPIX And Not ok_RS Then canExtract = False
+        End If
+        If doMark And canExtract And BUY_REQUIRE_OSIME Then
+            If osime <> "25日押し目★" And osime <> "5日押し目○" Then
+                canExtract = False
+            End If
+        End If
+        If rsiVal >= 70 Then canExtract = False
+        If canExtract And Not ok_RS Then canExtract = False
+        If canExtract Then
+            '★修正：以前は名前が取れないと "(" & code & ")" を書いていたため、
+            '  Excelが会計表記の負数とみなして -9536 のような数値に化けていた。
+            Dim meiName As String
+            meiName = 銘柄名解決(code, nameDic, closeWs, i, 2)
+            Dim osimeOut As String:      osimeOut = osime
+            If osimeOut = "" Then osimeOut = "-"
+            Dim highUpdateOut As String: highUpdateOut = highUpdate
+            If highUpdateOut = "" Then highUpdateOut = "-"
+            Dim currentPrice As Double: currentPrice = Val(closeWs.Cells(i, 3).Value)
+            If currentPrice <= 0 Then currentPrice = closePrice
+            Dim currentHigh As Double: currentHigh = highVal
+            If Not highWs Is Nothing Then
+                Dim tmpH As Double: tmpH = Val(highWs.Cells(i, 3).Value)
+                If tmpH > 0 Then currentHigh = tmpH
+            End If
+            Dim currentLow As Double: currentLow = lowVal
+            If Not lowWs Is Nothing Then
+                Dim tmpL As Double: tmpL = Val(lowWs.Cells(i, 3).Value)
+                If tmpL > 0 Then currentLow = tmpL
+            End If
+            Dim currentVol As Double: currentVol = volToday
+            If Not volWs Is Nothing Then
+                Dim tmpV As Double: tmpV = Val(volWs.Cells(i, 3).Value)
+                If tmpV > 0 Then currentVol = tmpV
+            End If
+            writeRow extWs, outRow, code, meiName, currentPrice, currentHigh, currentLow, _
+                     currentVol, rsiVal, emaTrend, osimeOut, volRatio, macdVal, _
+                     highUpdateOut, isFakeBreakout, totalScore, signals
+            outRow = outRow + 1
+        End If
+NextStock:
+        DoEvents
+    Next i
+
+    '★④ ソート（スコア降順→出来高倍率降順）してから上位N件だけ残す
+    If outRow > EXT_DATA_ROW + 1 Then
+        extWs.Range(extWs.Cells(EXT_DATA_ROW, 1), _
+                    extWs.Cells(outRow - 1, EXT_LAST_COL)).Sort _
+            Key1:=extWs.Cells(EXT_DATA_ROW, 17), Order1:=xlDescending, _
+            Key2:=extWs.Cells(EXT_DATA_ROW, 12), Order2:=xlDescending, Header:=xlNo
+    End If
+    If outRow - EXT_DATA_ROW > maxCount Then
+        With extWs.Range(extWs.Cells(EXT_DATA_ROW + maxCount, 1), _
+                         extWs.Cells(outRow - 1, EXT_LAST_COL))
+            .ClearContents
+            .Interior.ColorIndex = xlNone
+            .Font.ColorIndex = xlAutomatic
+            .Font.Bold = False
+        End With
+        outRow = EXT_DATA_ROW + maxCount
+    End If
+
+    '★順位列（1,2,3…）を B列(2) に出力
+    extWs.Cells(3, 2).Value = "順位"
+    Dim rkRow As Long
+    For rkRow = EXT_DATA_ROW To outRow - 1
+        extWs.Cells(rkRow, 2).Value = rkRow - EXT_DATA_ROW + 1
+        extWs.Cells(rkRow, 2).HorizontalAlignment = xlCenter
+        extWs.Cells(rkRow, 2).Font.Bold = True
+    Next rkRow
+
+    On Error Resume Next
+    extWs.Range("A2:R2").UnMerge
+    On Error GoTo 0
+    extWs.Range("A2:R2").Merge
+    Dim modeDesc As String
+    Select Case topixMode
+        Case "LARGE": modeDesc = "【厳格】"
+        Case "MID":   modeDesc = "【中程度】"
+        Case Else:    modeDesc = "【通常】"
+    End Select
+    extWs.Cells(2, 1).Value = "TOPIX: " & topixTrend & _
+        " (" & Format(topixPct, "+0.00;-0.00;0.00") & "%) " & modeDesc & _
+        "　　最終更新: " & Format(Now(), "yyyy/mm/dd hh:mm") & "　　" & titleText
+    Application.StatusBar = False
+    Application.Calculation = xlCalculationAutomatic
+    Application.ScreenUpdating = True
+    Dim extracted As Long: extracted = 0
+    Dim chkRow As Long
+    For chkRow = EXT_DATA_ROW To outRow - 1
+        If IsNumeric(extWs.Cells(chkRow, 17).Value) Then extracted = extracted + 1
+    Next chkRow
+    Dim msg As String
+    msg = "【打ち出の無限こづち v13.1 絞り込み強化】" & vbCrLf & _
+          "TOPIX: " & Format(topixPct, "+0.00;-0.00;0.00") & "% " & modeDesc & vbCrLf & _
+          titleText & " 完了！" & vbCrLf & vbCrLf & _
+          "スキャン件数: " & scannedCount & " 銘柄" & vbCrLf & _
+          "抽出件数:    " & extracted & " 件" & vbCrLf & _
+          "(抽出基準: スコア " & minScore & " 点以上 / 最大 " & maxCount & " 件)" & vbCrLf & vbCrLf & _
+          "--- v13.1変更点 ---" & vbCrLf & _
+          "件数上限:   " & maxCount & " 件（スコア→出来高倍率の順で上位のみ採用）" & vbCrLf & _
+          "押し目必須: " & IIf(BUY_REQUIRE_OSIME, "ON（25日or5日押し目のみ）", "OFF") & vbCrLf & _
+          "PO必須:     " & IIf(BUY_REQUIRE_PERFECT_ORDER, "ON", "OFF") & vbCrLf & _
+          "Vol急増必須:" & IIf(BUY_REQUIRE_VOL_BURST, "ON", "OFF") & vbCrLf & _
+          "Hist拡大必須:" & IIf(BUY_REQUIRE_HIST_EXPAND, "ON", "OFF") & vbCrLf & _
+          "ダマシ閾値: 出来高" & Format(FAKE_BREAKOUT_VOL_RATIO, "0.0") & "倍未満→ダマシ扱い"
+    If doMark Then
+        msg = msg & vbCrLf & vbCrLf & "--- 高精度フィルター通過数 ---" & vbCrLf & _
+              "ゴールデンクロス直近: " & cntGC & vbCrLf & _
+              "パーフェクトオーダー: " & cntPO & vbCrLf & _
+              "出来高急増+陽線:    " & cntVB & vbCrLf & _
+              "ADX>" & Format(ADX_THRESHOLD, "0") & ":         " & cntADX & vbCrLf & _
+              "MACDヒスト拡大:     " & cntHE & vbCrLf & _
+              "対TOPIX相対強度:    " & cntRS
+    End If
+    UI_Msg msg, vbInformation, "抽出完了 (v13.1)"
+End Sub
+
+Private Sub 抽出実行_RSS(ByVal minScore As Long, _
+                          ByVal doMark As Boolean, _
+                          ByVal titleText As String, _
+                          Optional ByVal maxCount As Long = 0)
+    Call 抽出実行(minScore, doMark, titleText & "[RSS]", True, maxCount)
+End Sub
+
+'=============================================================================
+' RSS現在値を先頭にした配列作成
+'=============================================================================
+Private Function RssMerge(ByVal ws As Worksheet, ByVal r As Long) As Variant
+    Dim histLen As Long: histLen = 100
+    Dim arr() As Double
+    ReDim arr(1 To 1, 1 To 1 + histLen)
+    Dim rssV As Variant: rssV = ws.Cells(r, 3).Value
+    If IsNumeric(rssV) Then
+        If CDbl(rssV) > 0 Then arr(1, 1) = CDbl(rssV)
+    End If
+    If arr(1, 1) = 0 Then
+        Dim fb As Variant: fb = ws.Cells(r, 5).Value
+        If IsNumeric(fb) Then arr(1, 1) = CDbl(fb)
+    End If
+    Dim hist As Variant
+    hist = ws.Range(ws.Cells(r, 5), ws.Cells(r, 104)).Value
+    Dim j As Long
+    For j = 1 To histLen
+        If IsNumeric(hist(1, j)) Then arr(1, 1 + j) = CDbl(hist(1, j))
+    Next j
+    RssMerge = arr
+End Function
+
+Private Function CandleScoreBuy(ByRef opens As Variant, ByRef highs As Variant, _
+                                ByRef loWs As Variant, ByRef closes As Variant, _
+                                ByRef sig As String) As Long
+    CandleScoreBuy = 0
+    On Error GoTo ExitFunc
+    If IsEmpty(opens) Or IsEmpty(highs) Or IsEmpty(loWs) Or IsEmpty(closes) Then Exit Function
+    If Not (IsNumeric(opens(1, 1)) And IsNumeric(highs(1, 1)) _
+            And IsNumeric(loWs(1, 1)) And IsNumeric(closes(1, 1))) Then Exit Function
+    Dim o As Double: o = CDbl(opens(1, 1))
+    Dim h As Double: h = CDbl(highs(1, 1))
+    Dim L As Double: L = CDbl(loWs(1, 1))
+    Dim c As Double: c = CDbl(closes(1, 1))
+    If o <= 0 Or h <= 0 Or L <= 0 Or c <= 0 Then Exit Function
+    Dim rng As Double: rng = h - L
+    If rng <= 0 Then Exit Function
+    Dim body As Double: body = Abs(c - o)
+    Dim up As Double: up = h - Application.Max(o, c)
+    Dim lo As Double: lo = Application.Min(o, c) - L
+    If body > 0 And lo >= body * 2# And up <= body * 0.5 Then
+        CandleScoreBuy = CANDLE_LOWER_TAIL_YOSEN: sig = sig & "[下ヒゲ陽線●+2] "
+    ElseIf c >= o And body >= rng * 0.7 Then
+        CandleScoreBuy = CANDLE_BIG_YOSEN: sig = sig & "[大陽線▲+2] "
+    ElseIf lo >= rng * 0.5 And up <= rng * 0.2 Then
+        CandleScoreBuy = CANDLE_LONG_LOWER_TAIL: sig = sig & "[長い下ヒゲ+1] "
+    ElseIf body > 0 And up >= body * 2# And lo <= body * 0.5 Then
+        CandleScoreBuy = CANDLE_UPPER_TAIL_WARN: sig = sig & "[上ヒゲ警戒▼-2] "
+    End If
+ExitFunc:
+End Function
+
+Private Function CandleScoreBuyPrev(ByRef opens As Variant, ByRef highs As Variant, _
+                                    ByRef loWs As Variant, ByRef closes As Variant, _
+                                    ByRef sig As String) As Long
+    CandleScoreBuyPrev = 0
+    On Error GoTo ExitFunc
+    If IsEmpty(opens) Or IsEmpty(highs) Or IsEmpty(loWs) Or IsEmpty(closes) Then Exit Function
+    If UBound(opens, 2) < 2 Or UBound(highs, 2) < 2 Then Exit Function
+    If UBound(loWs, 2) < 2 Or UBound(closes, 2) < 2 Then Exit Function
+    If Not (IsNumeric(opens(1, 2)) And IsNumeric(highs(1, 2)) _
+            And IsNumeric(loWs(1, 2)) And IsNumeric(closes(1, 2))) Then Exit Function
+    Dim o As Double: o = CDbl(opens(1, 2))
+    Dim h As Double: h = CDbl(highs(1, 2))
+    Dim L As Double: L = CDbl(loWs(1, 2))
+    Dim c As Double: c = CDbl(closes(1, 2))
+    If o <= 0 Or h <= 0 Or L <= 0 Or c <= 0 Then Exit Function
+    Dim rng As Double: rng = h - L
+    If rng <= 0 Then Exit Function
+    Dim body As Double: body = Abs(c - o)
+    Dim up As Double: up = h - Application.Max(o, c)
+    Dim lo As Double: lo = Application.Min(o, c) - L
+    If body > 0 And lo >= body * 2# And up <= body * 0.5 Then
+        CandleScoreBuyPrev = CANDLE_LOWER_TAIL_YOSEN: sig = sig & "[前日:下ヒゲ陽線●+2] "
+    ElseIf c >= o And body >= rng * 0.7 Then
+        CandleScoreBuyPrev = CANDLE_BIG_YOSEN: sig = sig & "[前日:大陽線▲+2] "
+    ElseIf lo >= rng * 0.5 And up <= rng * 0.2 Then
+        CandleScoreBuyPrev = CANDLE_LONG_LOWER_TAIL: sig = sig & "[前日:長い下ヒゲ+1] "
+    ElseIf body > 0 And up >= body * 2# And lo <= body * 0.5 Then
+        CandleScoreBuyPrev = CANDLE_UPPER_TAIL_WARN: sig = sig & "[前日:上ヒゲ警戒▼-2] "
+    End If
+ExitFunc:
+End Function
+
+Private Function SafeStr(ByVal v As Variant) As String
+    If IsError(v) Then
+        SafeStr = ""
+    ElseIf IsEmpty(v) Or IsNull(v) Then
+        SafeStr = ""
+    Else
+        SafeStr = Trim$(CStr(v))
+    End If
+End Function
+
+Private Function SafeNum(ByVal v As Variant, ByVal defaultVal As Double) As Double
+    If IsError(v) Then
+        SafeNum = defaultVal
+    ElseIf IsEmpty(v) Or IsNull(v) Then
+        SafeNum = defaultVal
+    ElseIf IsNumeric(v) Then
+        SafeNum = CDbl(v)
+    Else
+        SafeNum = defaultVal
+    End If
+End Function
+
+Private Function IsArrOk(ByVal v As Variant) As Boolean
+    On Error Resume Next
+    Dim ub As Long: ub = UBound(v, 2)
+    IsArrOk = (Err.Number = 0)
+    On Error GoTo 0
+End Function
+
+Private Function GetWs(ByVal n As String) As Worksheet
+    On Error Resume Next
+    Set GetWs = ThisWorkbook.Sheets(n)
+    On Error GoTo 0
+End Function
+
+Private Sub ComputeMACDSeries(ByRef prices As Variant, _
+                               ByRef ema12Today As Double, ByRef ema26Today As Double, _
+                               ByRef macdToday As Double, ByRef signalToday As Double, _
+                               ByRef histToday As Double, ByRef histYesterday As Double)
+    ema12Today = 0: ema26Today = 0: macdToday = 0: signalToday = 0
+    histToday = 0: histYesterday = 0
+    On Error GoTo ExitProc
+    If IsEmpty(prices) Then Exit Sub
+    Dim n As Long: n = UBound(prices, 2)
+    If n < 13 Then Exit Sub
+    Dim k12 As Double: k12 = 2# / 13#
+    Dim k26 As Double: k26 = 2# / 27#
+    Dim k9  As Double: k9 = 2# / 10#
+    ReDim macdArr(1 To n) As Double
+    Dim e12 As Double: e12 = 0
+    Dim e26 As Double: e26 = 0
+    Dim seeded As Boolean: seeded = False
+    Dim mCount As Long: mCount = 0
+    Dim i As Long, pv As Double, v As Variant
+    For i = n To 1 Step -1
+        v = prices(1, i)
+        If IsNumeric(v) Then
+            pv = CDbl(v)
+            If pv > 0 Then
+                If Not seeded Then
+                    e12 = pv: e26 = pv: seeded = True
+                Else
+                    e12 = k12 * pv + (1# - k12) * e12
+                    e26 = k26 * pv + (1# - k26) * e26
+                End If
+                mCount = mCount + 1
+                macdArr(mCount) = e12 - e26
+            End If
+        End If
+    Next i
+    If mCount < 2 Then Exit Sub
+    ema12Today = e12: ema26Today = e26: macdToday = macdArr(mCount)
+    Dim sig As Double: sig = macdArr(1)
+    Dim sigPrev As Double: sigPrev = sig
+    Dim j As Long
+    For j = 2 To mCount
+        sigPrev = sig
+        sig = k9 * macdArr(j) + (1# - k9) * sig
+    Next j
+    signalToday = sig
+    histToday = macdArr(mCount) - sig
+    histYesterday = macdArr(mCount - 1) - sigPrev
+ExitProc:
+End Sub
+
+Private Function IsGoldenCrossRecent(ByRef prices As Variant, ByVal lookback As Long) As Boolean
+    IsGoldenCrossRecent = False
+    On Error GoTo ExitProc
+    If IsEmpty(prices) Then Exit Function
+    Dim n As Long: n = UBound(prices, 2)
+    If n < 26 Then Exit Function
+    Dim k5 As Double:  k5 = 2# / 6#
+    Dim k25 As Double: k25 = 2# / 26#
+    ReDim e5Arr(1 To n) As Double
+    ReDim e25Arr(1 To n) As Double
+    Dim e5 As Double: e5 = 0
+    Dim e25 As Double: e25 = 0
+    Dim seeded As Boolean: seeded = False
+    Dim cnt As Long: cnt = 0
+    Dim i As Long, pv As Double, v As Variant
+    For i = n To 1 Step -1
+        v = prices(1, i)
+        If IsNumeric(v) Then
+            pv = CDbl(v)
+            If pv > 0 Then
+                If Not seeded Then
+                    e5 = pv: e25 = pv: seeded = True
+                Else
+                    e5 = k5 * pv + (1# - k5) * e5
+                    e25 = k25 * pv + (1# - k25) * e25
+                End If
+                cnt = cnt + 1
+                e5Arr(cnt) = e5: e25Arr(cnt) = e25
+            End If
+        End If
+    Next i
+    If cnt < 2 Then Exit Function
+    If e5Arr(cnt) <= e25Arr(cnt) Then Exit Function
+    Dim lookStart As Long: lookStart = cnt - lookback
+    If lookStart < 1 Then lookStart = 1
+    Dim j As Long
+    For j = lookStart To cnt - 1
+        If e5Arr(j) <= e25Arr(j) Then
+            IsGoldenCrossRecent = True: Exit Function
+        End If
+    Next j
+ExitProc:
+End Function
+
+Private Function IsPerfectOrder(ByRef prices As Variant) As Boolean
+    IsPerfectOrder = False
+    On Error GoTo ExitProc
+    If IsEmpty(prices) Then Exit Function
+    Dim e5  As Double: e5 = ComputeSingleEMA(prices, 5)
+    Dim e25 As Double: e25 = ComputeSingleEMA(prices, 25)
+    Dim e75 As Double: e75 = ComputeSingleEMA(prices, 75)
+    If e5 > 0 And e25 > 0 And e75 > 0 Then
+        IsPerfectOrder = (e5 > e25) And (e25 > e75)
+    End If
+ExitProc:
+End Function
+
+Private Function ComputeSingleEMA(ByRef prices As Variant, ByVal period As Long) As Double
+    ComputeSingleEMA = 0
+    On Error GoTo ExitProc
+    If IsEmpty(prices) Then Exit Function
+    Dim n As Long: n = UBound(prices, 2)
+    If n < 2 Then Exit Function
+    Dim k As Double: k = 2# / (period + 1#)
+    Dim ema As Double: ema = 0
+    Dim seeded As Boolean: seeded = False
+    Dim i As Long, pv As Double, v As Variant
+    For i = n To 1 Step -1
+        v = prices(1, i)
+        If IsNumeric(v) Then
+            pv = CDbl(v)
+            If Not seeded Then
+                ema = pv: seeded = True
+            Else
+                ema = k * pv + (1# - k) * ema
+            End If
+        End If
+    Next i
+    ComputeSingleEMA = ema
+ExitProc:
+End Function
+
+Private Function IsVolumeBurstBullish(ByRef vols As Variant, ByRef closes As Variant, _
+                                       ByRef opens As Variant, ByVal ratio As Double, _
+                                       Optional ByVal progress As Double = 1#) As Boolean
+    IsVolumeBurstBullish = False
+    On Error GoTo ExitProc
+    If IsEmpty(vols) Or IsEmpty(closes) Or IsEmpty(opens) Then Exit Function
+    Dim n As Long: n = UBound(vols, 2)
+    If n < 2 Then Exit Function
+    If Not IsNumeric(vols(1, 1)) Then Exit Function
+    If Not IsNumeric(closes(1, 1)) Then Exit Function
+    If Not IsNumeric(opens(1, 1)) Then Exit Function
+    Dim todayVol   As Double: todayVol = CDbl(vols(1, 1))
+    '★v14：ザラ場は途中までの出来高なので1日分に換算してから比べる
+    If progress > 0 And progress < 1 Then todayVol = todayVol / progress
+    Dim todayClose As Double: todayClose = CDbl(closes(1, 1))
+    Dim todayOpen  As Double: todayOpen = CDbl(opens(1, 1))
+    If todayVol <= 0 Or todayClose <= 0 Or todayOpen <= 0 Then Exit Function
+    If todayClose <= todayOpen Then Exit Function
+    Dim endIdx As Long: endIdx = 21
+    If endIdx > n Then endIdx = n
+    Dim Sum As Double: Sum = 0
+    Dim cnt As Long: cnt = 0
+    Dim i As Long
+    For i = 2 To endIdx
+        If IsNumeric(vols(1, i)) Then
+            Dim vV As Double: vV = CDbl(vols(1, i))
+            If vV > 0 Then Sum = Sum + vV: cnt = cnt + 1
+        End If
+    Next i
+    If cnt < 5 Then Exit Function
+    IsVolumeBurstBullish = (todayVol >= (Sum / cnt) * ratio)
+ExitProc:
+End Function
+
+Private Function ComputeADX(ByRef highs As Variant, ByRef loWs As Variant, ByRef closes As Variant) As Double
+    ComputeADX = 0
+    On Error GoTo ExitProc
+    If IsEmpty(highs) Or IsEmpty(loWs) Or IsEmpty(closes) Then Exit Function
+    Dim n As Long: n = UBound(highs, 2)
+    If n < 28 Then Exit Function
+    Const p As Long = 14
+    ReDim hArr(1 To n) As Double
+    ReDim lArr(1 To n) As Double
+    ReDim cArr(1 To n) As Double
+    Dim cnt As Long: cnt = 0
+    Dim i As Long
+    For i = n To 1 Step -1
+        If IsNumeric(highs(1, i)) And IsNumeric(loWs(1, i)) And IsNumeric(closes(1, i)) Then
+            Dim hv As Double, lv As Double, cv As Double
+            hv = CDbl(highs(1, i)): lv = CDbl(loWs(1, i)): cv = CDbl(closes(1, i))
+            If hv > 0 And lv > 0 And cv > 0 Then
+                cnt = cnt + 1
+                hArr(cnt) = hv: lArr(cnt) = lv: cArr(cnt) = cv
+            End If
+        End If
+    Next i
+    If cnt < 28 Then Exit Function
+    ReDim trArr(2 To cnt) As Double
+    ReDim pdmArr(2 To cnt) As Double
+    ReDim mdmArr(2 To cnt) As Double
+    Dim j As Long
+    For j = 2 To cnt
+        Dim hd As Double, ld As Double
+        hd = hArr(j) - hArr(j - 1): ld = lArr(j - 1) - lArr(j)
+        pdmArr(j) = IIf(hd > ld And hd > 0, hd, 0)
+        mdmArr(j) = IIf(ld > hd And ld > 0, ld, 0)
+        Dim t1 As Double, t2 As Double, t3 As Double
+        t1 = hArr(j) - lArr(j)
+        t2 = Abs(hArr(j) - cArr(j - 1))
+        t3 = Abs(lArr(j) - cArr(j - 1))
+        trArr(j) = t1
+        If t2 > trArr(j) Then trArr(j) = t2
+        If t3 > trArr(j) Then trArr(j) = t3
+    Next j
+    If cnt < 2 + p - 1 Then Exit Function
+    Dim atr As Double, pdm As Double, mdm As Double
+    atr = 0: pdm = 0: mdm = 0
+    For j = 2 To 1 + p
+        atr = atr + trArr(j): pdm = pdm + pdmArr(j): mdm = mdm + mdmArr(j)
+    Next j
+    ReDim dxArr(1 To cnt) As Double
+    Dim dxCnt As Long: dxCnt = 0
+    Dim pDI As Double, mDI As Double, sDI As Double
+    If atr > 0 Then
+        pDI = 100# * pdm / atr: mDI = 100# * mdm / atr: sDI = pDI + mDI
+        If sDI > 0 Then dxCnt = dxCnt + 1: dxArr(dxCnt) = 100# * Abs(pDI - mDI) / sDI
+    End If
+    For j = 2 + p To cnt
+        atr = atr - (atr / p) + trArr(j)
+        pdm = pdm - (pdm / p) + pdmArr(j)
+        mdm = mdm - (mdm / p) + mdmArr(j)
+        If atr > 0 Then
+            pDI = 100# * pdm / atr: mDI = 100# * mdm / atr: sDI = pDI + mDI
+            If sDI > 0 Then dxCnt = dxCnt + 1: dxArr(dxCnt) = 100# * Abs(pDI - mDI) / sDI
+        End If
+    Next j
+    If dxCnt < p Then Exit Function
+    Dim adx As Double: adx = 0
+    For j = 1 To p: adx = adx + dxArr(j): Next j
+    adx = adx / p
+    For j = p + 1 To dxCnt: adx = (adx * (p - 1) + dxArr(j)) / p: Next j
+    ComputeADX = adx
+ExitProc:
+End Function
+
+Private Sub writeRow(ByVal ws As Worksheet, ByVal r As Long, _
+                     ByVal code As String, ByVal meiName As String, _
+                     ByVal closePrice As Double, ByVal highVal As Double, _
+                     ByVal lowVal As Double, ByVal volToday As Double, _
+                     ByVal rsiVal As Double, ByVal emaTrend As String, _
+                     ByVal osime As String, ByVal volRatio As Double, _
+                     ByVal macdVal As Double, ByVal highUpdate As String, _
+                     ByVal isFake As Boolean, ByVal totalScore As Long, _
+                     ByVal signals As String)
+    With ws
+        .Cells(r, 1).Formula = "=HYPERLINK(""https://kabutan.jp/stock/?code=""&TEXT(C" & r & ",""0000""),""株探"")"
+        .Cells(r, 1).Interior.Color = COL_NAVY
+        .Cells(r, 1).Font.Color = COL_WHITE
+        .Cells(r, 1).Font.Bold = True
+        .Cells(r, 1).HorizontalAlignment = xlCenter
+        .Cells(r, 2).Font.Color = COL_BLACK
+        .Cells(r, 3).Value = code
+        .Cells(r, 3).NumberFormat = "0000"
+        .Cells(r, 3).Font.Color = COL_BLACK
+        '★修正：表示形式を文字列に固定してから書く（数値化・日付化の防止）
+        .Cells(r, 4).NumberFormat = "@"
+        .Cells(r, 4).Value = meiName
+        .Cells(r, 4).Font.Color = COL_BLACK
+        .Cells(r, 4).Font.Bold = True
+        .Cells(r, 4).HorizontalAlignment = xlLeft
+        .Cells(r, 5).Value = closePrice
+        .Cells(r, 5).NumberFormat = "#,##0"
+        .Cells(r, 5).Font.Color = COL_BLACK
+        .Cells(r, 6).Value = highVal
+        .Cells(r, 6).NumberFormat = "#,##0"
+        .Cells(r, 7).Value = lowVal
+        .Cells(r, 7).NumberFormat = "#,##0"
+        .Cells(r, 8).Value = volToday
+        .Cells(r, 8).NumberFormat = "#,##0"
+        .Cells(r, 9).Value = Format(rsiVal, "0.0")
+        .Cells(r, 10).Value = emaTrend
+        Select Case emaTrend
+            Case "パーフェクト▲"
+                .Cells(r, 10).Interior.Color = RGB(0, 176, 80)
+                .Cells(r, 10).Font.Color = COL_WHITE
+                .Cells(r, 10).Font.Bold = True
+            Case "上昇トレンド▲"
+                .Cells(r, 10).Interior.Color = RGB(146, 208, 80)
+                .Cells(r, 10).Font.Color = COL_BLACK
+            Case "下降トレンド▼"
+                .Cells(r, 10).Interior.Color = RGB(255, 0, 0)
+                .Cells(r, 10).Font.Color = COL_WHITE
+        End Select
+        .Cells(r, 11).Value = osime
+        .Cells(r, 12).Value = Format(volRatio, "0.0")
+        .Cells(r, 13).Value = Format(macdVal, "0.00")
+        .Cells(r, 14).Value = highUpdate
+        If isFake Then
+            .Cells(r, 14).Interior.Color = RGB(255, 255, 0)
+            .Cells(r, 14).Font.Color = RGB(255, 0, 0)
+        End If
+        .Cells(r, 15).Value = Format(closePrice * 1.08, "#,##0")
+        .Cells(r, 16).Value = Format(closePrice * 0.96, "#,##0")
+        .Cells(r, 17).Value = totalScore
+        If totalScore >= 17 Then
+            .Cells(r, 17).Interior.Color = RGB(255, 0, 0)
+            .Cells(r, 17).Font.Color = COL_WHITE
+            .Cells(r, 17).Font.Bold = True
+        ElseIf totalScore >= 14 Then
+            .Cells(r, 17).Interior.Color = RGB(255, 102, 0)
+            .Cells(r, 17).Font.Color = COL_WHITE
+        End If
+        .Cells(r, 18).Value = signals
+        .Cells(r, 18).Font.Color = RGB(80, 80, 80)
+    End With
+End Sub

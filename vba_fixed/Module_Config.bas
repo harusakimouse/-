@@ -371,6 +371,47 @@ Public Function SecHMS(ByVal sec As Long) As String
     SecHMS = Format$(TimeSerial(sec \ 3600, (sec \ 60) Mod 60, sec Mod 60), "hh:mm:ss")
 End Function
 
+' 「何秒前か」を読みやすい日本語にする
+'   42秒前 / 3分12秒前 / 5時間51分前
+Public Function AgoText(ByVal secAgo As Long) As String
+
+    Dim h As Long, m As Long, s As Long
+
+    If secAgo < 0 Then
+        AgoText = "不明"
+        Exit Function
+    End If
+
+    h = secAgo \ 3600
+    m = (secAgo \ 60) Mod 60
+    s = secAgo Mod 60
+
+    If h > 0 Then
+        AgoText = h & "時間" & m & "分前"
+    ElseIf m > 0 Then
+        AgoText = m & "分" & s & "秒前"
+    Else
+        AgoText = s & "秒前"
+    End If
+End Function
+
+' 複数行の警告文を箇条書きにする（2行目以降は字下げ）
+Public Function Bullet(ByVal msg As String) As String
+
+    Dim parts() As String
+    Dim i As Long
+    Dim out As String
+
+    parts = Split(msg, vbCrLf)
+    For i = LBound(parts) To UBound(parts)
+        If Len(Trim$(parts(i))) > 0 Then
+            out = out & IIf(i = LBound(parts), "・", "　") & parts(i) & vbCrLf
+        End If
+    Next i
+
+    Bullet = out
+End Function
+
 ' 現在の 0時からの経過秒
 Public Function NowSec() As Long
     NowSec = Hour(Now) * 3600& + Minute(Now) * 60& + Second(Now)

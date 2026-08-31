@@ -476,7 +476,7 @@ Public Function FeedSummary(shts As Collection) As String
     Set ws = shts(1)
 
     s = BlockNewestSec(ws)
-    FeedSummary = ws.Name & " 歩み値:" & IIf(s < 0, "読取不可", SecHMS(s) & "（" & SecondsAgo(s) & "秒前）") & _
+    FeedSummary = ws.Name & " 歩み値:" & IIf(s < 0, "読取不可", SecHMS(s) & "（" & AgoText(SecondsAgo(s)) & "）") & _
                   " / 現在値:" & Format$(NumOrZero(ws.Range(LIVE_PRICE).Value), "#,##0") & _
                   " / " & Left$(FeedStatusText(ws), 40)
 End Function
@@ -812,7 +812,7 @@ Public Sub ShowTickBlockInfo()
     msg = msg & "読めたティック数 : " & n & "（配信状態行・見出し行・終端記号は自動で読み飛ばし）" & vbCrLf & _
           "最古 : " & SecHMS(CLng(b(1, 1))) & "  " & b(1, 2) & "  " & b(1, 3) & vbCrLf & _
           "最新 : " & SecHMS(s) & "  " & b(n, 2) & "  " & b(n, 3) & vbCrLf & vbCrLf & _
-          "最新ティックは " & SecondsAgo(s) & " 秒前です。" & vbCrLf & _
+          "最新ティックは " & AgoText(SecondsAgo(s)) & "です。" & vbCrLf & _
           IIf(SecondsAgo(s) <= STALE_LIMIT_SEC, _
               "→ 配信は生きています（歩み値追従モードで動きます）。", _
               "→ " & STALE_LIMIT_SEC & " 秒以上止まっています。ザラバ中ならRSSの接続を確認してください。")

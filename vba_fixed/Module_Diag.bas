@@ -187,7 +187,7 @@ Private Sub ReportDiag(ByVal idleChange As Long, ByVal busyChange As Long, ByVal
           "第1段階（アイドル " & DIAG_SECONDS & "秒） 更新 " & idleChange & " 回" & vbCrLf & _
           "第2段階（ループ " & DIAG_SECONDS & "秒）  更新 " & busyChange & " 回（" & loops & " 周）" & vbCrLf & vbCrLf & _
           "対象 : " & mDgWs.Name & "（" & mDgWs.Cells(ROW_CODE, COL_CODE).Value & "）" & vbCrLf & _
-          "歩み値の最新 : " & IIf(s < 0, "読取不可", SecHMS(s) & "（" & SecondsAgo(s) & " 秒前）") & vbCrLf & _
+          "歩み値の最新 : " & IIf(s < 0, "読取不可", SecHMS(s) & "（" & AgoText(SecondsAgo(s)) & "）") & vbCrLf & _
           "配信状態 : " & Left$(FeedStatusText(mDgWs), 60) & vbCrLf & vbCrLf & _
           advice
 
@@ -280,21 +280,21 @@ Public Sub ShowConfigCheck()
         Set ws = shts(i)
         s = BlockNewestSec(ws)
         msg = msg & "　" & ws.Name & " : " & ws.Cells(ROW_CODE, COL_CODE).Value & _
-              " / 歩み値 " & IIf(s < 0, "読取不可", SecHMS(s) & "（" & SecondsAgo(s) & "秒前）") & _
+              " / 歩み値 " & IIf(s < 0, "読取不可", SecHMS(s) & "（" & AgoText(SecondsAgo(s)) & "）") & _
               " / ログ " & Application.Max(0, LastTickRow(ws) - TICK_FIRST_ROW + 1) & " 行" & vbCrLf
     Next i
 
     '--- 問題点 -------------------------------------------------------
     warn = LayoutWarning()
-    If Len(warn) > 0 Then problems = problems & "・" & warn & vbCrLf
+    If Len(warn) > 0 Then problems = problems & Bullet(warn)
     warn = WindowWarning()
-    If Len(warn) > 0 Then problems = problems & "・" & Replace$(warn, vbCrLf, " ") & vbCrLf
+    If Len(warn) > 0 Then problems = problems & Bullet(warn)
     warn = DuplicateCodeWarning()
-    If Len(warn) > 0 Then problems = problems & "・" & Replace$(warn, vbCrLf, " ") & vbCrLf
+    If Len(warn) > 0 Then problems = problems & Bullet(warn)
     If shts.Count > 0 Then
         If Len(FeedStatusText(shts(1))) = 0 Then
-            problems = problems & "・" & TICK_FORMULA_CELL & " に歩み値の数式が入っていません。" & _
-                       "「歩み値の数式を全シートに設定」を実行してください。" & vbCrLf
+            problems = problems & Bullet(TICK_FORMULA_CELL & " に歩み値の数式が入っていません。" & vbCrLf & _
+                       "「歩み値の数式を全シートに設定」を実行してください。")
         End If
     End If
 

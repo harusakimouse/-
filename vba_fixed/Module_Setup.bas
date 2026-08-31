@@ -400,6 +400,15 @@ Private Sub SeedResultRows(ws As Worksheet)
         ws.Cells(rw, SUM_COL_FIRST).Value = src.Cells(ROW_CODE, COL_CODE).Value
         ws.Cells(rw, SUM_COL_FIRST + 1).Value = src.Cells(ROW_CODE, COL_NAME).Value
     Next i
+
+    '--- 銘柄を減らしたときに前回の行が残らないようにする ---------------
+    If shts.Count < SUM_MAX_ROWS Then
+        With ws.Range(ws.Cells(ROW_HEADER + shts.Count + 1, SUM_COL_FIRST), _
+                      ws.Cells(ROW_HEADER + SUM_MAX_ROWS, SUM_COL_LAST))
+            .ClearContents
+            .Interior.Pattern = xlNone
+        End With
+    End If
 End Sub
 
 Private Sub AddButton(ws As Worksheet, ByVal idx As Long, ByVal caption As String, ByVal macroName As String)

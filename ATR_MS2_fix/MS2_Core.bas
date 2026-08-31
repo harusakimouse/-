@@ -19,6 +19,7 @@ Option Explicit
 '  C-6  RANK_MS2 を月次損益の降順に並べ替え。PF/RR は数値のまま(999=∞)
 '  C-8  エラー時に成功メッセージを出さない
 '  C-9  実銘柄数だけをループ
+'  ---  TRADE_MS2 に U列（同日損益・内部）を追加。MINIFS を使わず最大損失を出す
 '
 '  DATA_MS2 列: A=No B=株探 C=コード D=銘柄名
 '    E=現在値 F=高値 G=安値 H=終値 I=出来高 J=前日高値 K=前日安値 L=前日終値
@@ -152,6 +153,10 @@ Private Sub PutTradeAux(wsT As Worksheet, ByVal r As Long)
     wsT.Cells(r, "Q").Formula = "=IF(OR($B" & r & "="""",$J" & r & "=""""),""""," & _
                                 "IF(AND($J" & r & "<>""EXPIRED"",ISNUMBER($L" & r & "),ISNUMBER($M" & r & ")," & _
                                 "INT($L" & r & ")=INT($M" & r & ")),1,0))"
+    '★U列＝同日決済ぶんの損益だけを取り出す内部ヘルパー。
+    '  MIN は空白と文字列を無視するので、MINIFS（Excel2016以降の関数で
+    '  XMLには _xlfn. 接頭辞が要る）を使わずに最大損失を出せる。
+    wsT.Cells(r, "U").Formula = "=IF($Q" & r & "=1,$O" & r & ","""")"
 End Sub
 
 '============================================================
@@ -1297,6 +1302,8 @@ Sub MS2_Fix_TRADE_Header()
         PutTradeAux ws, j
     Next j
 
+    ws.Range("U1").Value = "同日損益(内部)"
+
     'サマリー（★同日決済のみを集計）
     ws.Range("R1").Value = "◆ 100株換算サマリー（同日決済のみ）"
     ws.Range("R2").Value = "決済済み件数"
@@ -1308,7 +1315,7 @@ Sub MS2_Fix_TRADE_Header()
     ws.Range("S2").Formula = "=COUNTIFS($Q$2:$Q$" & TRADE_LAST & ",1)"
     ws.Range("S3").Formula = "=SUMIFS($O$2:$O$" & TRADE_LAST & ",$Q$2:$Q$" & TRADE_LAST & ",1)"
     ws.Range("S4").Formula = "=IF(S2=0,0,ROUND(S3/S2,0))"
-    ws.Range("S5").Formula = "=IF(S2=0,0,IFERROR(MINIFS($O$2:$O$" & TRADE_LAST & ",$Q$2:$Q$" & TRADE_LAST & ",1),0))"
+    ws.Range("S5").Formula = "=IF(S2=0,0,MIN($U$2:$U$" & TRADE_LAST & "))"
     ws.Range("S6").Formula = "=IF(S2=0,0,COUNTIFS($O$2:$O$" & TRADE_LAST & ","">0"",$Q$2:$Q$" & TRADE_LAST & ",1)/S2)"
     ws.Range("S7").Formula = "=COUNTIFS($Q$2:$Q$" & TRADE_LAST & ",0)"
     ws.Range("S6").NumberFormat = "0.0%"

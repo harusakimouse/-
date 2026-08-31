@@ -460,7 +460,7 @@ Public Sub ShowVolumeProfile()
     If BlockedWhileLogging("出来高プロファイル") Then Exit Sub
 
     Set ws = ActiveSheet
-    If ws.Name = RESULT_SHEET Then
+    If IsSystemSheet(ws.Name) Then
         Set shts = TargetSheets()
         If shts.Count = 0 Then Exit Sub
         Set ws = shts(1)

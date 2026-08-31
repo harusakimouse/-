@@ -137,6 +137,10 @@ Public Const USE_RSS_TIME As Boolean = False
 '------------------------------------------------------------------
 Public Const RESULT_SHEET As String = "Judge_Results"
 
+' 説明シート（マクロが生成。判定対象にはしません）
+Public Const HELP_STEPS_SHEET As String = "手順書"
+Public Const HELP_TABLE_SHEET As String = "表の見方"
+
 ' 銘柄シートの行
 '   1行目はメモ用に空けてあります。マクロは絶対に書き込みません。
 Public Const ROW_HEADER     As Long = 2   ' 見出し行
@@ -264,13 +268,18 @@ End Type
 
 ' 判定対象の銘柄シートを列挙する
 '   Judge_Results 以外で、B3 に証券コードが入っているシートを対象にします。
+' マクロが管理するシート（判定対象にしない）
+Public Function IsSystemSheet(ByVal nm As String) As Boolean
+    IsSystemSheet = (nm = RESULT_SHEET) Or (nm = HELP_STEPS_SHEET) Or (nm = HELP_TABLE_SHEET)
+End Function
+
 Public Function TargetSheets() As Collection
 
     Dim c As New Collection
     Dim ws As Worksheet
 
     For Each ws In ThisWorkbook.Worksheets
-        If ws.Name <> RESULT_SHEET Then
+        If Not IsSystemSheet(ws.Name) Then
             If IsNumeric(ws.Cells(ROW_CODE, COL_CODE).Value) Then
                 If Val(ws.Cells(ROW_CODE, COL_CODE).Value) > 0 Then c.Add ws
             End If

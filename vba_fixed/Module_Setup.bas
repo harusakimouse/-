@@ -31,6 +31,7 @@ Public Sub Setup_All()
     Next i
 
     SetupResultSheet
+    EnsureHelpSheets                      ' 説明シート（無ければ作る）
     ResultSheet().Activate
 
     Application.ScreenUpdating = True
@@ -321,24 +322,57 @@ End Sub
 '------------------------------------------------------------------
 ' 操作ボタンを作り直す
 '------------------------------------------------------------------
+'------------------------------------------------------------------
+' ボタンの定義（表示名 / マクロ名 / 説明）
+'   「手順書」シートのボタン一覧もここから作ります。
+'   ボタンを足したらここだけ直せば、説明も自動で追従します。
+'------------------------------------------------------------------
+Public Function ButtonTable() As Variant
+
+    ButtonTable = Array( _
+        Array("① 準備（表とRSSを作る）", "Setup_All", _
+              "シートの体裁・RSS数式・ボタンを作り直します。銘柄を足したあとにも押してください"), _
+        Array("② ティック記録 開始", "StartTickLoggingButton", _
+              "いますぐ記録を開始します。ふだんは自動予約が効くので押す必要はありません"), _
+        Array("③ 記録 停止 → 判定", "StopAndJudge", _
+              "記録を止めてその場で判定します。記録していないときは判定だけ実行します"), _
+        Array("④ 判定 実行", "JudgeAll", _
+              "記録済みのティックを判定し直します。パラメータを変えたあとに使います"), _
+        Array("⑤ ティックログ消去", "ClearAllTicks", _
+              "全銘柄シートのティックログと判定結果を消します"), _
+        Array("自動開始を予約（" & AUTO_ARM_TIME & "）", "ArmAutoRun", _
+              "記録開始を予約し直します。ブックを開いた時点で自動的に予約されています"), _
+        Array("歩み値の数式を全シートに設定", "ApplyTickFormula", _
+              "各銘柄シートの " & TICK_FORMULA_CELL & " に RssTickList の数式を入れます"), _
+        Array("歩み値ブロックの確認", "ShowTickBlockInfo", _
+              "いま歩み値が読めているか、最新ティックが何分前かを表示します"), _
+        Array("歩み値を今すぐ取込", "ImportTickBlockNow", _
+              "記録を回していないときに、歩み値ブロックの内容を手動で取り込みます"), _
+        Array("出来高プロファイル", "ShowVolumeProfile", _
+              "記録済みティックを1分ごとに集計します。判定窓を決める材料に"), _
+        Array("CSV（歩み値）取込", "ImportTickCsv", _
+              "歩み値CSVを読み込みます。検証・バックテスト用"), _
+        Array("銘柄シートを追加", "AddTickSheet", _
+              "証券コードを入力して銘柄シートを1枚追加します"), _
+        Array("★ RSS 疎通テスト（切り分け）", "RunFeedDiagnosis", _
+              "ザラバ中に押すと、配信が止まる原因（ループ占有 / RSS切断 / 時間外）を名指しします"), _
+        Array("設定の点検", "ShowConfigCheck", _
+              "判定窓・パラメータ・各シートの歩み値の鮮度・設定の矛盾を一覧表示します"), _
+        Array("手順書・表の見方を作り直す", "RebuildHelpSheets", _
+              "説明シート2枚を作り直します"))
+End Function
+
 Private Sub BuildButtons(ws As Worksheet)
+
+    Dim t As Variant
+    Dim i As Long
 
     ws.Buttons.Delete
 
-    AddButton ws, 0, "① 準備（表とRSSを作る）", "Setup_All"
-    AddButton ws, 1, "② ティック記録 開始", "StartTickLoggingButton"
-    AddButton ws, 2, "③ 記録 停止 → 判定", "StopAndJudge"
-    AddButton ws, 3, "④ 判定 実行", "JudgeAll"
-    AddButton ws, 4, "⑤ ティックログ消去", "ClearAllTicks"
-    AddButton ws, 5, "自動開始を予約（" & AUTO_ARM_TIME & "）", "ArmAutoRun"
-    AddButton ws, 6, "歩み値の数式を全シートに設定", "ApplyTickFormula"
-    AddButton ws, 7, "歩み値ブロックの確認", "ShowTickBlockInfo"
-    AddButton ws, 8, "歩み値を今すぐ取込", "ImportTickBlockNow"
-    AddButton ws, 9, "出来高プロファイル", "ShowVolumeProfile"
-    AddButton ws, 10, "CSV（歩み値）取込", "ImportTickCsv"
-    AddButton ws, 11, "銘柄シートを追加", "AddTickSheet"
-    AddButton ws, 12, "★ RSS 疎通テスト（切り分け）", "RunFeedDiagnosis"
-    AddButton ws, 13, "設定の点検", "ShowConfigCheck"
+    t = ButtonTable()
+    For i = LBound(t) To UBound(t)
+        AddButton ws, i, CStr(t(i)(0)), CStr(t(i)(1))
+    Next i
 End Sub
 
 '------------------------------------------------------------------

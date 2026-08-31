@@ -33,7 +33,7 @@ Public Sub ImportTickCsv()
     If BlockedWhileLogging("CSV（歩み値）取込") Then Exit Sub
 
     Set ws = ActiveSheet
-    If ws.Name = RESULT_SHEET Then
+    If IsSystemSheet(ws.Name) Then
         MsgBox "取り込み先の銘柄シートを開いてから実行してください。", vbExclamation, "CSV取込"
         Exit Sub
     End If

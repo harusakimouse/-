@@ -781,7 +781,7 @@ Public Sub ShowTickBlockInfo()
     Dim shts As Collection
 
     Set ws = ActiveSheet
-    If ws.Name = RESULT_SHEET Then
+    If IsSystemSheet(ws.Name) Then
         Set shts = TargetSheets()
         If shts.Count = 0 Then
             MsgBox "銘柄シートがありません。", vbExclamation, "歩み値ブロックの確認"

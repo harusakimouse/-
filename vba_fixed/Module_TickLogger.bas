@@ -394,7 +394,7 @@ Private Sub WarnIfStale()
     note = quiet & " 秒間ティックがありません（" & Format$(Now, "hh:mm:ss") & "）。" & FeedSummary(mSheets)
 
     WriteRunLog LOGR_WARN, note
-    ResultSheet().Range(RES_STATUS).Value = "⚠ 配信停止の疑い " & Format$(Now, "hh:mm:ss") & "（" & ModeText(mMode) & "）"
+    ResultSheet().Range(RES_STATUS).Value = "【警告】配信停止の疑い " & Format$(Now, "hh:mm:ss") & "（" & ModeText(mMode) & "）"
     PaintStatus ResultSheet().Range(RES_STATUS), "warn"
     mStaleWarned = True
 End Sub

@@ -7,6 +7,8 @@ Private Const MARK       As String = "〇"
 Private Const FIRST_ROW  As Long = 2
 ' A:起動  B:表示名  C:ファイル名  D:フォルダ  E:状態
 '==================================================================
+Private g_LastErr As String
+'==================================================================
 
 '------------------------------------------------------------------
 ' ① リスト更新  デスクトップの xls* を一覧化（〇印は保持）
@@ -129,74 +131,146 @@ Public Sub 起動()
 End Sub
 
 '------------------------------------------------------------------
-' 保存して閉じる（開いている全ブックを保存 → Excel終了）
+' 保存して閉じる
+'   起動リストで〇の付いたブック（＝起動したブック）だけを保存して閉じ、
+'   最後にランチャー自身を保存して Excel を終了する
 '------------------------------------------------------------------
 Public Sub 保存して閉じる_選択ブック()
-    Dim wb As Workbook, nm As String
-    Dim i As Long, cnt As Long, failCnt As Long
-    Dim closed As String, failed As String
+    Dim ws As Worksheet, r As Long, lastRow As Long
+    Dim wb As Workbook, nm As String, fullPath As String
+    Dim cnt As Long, failCnt As Long, restCnt As Long
+    Dim closed As String, failed As String, rest As String
     Dim ans As VbMsgBoxResult
+    Dim i As Long
 
-    ans = MsgBox("開いているブックをすべて保存して Excel を終了します。" & vbCrLf & _
-                 "よろしいですか？", vbQuestion + vbOKCancel, "保存して終了")
+    Set ws = GetSheet()
+    If ws Is Nothing Then Exit Sub
+    lastRow = LastDataRow(ws)
+
+    ans = MsgBox("起動リストで〇の付いたブックを保存して閉じ、" & vbCrLf & _
+                 "そのあと Excel を終了します。よろしいですか？", _
+                 vbQuestion + vbOKCancel, "保存して終了")
     If ans <> vbOK Then Exit Sub
 
     Application.ScreenUpdating = False
     Application.DisplayAlerts = False
 
-    ' 逆順（閉じるとコレクションが縮むため）
-    For i = Workbooks.Count To 1 Step -1
-        Set wb = Workbooks(i)
-        If wb.Name <> ThisWorkbook.Name Then
-            nm = wb.Name
-            Err.Clear
-            On Error Resume Next
-            If wb.Path = "" Then
-                wb.Saved = True          ' 未保存の新規ブックは破棄
-            ElseIf Not wb.ReadOnly Then
-                wb.Save
-            End If
-            If Err.Number <> 0 Then
-                failed = failed & "・" & nm & "（保存失敗 " & Err.Number & "）" & vbCrLf
-                failCnt = failCnt + 1
-                Err.Clear
+    ' ---- ① 〇の付いたブックを保存して閉じる ----
+    For r = FIRST_ROW To lastRow
+        If Trim$(CStr(ws.Cells(r, "A").Value)) = MARK Then
+            fullPath = BuildPath(ws, r)
+            Set wb = FindOpenWorkbook(fullPath)
+
+            If wb Is Nothing Then
+                ws.Cells(r, "E").Value = "開いていません"
+            ElseIf StrComp(wb.Name, ThisWorkbook.Name, vbTextCompare) = 0 Then
+                ' 自分自身は最後に処理する
             Else
-                wb.Close SaveChanges:=False
-                If Err.Number <> 0 Then
-                    failed = failed & "・" & nm & "（閉じる失敗 " & Err.Number & "）" & vbCrLf
-                    failCnt = failCnt + 1
-                    Err.Clear
-                Else
-                    closed = closed & "・" & nm & vbCrLf
+                nm = wb.Name
+                If SaveAndClose(wb) Then
                     cnt = cnt + 1
+                    closed = closed & "・" & nm & vbCrLf
+                    ws.Cells(r, "E").Value = "保存して閉じました"
+                Else
+                    failCnt = failCnt + 1
+                    failed = failed & "・" & nm & "（" & g_LastErr & "）" & vbCrLf
+                    ws.Cells(r, "E").Value = "閉じられません"
                 End If
             End If
-            On Error GoTo 0
+            Set wb = Nothing
         End If
-        Set wb = Nothing
-    Next i
+    Next r
 
     Application.DisplayAlerts = True      ' ← 必ず戻す
     Application.ScreenUpdating = True
 
     If failCnt > 0 Then
-        MsgBox cnt & "ブックを閉じました。" & vbCrLf & vbCrLf & _
+        MsgBox cnt & "ブックを保存して閉じました。" & vbCrLf & vbCrLf & _
                "処理できなかったブック:" & vbCrLf & failed & vbCrLf & _
                "Excel は終了しません。手動で確認してください。", vbExclamation
         Exit Sub
     End If
 
+    ' ---- ② 〇以外でまだ開いているブックの確認 ----
+    For i = 1 To Workbooks.Count
+        If StrComp(Workbooks(i).Name, ThisWorkbook.Name, vbTextCompare) <> 0 Then
+            rest = rest & "・" & Workbooks(i).Name & vbCrLf
+            restCnt = restCnt + 1
+        End If
+    Next i
+
+    If restCnt = 0 Then
+        MsgBox cnt & "ブックを保存して閉じました。" & vbCrLf & vbCrLf & closed & vbCrLf & _
+               "OK で Excel を終了します。", vbInformation
+    Else
+        ans = MsgBox(cnt & "ブックを保存して閉じました。" & vbCrLf & vbCrLf & closed & vbCrLf & _
+                     "次のブックがまだ開いています:" & vbCrLf & rest & vbCrLf & _
+                     "これも保存して Excel を終了しますか？" & vbCrLf & _
+                     "（いいえ＝Excel を終了しません）", vbQuestion + vbYesNo, "確認")
+        If ans <> vbYes Then Exit Sub
+
+        Application.ScreenUpdating = False
+        Application.DisplayAlerts = False
+        For i = Workbooks.Count To 1 Step -1
+            Set wb = Workbooks(i)
+            If StrComp(wb.Name, ThisWorkbook.Name, vbTextCompare) <> 0 Then
+                nm = wb.Name
+                If Not SaveAndClose(wb) Then
+                    failCnt = failCnt + 1
+                    failed = failed & "・" & nm & "（" & g_LastErr & "）" & vbCrLf
+                End If
+            End If
+            Set wb = Nothing
+        Next i
+        Application.DisplayAlerts = True
+        Application.ScreenUpdating = True
+
+        If failCnt > 0 Then
+            MsgBox "次のブックは処理できませんでした:" & vbCrLf & failed & vbCrLf & _
+                   "Excel は終了しません。手動で確認してください。", vbExclamation
+            Exit Sub
+        End If
+    End If
+
+    ' ---- ③ ランチャー自身を保存して Excel 終了 ----
     On Error Resume Next
     ThisWorkbook.Save
     On Error GoTo 0
-
-    MsgBox cnt & "ブックを保存して閉じました。" & vbCrLf & vbCrLf & closed & vbCrLf & _
-           "OK で Excel を終了します。", vbInformation
 
     Application.DisplayAlerts = False
     ThisWorkbook.Saved = True             ' ← これが無いと異常終了扱い＝回復ファイル
     Application.Quit
 End Sub
+
+' 1ブックを保存して閉じる（成功でTrue／失敗理由は g_LastErr）
+Private Function SaveAndClose(wb As Workbook) As Boolean
+    g_LastErr = ""
+    Err.Clear
+    On Error Resume Next
+
+    If wb.Path = "" Then
+        wb.Saved = True                   ' 一度も保存していない新規ブックは破棄
+    ElseIf Not wb.ReadOnly Then
+        wb.Save
+    End If
+    If Err.Number <> 0 Then
+        g_LastErr = "保存失敗 " & Err.Number
+        Err.Clear
+        On Error GoTo 0
+        Exit Function
+    End If
+
+    wb.Close SaveChanges:=False
+    If Err.Number <> 0 Then
+        g_LastErr = "閉じる失敗 " & Err.Number
+        Err.Clear
+        On Error GoTo 0
+        Exit Function
+    End If
+
+    On Error GoTo 0
+    SaveAndClose = True
+End Function
 
 '------------------------------------------------------------------
 ' 全部ON / 全部OFF（押すたび切替）

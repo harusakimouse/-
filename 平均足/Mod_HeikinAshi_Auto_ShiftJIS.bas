@@ -161,21 +161,21 @@ Private Function HA_Import(ByVal showMsg As Boolean) As Boolean
     End If
 
     '--- 5つのシートを写す ---
-    Dim names As Variant
-    names = Array("始値", "高値", "安値", "終値", "出来高")
+    Dim shNames As Variant
+    shNames = Array("始値", "高値", "安値", "終値", "出来高")
 
     Dim i As Long, done As Long, miss As String
     Dim wsS As Worksheet, wsD As Worksheet
-    For i = 0 To UBound(names)
+    For i = 0 To UBound(shNames)
         Set wsS = Nothing: Set wsD = Nothing
         On Error Resume Next
-        Set wsS = wbSrc.Worksheets(CStr(names(i)))
-        Set wsD = ThisWorkbook.Worksheets(CStr(names(i)))
+        Set wsS = wbSrc.Worksheets(CStr(shNames(i)))
+        Set wsD = ThisWorkbook.Worksheets(CStr(shNames(i)))
         On Error GoTo 0
         If wsS Is Nothing Or wsD Is Nothing Then
-            miss = miss & CStr(names(i)) & " "
+            miss = miss & CStr(shNames(i)) & " "
         Else
-            If HA_CopyOne(wsS, wsD) Then done = done + 1 Else miss = miss & CStr(names(i)) & " "
+            If HA_CopyOne(wsS, wsD) Then done = done + 1 Else miss = miss & CStr(shNames(i)) & " "
         End If
     Next i
 

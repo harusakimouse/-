@@ -154,12 +154,12 @@ Private Sub HA_Run(ByVal side As Long)
         ReDim cl(1 To nCol): ReDim vo(1 To nCol)
         n = 0
         For k = nCol To 1 Step -1
-            Dim vC As Double, vO As Double, vH As Double, vL As Double
-            vC = HA_Num(aC(i, k)): vO = HA_Num(aO(i, k))
-            vH = HA_Num(aH(i, k)): vL = HA_Num(aL(i, k))
-            If vC > 0 And vO > 0 And vH > 0 And vL > 0 Then
+            Dim pC As Double, pO As Double, pH As Double, pL As Double
+            pC = HA_Num(aC(i, k)): pO = HA_Num(aO(i, k))
+            pH = HA_Num(aH(i, k)): pL = HA_Num(aL(i, k))
+            If pC > 0 And pO > 0 And pH > 0 And pL > 0 Then
                 n = n + 1
-                o(n) = vO: h(n) = vH: lo(n) = vL: cl(n) = vC
+                o(n) = pO: h(n) = pH: lo(n) = pL: cl(n) = pC
                 If IsArray(aV) Then vo(n) = HA_Num(aV(i, k)) Else vo(n) = 0
             End If
         Next k

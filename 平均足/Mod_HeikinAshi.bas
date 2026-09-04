@@ -793,3 +793,145 @@ Private Function HA_TopixState(ByVal wsC As Worksheet, ByVal lastCol As Long, _
         note = "TOPIXは20日線の下"
     End If
 End Function
+
+'==================================================================
+' 売買ルールを「平均足ルール」シートに書き出す
+'   実行 : Alt+F8 →「平均足_ルール表示」
+'   ※このブックの中だけで完結します（他のブックには触りません）
+'==================================================================
+Public Sub 平均足_ルール表示()
+
+    Dim ws As Worksheet
+    On Error Resume Next
+    Set ws = ThisWorkbook.Worksheets("平均足ルール")
+    On Error GoTo 0
+    If ws Is Nothing Then
+        Set ws = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.Count))
+        ws.Name = "平均足ルール"
+    End If
+
+    Application.ScreenUpdating = False
+    ws.Cells.UnMerge
+    ws.Cells.Clear
+
+    With ws.Range("A1:C1")
+        .Merge
+        .Value = "  平均足トレード　売買ルール（実データ検証済み）"
+        .Font.Name = "Meiryo UI"
+        .Font.Size = 14
+        .Font.Bold = True
+        .Font.Color = RGB(255, 255, 255)
+        .Interior.Color = RGB(0, 70, 127)
+        .HorizontalAlignment = xlLeft
+    End With
+    ws.Rows(1).RowHeight = 32
+
+    Dim r As Long
+    r = 3
+
+    HA_PutH ws, r, "【1】買う条件　この9つが全部そろった時だけ買う"
+    HA_PutR ws, r, "1", "当日出来高 ≧ 5日平均 × 1.6倍", "ここが一番効く。1.2倍では+0.20R、1.6倍で+0.43R"
+    HA_PutR ws, r, "2", "平均足の陽線が 2〜5本連続", "6本目以降は高値づかみになる"
+    HA_PutR ws, r, "3", "その前に陰線が3本以上（20日線の上なら2本以上）", "下げの終わりを取るため"
+    HA_PutR ws, r, "4", "最新の平均足に下ヒゲが無い", "買い方が完全に優勢な形"
+    HA_PutR ws, r, "5", "直近3日の安値 > その前4〜8日の安値", "安値切り上げ＝底が固まった証拠"
+    HA_PutR ws, r, "6", "終値 > 20日線", "逆行しているものは買わない"
+    HA_PutR ws, r, "7", "25日線からの乖離 ≧ 0%", "下げ続けている株の逆張りは負ける（検証で確認）"
+    HA_PutR ws, r, "8", "RSI(14) ≧ 50", "50割れは+0.04R、50超で+0.21R"
+    HA_PutR ws, r, "9", "平均足の実体率 ≦ 0.85", "行き過ぎた足は翌日戻される"
+    HA_PutR ws, r, "他", "株価300円以上・5日平均出来高20万株以上", "板が薄い株は入れない"
+    r = r + 1
+
+    HA_PutH ws, r, "【2】点数　合格点は4点以上。候補が複数出た日は点数の高い順に買う"
+    HA_PutR ws, r, "+3", "転換の直前が十字線（実体率0.35以下）", "平均足の本命パターン"
+    HA_PutR ws, r, "+2", "出来高2倍以上（1.6倍以上なら+1）", ""
+    HA_PutR ws, r, "+2", "RSIが65以下（適温）　※75以上なら −1", ""
+    HA_PutR ws, r, "+2", "転換前の陰線が3〜5本", ""
+    HA_PutR ws, r, "+1", "9日線 > 18日線／その直近ゴールデンクロス", ""
+    HA_PutR ws, r, "+1", "20日安値から1.5%以内で反発（支持線）", ""
+    HA_PutR ws, r, "+1", "20日高値を終値で更新（ブレイク）", ""
+    HA_PutR ws, r, "+1", "ストキャス %K が20を上抜け", ""
+    HA_PutR ws, r, "+1", "RSIが50を上抜けた当日", ""
+    HA_PutR ws, r, "+1", "ATR ≦ 株価の3.5%（値動きが素直）", ""
+    HA_PutR ws, r, "+1", "実体率 0.3〜0.7", ""
+    HA_PutR ws, r, "※", "早い者順に買うと年+34%、点数順なら年+103%", "順位を守ることが一番の利益源"
+    r = r + 1
+
+    HA_PutH ws, r, "【3】出口　ここを守らないと必ず負ける"
+    HA_PutR ws, r, "1", "損切 ＝ min(平均足の安値, 直近3日安値) − ATR×0.5（最大 −6%）", "買った直後に逆指値。入れた後は絶対に下げない"
+    HA_PutR ws, r, "2", "+2R に届いたら半分売る。残りの損切は買値まで上げる", "Rは1回の損切幅"
+    HA_PutR ws, r, "3", "平均足が陰線2本続いたら残り全部を成行で手仕舞う", "これが平均足の本番"
+    HA_PutR ws, r, "4", "5営業日たっても+2R未達の玉は勝ち負けに関係なく手仕舞う", "資金を寝かせない"
+    HA_PutR ws, r, "※", "陰線2本で手仕舞い=+0.43R／陰線1本=+0.15R（早すぎる）", ""
+    r = r + 1
+
+    HA_PutH ws, r, "【4】資金管理"
+    HA_PutR ws, r, "1", "1回のリスクは資金の1%", "3,000,000円なら1回30,000円まで"
+    HA_PutR ws, r, "2", "株数 ＝ (資金×1%) ÷ (エントリー − 損切)　100株単位で切り捨て", "マクロが自動計算します"
+    HA_PutR ws, r, "3", "1銘柄に使う金額は資金の25%まで", ""
+    HA_PutR ws, r, "4", "同時保有は5銘柄まで", "3銘柄にすると下落幅がさらに小さい"
+    HA_PutR ws, r, "5", "3連敗したら株数を半分にする", ""
+    HA_PutR ws, r, "6", "月間の損失が資金の6%になったらその月は休む", ""
+    r = r + 1
+
+    HA_PutH ws, r, "【5】検証結果　300銘柄 × 直近250日 ・ 手数料往復0.3%込み"
+    HA_PutR ws, r, "", "勝率", "49.2%"
+    HA_PutR ws, r, "", "1回あたりの平均", "+0.40R"
+    HA_PutR ws, r, "", "同時5銘柄・1回1%リスク", "250日で +102.8%　最大下落 13.2%"
+    HA_PutR ws, r, "", "同時3銘柄・1回1%リスク", "250日で +67.4%　最大下落 7.4%"
+    HA_PutR ws, r, "", "プロフィットファクター", "2.15"
+    r = r + 1
+
+    HA_PutH ws, r, "【6】注意"
+    HA_PutR ws, r, "1", "引け後 15:30以降に実行する", "出来高が確定しないと候補が出ない"
+    HA_PutR ws, r, "2", "ザラ場中に回すときは HA_SKIP を 1 にする", "前日の足で判定します"
+    HA_PutR ws, r, "3", "翌日の寄り成りで買う。ギャップアップで損切幅が6%を超えるなら見送り", ""
+    HA_PutR ws, r, "4", "検証は直近1年・300銘柄。相場つきが変われば成績は落ちる", ""
+    HA_PutR ws, r, "5", "100%勝てる方法ではない。負けを1%で切ることが利益の源泉", ""
+
+    ws.Columns("A").ColumnWidth = 6
+    ws.Columns("B").ColumnWidth = 58
+    ws.Columns("C").ColumnWidth = 46
+    With ws.Range(ws.Cells(3, 1), ws.Cells(r - 1, 3))
+        .Borders.LineStyle = xlContinuous
+        .Borders.Color = RGB(180, 180, 180)
+        .VerticalAlignment = xlTop
+    End With
+    ws.Rows("3:" & r).AutoFit
+
+    Application.ScreenUpdating = True
+    ws.Activate
+    ws.Range("A1").Select
+    MsgBox "「平均足ルール」シートを作りました。", vbInformation
+End Sub
+
+Private Sub HA_PutH(ByVal ws As Worksheet, ByRef r As Long, ByVal s As String)
+    With ws.Range(ws.Cells(r, 1), ws.Cells(r, 3))
+        .Merge
+        .Value = s
+        .Font.Name = "Meiryo UI"
+        .Font.Size = 11
+        .Font.Bold = True
+        .Font.Color = RGB(255, 255, 255)
+        .Interior.Color = RGB(0, 32, 96)
+        .HorizontalAlignment = xlLeft
+    End With
+    ws.Rows(r).RowHeight = 22
+    r = r + 1
+End Sub
+
+Private Sub HA_PutR(ByVal ws As Worksheet, ByRef r As Long, ByVal a As String, _
+                    ByVal b As String, ByVal c As String)
+    ws.Cells(r, 1).Value = a
+    ws.Cells(r, 2).Value = b
+    ws.Cells(r, 3).Value = c
+    With ws.Range(ws.Cells(r, 1), ws.Cells(r, 3))
+        .Font.Name = "Meiryo UI"
+        .Font.Size = 10
+        .WrapText = True
+    End With
+    ws.Cells(r, 1).HorizontalAlignment = xlCenter
+    ws.Cells(r, 1).Font.Bold = True
+    ws.Cells(r, 3).Font.Color = RGB(90, 90, 90)
+    r = r + 1
+End Sub

@@ -82,17 +82,19 @@ Private Sub HA_Run(ByVal side As Long)
     Application.Calculation = xlCalculationManual
 
     '--- 使える日数（列）を調べる ---
-    Dim lastCol As Long, c As Long
+    '※日付書式のセルは .Value だと日付型になり IsNumeric が False になるので .Value2 を使う
+    Dim lastCol As Long, c As Long, dv As Double, missRun As Long
     lastCol = C_NEW
+    missRun = 0
     For c = C_NEW + 1 To C_NEW + N_MAX - 1
-        If IsNumeric(wsC.Cells(3, c).Value) Then
-            If Val(wsC.Cells(3, c).Value) > 40000 Then
-                lastCol = c
-            Else
-                Exit For
-            End If
+        dv = 0
+        If IsNumeric(wsC.Cells(3, c).Value2) Then dv = CDbl(wsC.Cells(3, c).Value2)
+        If dv > 40000 And dv < 80000 Then
+            lastCol = c
+            missRun = 0
         Else
-            Exit For
+            missRun = missRun + 1
+            If missRun > 5 Then Exit For
         End If
     Next c
 
@@ -426,7 +428,7 @@ NextStock:
 
     '--- 出力 ---
     Set wsX = HA_MakeOut()
-    HA_WriteOut wsX, res, hit, side, nCol, topixNote, wsC.Cells(3, 4).Value
+    HA_WriteOut wsX, res, hit, side, nCol, topixNote, wsC.Cells(3, 4).Value2
 
     HA_Restore
     wsX.Activate

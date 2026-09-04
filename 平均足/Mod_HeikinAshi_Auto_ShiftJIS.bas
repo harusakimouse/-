@@ -164,18 +164,21 @@ Private Function HA_Import(ByVal showMsg As Boolean) As Boolean
     Dim shNames As Variant
     shNames = Array("始値", "高値", "安値", "終値", "出来高")
 
-    Dim i As Long, done As Long, miss As String
+    Dim i As Long, done As Long, detail As String, info As String
     Dim wsS As Worksheet, wsD As Worksheet
     For i = 0 To UBound(shNames)
-        Set wsS = Nothing: Set wsD = Nothing
-        On Error Resume Next
-        Set wsS = wbSrc.Worksheets(CStr(shNames(i)))
-        Set wsD = ThisWorkbook.Worksheets(CStr(shNames(i)))
-        On Error GoTo 0
-        If wsS Is Nothing Or wsD Is Nothing Then
-            miss = miss & CStr(shNames(i)) & " "
+        Set wsS = HA_FindSheet(wbSrc, CStr(shNames(i)))
+        Set wsD = HA_FindSheet(ThisWorkbook, CStr(shNames(i)))
+        info = ""
+        If wsS Is Nothing Then
+            detail = detail & CStr(shNames(i)) & " : 元ブックに無し" & vbCrLf
+        ElseIf wsD Is Nothing Then
+            detail = detail & CStr(shNames(i)) & " : このブックに無し" & vbCrLf
+        ElseIf HA_CopyOne(wsS, wsD, info) Then
+            done = done + 1
+            detail = detail & CStr(shNames(i)) & " : OK  " & info & vbCrLf
         Else
-            If HA_CopyOne(wsS, wsD) Then done = done + 1 Else miss = miss & CStr(shNames(i)) & " "
+            detail = detail & CStr(shNames(i)) & " : 失敗  " & info & vbCrLf
         End If
     Next i
 
@@ -193,43 +196,71 @@ Private Function HA_Import(ByVal showMsg As Boolean) As Boolean
 
     If done = 0 Then
         If showMsg Then
-            MsgBox "元ブックから同じ名前のシートが見つかりませんでした。" & vbCrLf & _
-                   "元ブックのシート名：" & HA_SheetNames(fPath), vbExclamation
+            MsgBox "取り込めませんでした。" & vbCrLf & vbCrLf & detail & vbCrLf & _
+                   "元ブック：" & fName, vbExclamation
         End If
         Exit Function
     End If
 
-    If miss <> "" And showMsg Then
-        MsgBox done & "シートを取り込みました。" & vbCrLf & _
-               "取り込めなかったシート：" & miss, vbExclamation
+    If done < 5 And showMsg Then
+        MsgBox done & "シートだけ取り込みました。" & vbCrLf & vbCrLf & detail, vbExclamation
     End If
 
     HA_Import = True
 End Function
 
+'シートを名前で探す（前後や途中の空白は無視する）
+Private Function HA_FindSheet(ByVal wb As Workbook, ByVal nm As String) As Worksheet
+    Dim ws As Worksheet, key As String
+    key = HA_Norm(nm)
+    For Each ws In wb.Worksheets
+        If HA_Norm(ws.Name) = key Then
+            Set HA_FindSheet = ws
+            Exit Function
+        End If
+    Next ws
+End Function
+
+Private Function HA_Norm(ByVal s As String) As String
+    s = Replace(s, " ", "")
+    s = Replace(s, "　", "")
+    HA_Norm = Trim$(s)
+End Function
+
 '1シート分を写す（値だけ・C列D列のRSS式は残す）
-Private Function HA_CopyOne(ByVal wsS As Worksheet, ByVal wsD As Worksheet) As Boolean
+Private Function HA_CopyOne(ByVal wsS As Worksheet, ByVal wsD As Worksheet, _
+                            ByRef info As String) As Boolean
 
     HA_CopyOne = False
 
-    Dim lastRow As Long, lastCol As Long, c As Long
+    Dim lastRow As Long, r2 As Long, lastCol As Long, c As Long, dv As Double
     lastRow = wsS.Cells(wsS.Rows.Count, 1).End(xlUp).Row
+    r2 = wsS.Cells(wsS.Rows.Count, 2).End(xlUp).Row
+    If r2 > lastRow Then lastRow = r2
     If lastRow > SRC_MAXROW Then lastRow = SRC_MAXROW
-    If lastRow < 6 Then Exit Function
 
-    lastCol = 5
-    For c = 6 To SRC_MAXCOL
-        If IsNumeric(wsS.Cells(3, c).Value) Then
-            If Val(wsS.Cells(3, c).Value) > 40000 Then
-                lastCol = c
-            Else
-                Exit For
-            End If
-        Else
-            Exit For
-        End If
+    '日付の行から最終列を探す（途中が空でも最後まで見る）
+    lastCol = 0
+    For c = 4 To SRC_MAXCOL
+        dv = 0
+        If IsNumeric(wsS.Cells(3, c).Value2) Then dv = CDbl(wsS.Cells(3, c).Value2)
+        If dv > 40000 And dv < 80000 Then lastCol = c
     Next c
-    If lastCol < 20 Then Exit Function      '並びが違う＝写さない
+    If lastCol = 0 Then
+        '日付行が無いときは使用範囲の右端を使う
+        lastCol = wsS.UsedRange.Column + wsS.UsedRange.Columns.Count - 1
+        If lastCol > SRC_MAXCOL Then lastCol = SRC_MAXCOL
+    End If
+
+    info = "行" & lastRow & " 列" & lastCol
+    If lastRow < 6 Then
+        info = info & "（銘柄行が見つからない）"
+        Exit Function
+    End If
+    If lastCol < 10 Then
+        info = info & "（日付の列が見つからない）"
+        Exit Function
+    End If
 
     On Error Resume Next
     wsD.Unprotect
@@ -250,6 +281,7 @@ Private Function HA_CopyOne(ByVal wsS As Worksheet, ByVal wsD As Worksheet) As B
     Exit Function
 
 CopyErr:
+    info = info & "（書き込みエラー " & Err.Number & "）"
     HA_CopyOne = False
 End Function
 

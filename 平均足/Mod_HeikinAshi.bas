@@ -33,6 +33,8 @@ Public Const HA_HOLDDAYS As Long = 5            '時間切れ（営業日）
 Public Const HA_SKIP     As Long = 0            '0=最新日で判定　1=前日で判定（ザラ場中は1）
 '--------------------------------------------------
 
+Public HA_SILENT As Boolean          'True=自動実行中（メッセージを出さない）
+
 Private Const R_TOP As Long = 6     'データ開始行
 Private Const R_END As Long = 520   '走査する最終行
 Private Const C_NEW As Long = 5     'E列＝最新日
@@ -63,7 +65,7 @@ Private Sub HA_Run(ByVal side As Long)
     Set wsV = HA_GetWs("出来高")
 
     If wsO Is Nothing Or wsH Is Nothing Or wsL Is Nothing Or wsC Is Nothing Then
-        MsgBox "「始値」「高値」「安値」「終値」のシートが必要です。", vbExclamation
+        If Not HA_SILENT Then MsgBox "「始値」「高値」「安値」「終値」のシートが必要です。", vbExclamation
         Exit Sub
     End If
 
@@ -89,7 +91,7 @@ Private Sub HA_Run(ByVal side As Long)
     nCol = lastCol - C_NEW + 1
     If nCol < 40 Then
         HA_Restore
-        MsgBox "履歴が足りません（" & nCol & "日）。40日以上必要です。", vbExclamation
+        If Not HA_SILENT Then MsgBox "履歴が足りません（" & nCol & "日）。40日以上必要です。", vbExclamation
         Exit Sub
     End If
 
@@ -99,7 +101,7 @@ Private Sub HA_Run(ByVal side As Long)
     If lastRow > R_END Then lastRow = R_END
     If lastRow < R_TOP Then
         HA_Restore
-        MsgBox "銘柄データがありません。", vbExclamation
+        If Not HA_SILENT Then MsgBox "銘柄データがありません。", vbExclamation
         Exit Sub
     End If
 
@@ -420,6 +422,7 @@ NextStock:
     HA_Restore
     wsX.Activate
 
+    If HA_SILENT Then Exit Sub
     Dim msg As String
     If side = 1 Then msg = "買い候補" Else msg = "売り候補"
     MsgBox msg & " " & IIf(hit > HA_MAXROWS, HA_MAXROWS, hit) & " 件を「平均足」シートに出しました。" & vbCrLf & _

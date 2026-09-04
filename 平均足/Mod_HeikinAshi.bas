@@ -52,6 +52,15 @@ Public Sub 平均足_売り抽出()
     HA_Run -1
 End Sub
 
+'他のモジュールから呼ぶ用（半角名）　※中身は上と同じ
+Public Sub HA_Buy()
+    HA_Run 1
+End Sub
+
+Public Sub HA_Sell()
+    HA_Run -1
+End Sub
+
 '==================== 本体 ====================
 Private Sub HA_Run(ByVal side As Long)
 

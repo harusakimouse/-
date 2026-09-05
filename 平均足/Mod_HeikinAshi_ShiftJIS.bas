@@ -140,6 +140,9 @@ Private Sub HA_Run(ByVal side As Long)
     Dim hit As Long
     hit = 0
 
+    '--- 絞り込みの内訳を数える（なぜ候補が出ないかを見るため）---
+    Dim cnt(1 To 12) As Long
+
     Dim i As Long, n As Long, k As Long
     Dim o() As Double, h() As Double, lo() As Double, cl() As Double, vo() As Double
     Dim haO() As Double, haC() As Double, haH() As Double, haL() As Double
@@ -150,6 +153,7 @@ Private Sub HA_Run(ByVal side As Long)
         code = Trim$(CStr(aCode(i, 1)))
         nm = Trim$(CStr(aName(i, 1)))
         If code = "" Or code = "0" Or UCase$(code) = "TOPX" Then GoTo NextStock
+        cnt(1) = cnt(1) + 1
 
         '--- 欠測日を飛ばして 古い→新しい 順に詰め直す ---
         ReDim o(1 To nCol): ReDim h(1 To nCol): ReDim lo(1 To nCol)
@@ -168,6 +172,7 @@ Private Sub HA_Run(ByVal side As Long)
         n = n - HA_SKIP
         If n < 35 Then GoTo NextStock
         If cl(n) < HA_MINPRICE Then GoTo NextStock
+        cnt(2) = cnt(2) + 1
 
         '--- 平均足を作る ---
         ReDim haO(1 To n): ReDim haC(1 To n): ReDim haH(1 To n): ReDim haL(1 To n)
@@ -190,13 +195,18 @@ Private Sub HA_Run(ByVal side As Long)
         If vol5 > 0 Then volRate = vo(n) / vol5 Else volRate = 0
         If IsArray(aV) Then
             If vol5 < HA_MINVOL Then GoTo NextStock
+            cnt(3) = cnt(3) + 1
             If volRate < HA_VOLRATE Then GoTo NextStock
+        Else
+            cnt(3) = cnt(3) + 1
         End If
+        cnt(4) = cnt(4) + 1
 
         '(2) 同じ色が2～5本続いている（6本目以降は高値づかみ）
         Dim runLen As Long
         runLen = HA_RunLen(haO, haC, n, side)
         If runLen < 2 Or runLen > 5 Then GoTo NextStock
+        cnt(5) = cnt(5) + 1
 
         '(3) その前に逆の色が3本以上（＝トレンドの終わりを取る）
         Dim before As Long
@@ -211,6 +221,7 @@ Private Sub HA_Run(ByVal side As Long)
             If Not okTurn Then okTurn = (cl(n) < sma20 And before >= 2)
         End If
         If Not okTurn Then GoTo NextStock
+        cnt(6) = cnt(6) + 1
 
         '(4) ヒゲ　上昇中は下ヒゲが出ない／下落中は上ヒゲが出ない
         If side = 1 Then
@@ -218,6 +229,7 @@ Private Sub HA_Run(ByVal side As Long)
         Else
             If haH(n) > haO(n) + cl(n) * 0.0005 Then GoTo NextStock
         End If
+        cnt(7) = cnt(7) + 1
 
         '(5) 安値切り上げ（売りは高値切り下げ）
         If side = 1 Then
@@ -225,6 +237,7 @@ Private Sub HA_Run(ByVal side As Long)
         Else
             If HA_MaxN(h, n, 3) >= HA_MaxN2(h, n, 4, 8) Then GoTo NextStock
         End If
+        cnt(8) = cnt(8) + 1
 
         '(6) 20日線の上（売りは下）
         If side = 1 Then
@@ -241,6 +254,7 @@ Private Sub HA_Run(ByVal side As Long)
         Else
             If kairi > 0 Then GoTo NextStock
         End If
+        cnt(9) = cnt(9) + 1
 
         '(8) RSI（50ラインが命）
         Dim rsiNow As Double, rsiPre As Double
@@ -250,6 +264,7 @@ Private Sub HA_Run(ByVal side As Long)
         Else
             If rsiNow > 50 Then GoTo NextStock
         End If
+        cnt(10) = cnt(10) + 1
 
         '(9) 実体が大きすぎない（行き過ぎは翌日戻される）
         Dim bodyRate As Double
@@ -257,6 +272,7 @@ Private Sub HA_Run(ByVal side As Long)
             bodyRate = Abs(haC(n) - haO(n)) / (haH(n) - haL(n))
         End If
         If bodyRate > 0.85 Then GoTo NextStock
+        cnt(11) = cnt(11) + 1
 
         '===== 7つの手法で点数を付ける（順位決め）=====
         Dim score As Long, sig As String
@@ -356,6 +372,7 @@ Private Sub HA_Run(ByVal side As Long)
         If bodyRate >= 0.3 And bodyRate <= 0.7 Then score = score + 1
 
         If score < HA_PASS Then GoTo NextStock
+        cnt(12) = cnt(12) + 1
 
         '===== 損切・利確・株数 =====
         Dim entry As Double, stopP As Double
@@ -426,9 +443,19 @@ NextStock:
         Next b
     Next a
 
+    '--- 絞り込みの内訳 ---
+    Dim funnel As String
+    funnel = "全銘柄 " & cnt(1) & " → 株価" & Format(HA_MINPRICE, "#,##0") & "円以上 " & cnt(2) & _
+             " → 出来高" & Format(HA_MINVOL / 10000, "0") & "万株以上 " & cnt(3) & _
+             " → 出来高" & HA_VOLRATE & "倍以上 " & cnt(4) & _
+             " → 平均足" & IIf(side = 1, "陽線", "陰線") & "2～5本 " & cnt(5) & _
+             " → 前に3本の逆行 " & cnt(6) & " → ヒゲ無し " & cnt(7) & _
+             " → 安値切り上げ " & cnt(8) & " → 20日線・乖離 " & cnt(9) & _
+             " → RSI50 " & cnt(10) & " → 実体 " & cnt(11) & " → 合格点" & HA_PASS & " " & cnt(12)
+
     '--- 出力 ---
     Set wsX = HA_MakeOut()
-    HA_WriteOut wsX, res, hit, side, nCol, topixNote, wsC.Cells(3, 4).Value2
+    HA_WriteOut wsX, res, hit, side, nCol, topixNote, wsC.Cells(3, 4).Value2, funnel
 
     HA_Restore
     wsX.Activate
@@ -437,7 +464,8 @@ NextStock:
     Dim msg As String
     If side = 1 Then msg = "買い候補" Else msg = "売り候補"
     MsgBox msg & " " & IIf(hit > HA_MAXROWS, HA_MAXROWS, hit) & " 件を「平均足」シートに出しました。" & vbCrLf & _
-           "地合い：" & topixNote, vbInformation
+           "地合い：" & topixNote & vbCrLf & vbCrLf & _
+           "【絞り込みの内訳】" & vbCrLf & Replace(funnel, " → ", vbCrLf & "  → "), vbInformation
 End Sub
 
 Private Sub HA_Restore()
@@ -461,7 +489,7 @@ End Function
 
 Private Sub HA_WriteOut(ByVal ws As Worksheet, ByRef res As Variant, ByVal hit As Long, _
                         ByVal side As Long, ByVal nCol As Long, ByVal topixNote As String, _
-                        ByVal lastDate As Variant)
+                        ByVal lastDate As Variant, ByVal funnel As String)
 
     ws.Cells.UnMerge
     ws.Cells.Clear
@@ -527,6 +555,8 @@ Private Sub HA_WriteOut(ByVal ws As Worksheet, ByRef res As Variant, ByVal hit A
     If nOut = 0 Then
         ws.Cells(OUT_TOP, 1).Value = "該当なし（無理に建てない日です）"
         ws.Cells(OUT_TOP, 1).Font.Bold = True
+        ws.Cells(OUT_TOP + 1, 1).Value = "絞り込みの内訳：" & funnel
+        ws.Cells(OUT_TOP + 2, 1).Value = "※検証では2日に1日は候補ゼロです。出ない日に建てないことが勝ちの半分です。"
     Else
         With ws.Range(ws.Cells(OUT_TOP, 1), ws.Cells(OUT_TOP + nOut - 1, OUT_COLS))
             .Font.Name = "Meiryo UI"
@@ -547,6 +577,8 @@ Private Sub HA_WriteOut(ByVal ws As Worksheet, ByRef res As Variant, ByVal hit A
 
     Dim rr As Long
     rr = OUT_TOP + nOut + 2
+    ws.Cells(rr, 1).Value = "絞り込みの内訳：" & funnel
+    rr = rr + 2
     ws.Cells(rr, 1).Value = "【売買ルール　この通りにやる】"
     ws.Cells(rr + 1, 1).Value = "1. 上位（点数の高い順）から、翌日の寄り成りで買う。同時保有は5銘柄まで。"
     ws.Cells(rr + 2, 1).Value = "2. 買った直後に「損切」を逆指値で入れる。入れた後は絶対に下げない。"

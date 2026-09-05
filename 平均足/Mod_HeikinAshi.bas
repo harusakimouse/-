@@ -24,12 +24,18 @@ Public Const HA_RISK     As Double = 0.01       '1回で失ってよい割合（
 Public Const HA_PASS     As Long = 4            '合格点（下げると候補が増える）
 Public Const HA_MINPRICE As Double = 300#       '最低株価（円）
 Public Const HA_MINVOL   As Double = 200000#    '5日平均出来高の下限（株）
-Public Const HA_VOLRATE  As Double = 1.6        '当日出来高／5日平均（これが一番効く）
+Public Const HA_VOLRATE  As Double = 1.4        '当日出来高／5日平均（これが一番効く）
 Public Const HA_RR       As Double = 2#         '利確1＝損切幅の何倍か
 Public Const HA_MAXLOSS  As Double = 0.06       '損切の最大幅（6%）
 Public Const HA_MAXPOS   As Double = 0.25       '1銘柄に使う上限（資金の25%）
 Public Const HA_MAXROWS  As Long = 60           '出力する最大件数
-Public Const HA_HOLDDAYS As Long = 5            '時間切れ（営業日）
+Public Const HA_HOLDDAYS As Long = 7            '手じまい（営業日）
+
+'--- 出口の方式 ---
+Public Const HA_FIX_MODE As Boolean = True     'True=固定%（損切8%/利確8%）　False=ATR基準
+Public Const HA_FIX_SL   As Double = 0.08      '固定の損切（8%）
+Public Const HA_FIX_TP   As Double = 0.08      '固定の利確（8%）
+Public Const HA_FIX_POS  As Double = 0.2       '固定方式のとき1銘柄に使う資金の割合（20%）
 Public Const HA_SKIP     As Long = 0            '0=最新日で判定　1=前日で判定（ザラ場中は1）
 '--------------------------------------------------
 
@@ -379,27 +385,45 @@ Private Sub HA_Run(ByVal side As Long)
         Dim tgt1 As Double, tgt2 As Double, riskP As Double
         entry = cl(n)
 
-        If side = 1 Then
-            stopP = HA_Min2(haL(n), HA_MinN(lo, n, 3)) - atr * 0.5
-            If stopP < entry * (1 - HA_MAXLOSS) Then stopP = entry * (1 - HA_MAXLOSS)
-            If stopP >= entry Then stopP = entry * (1 - HA_MAXLOSS)
-            riskP = entry - stopP
-            tgt1 = entry + riskP * HA_RR
-            tgt2 = entry + riskP * 3#
+        If HA_FIX_MODE Then
+            '--- 固定%方式（損切8% / 利確8% / 7日手じまい）---
+            If side = 1 Then
+                stopP = entry * (1 - HA_FIX_SL)
+                tgt1 = entry * (1 + HA_FIX_TP)
+            Else
+                stopP = entry * (1 + HA_FIX_SL)
+                tgt1 = entry * (1 - HA_FIX_TP)
+            End If
+            tgt2 = tgt1
+            riskP = Abs(entry - stopP)
         Else
-            stopP = HA_Max2(haH(n), HA_MaxN(h, n, 3)) + atr * 0.5
-            If stopP > entry * (1 + HA_MAXLOSS) Then stopP = entry * (1 + HA_MAXLOSS)
-            If stopP <= entry Then stopP = entry * (1 + HA_MAXLOSS)
-            riskP = stopP - entry
-            tgt1 = entry - riskP * HA_RR
-            tgt2 = entry - riskP * 3#
+            '--- ATR基準方式 ---
+            If side = 1 Then
+                stopP = HA_Min2(haL(n), HA_MinN(lo, n, 3)) - atr * 0.5
+                If stopP < entry * (1 - HA_MAXLOSS) Then stopP = entry * (1 - HA_MAXLOSS)
+                If stopP >= entry Then stopP = entry * (1 - HA_MAXLOSS)
+                riskP = entry - stopP
+                tgt1 = entry + riskP * HA_RR
+                tgt2 = entry + riskP * 3#
+            Else
+                stopP = HA_Max2(haH(n), HA_MaxN(h, n, 3)) + atr * 0.5
+                If stopP > entry * (1 + HA_MAXLOSS) Then stopP = entry * (1 + HA_MAXLOSS)
+                If stopP <= entry Then stopP = entry * (1 + HA_MAXLOSS)
+                riskP = stopP - entry
+                tgt1 = entry - riskP * HA_RR
+                tgt2 = entry - riskP * 3#
+            End If
         End If
         If riskP <= 0 Then GoTo NextStock
 
         Dim shares As Double, capLimit As Double
-        shares = Int((HA_CAPITAL * HA_RISK) / riskP / 100#) * 100#
-        capLimit = Int((HA_CAPITAL * HA_MAXPOS) / entry / 100#) * 100#
-        If shares > capLimit Then shares = capLimit
+        If HA_FIX_MODE Then
+            shares = Int((HA_CAPITAL * HA_FIX_POS) / entry / 100#) * 100#
+        Else
+            shares = Int((HA_CAPITAL * HA_RISK) / riskP / 100#) * 100#
+            capLimit = Int((HA_CAPITAL * HA_MAXPOS) / entry / 100#) * 100#
+            If shares > capLimit Then shares = capLimit
+        End If
         If shares < 100 Then shares = 100
 
         '===== 結果を貯める =====
@@ -416,7 +440,7 @@ Private Sub HA_Run(ByVal side As Long)
         res(hit, 10) = HA_Tick(tgt2)
         res(hit, 11) = shares
         res(hit, 12) = -riskP * shares
-        res(hit, 13) = riskP * HA_RR * shares
+        res(hit, 13) = Abs(tgt1 - entry) * shares
         res(hit, 14) = runLen
         res(hit, 15) = Round(rsiNow, 1)
         res(hit, 16) = Round(kNow, 1)
@@ -512,7 +536,9 @@ Private Sub HA_WriteOut(ByVal ws As Worksheet, ByRef res As Variant, ByVal hit A
     With ws.Range("A2:T2")
         .Merge
         .Value = "  最新日=" & HA_DateStr(lastDate) & "／使用" & nCol & "日／合格点=" & HA_PASS & _
-                 "／資金" & Format(HA_CAPITAL, "#,##0") & "円・1回のリスク" & Format(HA_RISK * 100, "0.0") & "%" & _
+                 "／資金" & Format(HA_CAPITAL, "#,##0") & "円" & _
+                 IIf(HA_FIX_MODE, "・損切-" & Format(HA_FIX_SL * 100, "0") & "%／利確+" & Format(HA_FIX_TP * 100, "0") & "%／" & HA_HOLDDAYS & "日で手じまい", _
+                                  "・1回のリスク" & Format(HA_RISK * 100, "0.0") & "%") & _
                  "／地合い：" & topixNote
         .Font.Name = "Meiryo UI"
         .Font.Size = 10
@@ -581,12 +607,21 @@ Private Sub HA_WriteOut(ByVal ws As Worksheet, ByRef res As Variant, ByVal hit A
     rr = rr + 2
     ws.Cells(rr, 1).Value = "【売買ルール　この通りにやる】"
     ws.Cells(rr + 1, 1).Value = "1. 上位（点数の高い順）から、翌日の寄り成りで買う。同時保有は5銘柄まで。"
-    ws.Cells(rr + 2, 1).Value = "2. 買った直後に「損切」を逆指値で入れる。入れた後は絶対に下げない。"
-    ws.Cells(rr + 3, 1).Value = "3. 「利確1」に届いたら半分売る。残りの損切は買値まで引き上げる。"
-    ws.Cells(rr + 4, 1).Value = "4. 平均足が陰線2本続いたら、残り全部を成行で手仕舞う（これが平均足の本番）。"
-    ws.Cells(rr + 5, 1).Value = "5. " & HA_HOLDDAYS & "営業日たっても「利確1」に届かない玉は、勝ち負けに関係なく手仕舞う。"
-    ws.Cells(rr + 6, 1).Value = "6. 3連敗したら株数を半分。月の損失が資金の6%になったらその月は休む。"
-    ws.Cells(rr + 7, 1).Value = "※検証（300銘柄×250日・手数料込）：勝率49.2%、1回平均+0.40R。100%勝てる方法ではありません。"
+    If HA_FIX_MODE Then
+        ws.Cells(rr + 2, 1).Value = "2. 買った直後に「損切」（買値の-" & Format(HA_FIX_SL * 100, "0") & "%）を逆指値で入れる。絶対に下げない。"
+        ws.Cells(rr + 3, 1).Value = "3. 同時に「利確1」（買値の+" & Format(HA_FIX_TP * 100, "0") & "%）に売り指値を置く。届いたら全部売り。"
+        ws.Cells(rr + 4, 1).Value = "4. どちらにも当たらなければ、" & HA_HOLDDAYS & "営業日たった日の引けで成行手仕舞い。"
+        ws.Cells(rr + 5, 1).Value = "5. 途中で売買判断はしない。置いた注文をいじらないことが一番大事。"
+        ws.Cells(rr + 6, 1).Value = "6. 3連敗したら株数を半分。月の損失が資金の6%になったらその月は休む。"
+        ws.Cells(rr + 7, 1).Value = "※検証（300銘柄×250日・手数料込）：勝率56.3%、1回平均+0.83%、250日+49.7%、最大下落8.2%。"
+    Else
+        ws.Cells(rr + 2, 1).Value = "2. 買った直後に「損切」を逆指値で入れる。入れた後は絶対に下げない。"
+        ws.Cells(rr + 3, 1).Value = "3. 「利確1」に届いたら半分売る。残りの損切は買値まで引き上げる。"
+        ws.Cells(rr + 4, 1).Value = "4. 平均足が陰線2本続いたら、残り全部を成行で手仕舞う（これが平均足の本番）。"
+        ws.Cells(rr + 5, 1).Value = "5. " & HA_HOLDDAYS & "営業日たっても「利確1」に届かない玉は、勝ち負けに関係なく手仕舞う。"
+        ws.Cells(rr + 6, 1).Value = "6. 3連敗したら株数を半分。月の損失が資金の6%になったらその月は休む。"
+        ws.Cells(rr + 7, 1).Value = "※検証（300銘柄×250日・手数料込）：勝率49.2%、1回平均+0.40R。100%勝てる方法ではありません。"
+    End If
     With ws.Range(ws.Cells(rr, 1), ws.Cells(rr + 7, 1))
         .Font.Name = "Meiryo UI"
         .Font.Size = 10
@@ -876,7 +911,7 @@ Public Sub 平均足_ルール表示()
     r = 3
 
     HA_PutH ws, r, "【1】買う条件　この9つが全部そろった時だけ買う"
-    HA_PutR ws, r, "1", "当日出来高 ≧ 5日平均 × 1.6倍", "ここが一番効く。1.2倍では+0.20R、1.6倍で+0.43R"
+    HA_PutR ws, r, "1", "当日出来高 ≧ 5日平均 × " & HA_VOLRATE & "倍", "ここが一番効く。1.2倍まで下げると成績が半分になる"
     HA_PutR ws, r, "2", "平均足の陽線が 2〜5本連続", "6本目以降は高値づかみになる"
     HA_PutR ws, r, "3", "その前に陰線が3本以上（20日線の上なら2本以上）", "下げの終わりを取るため"
     HA_PutR ws, r, "4", "最新の平均足に下ヒゲが無い", "買い方が完全に優勢な形"
@@ -904,16 +939,24 @@ Public Sub 平均足_ルール表示()
     r = r + 1
 
     HA_PutH ws, r, "【3】出口　ここを守らないと必ず負ける"
-    HA_PutR ws, r, "1", "損切 ＝ min(平均足の安値, 直近3日安値) − ATR×0.5（最大 −6%）", "買った直後に逆指値。入れた後は絶対に下げない"
-    HA_PutR ws, r, "2", "+2R に届いたら半分売る。残りの損切は買値まで上げる", "Rは1回の損切幅"
-    HA_PutR ws, r, "3", "平均足が陰線2本続いたら残り全部を成行で手仕舞う", "これが平均足の本番"
-    HA_PutR ws, r, "4", "5営業日たっても+2R未達の玉は勝ち負けに関係なく手仕舞う", "資金を寝かせない"
-    HA_PutR ws, r, "※", "陰線2本で手仕舞い=+0.43R／陰線1本=+0.15R（早すぎる）", ""
+    If HA_FIX_MODE Then
+        HA_PutR ws, r, "1", "損切 ＝ 買値の −" & Format(HA_FIX_SL * 100, "0") & "%（逆指値）", "買った直後に入れる。絶対に下げない"
+        HA_PutR ws, r, "2", "利確 ＝ 買値の +" & Format(HA_FIX_TP * 100, "0") & "%（売り指値）", "届いたら全部売り"
+        HA_PutR ws, r, "3", HA_HOLDDAYS & "営業日たったら引けで成行手仕舞い", "どちらにも当たらなかった玉"
+        HA_PutR ws, r, "4", "途中で判断しない。置いた注文をいじらない", "いじると成績が落ちる"
+        HA_PutR ws, r, "※", "損切8%・利確8%が最良。利確を損切より小さくすると必ず負ける", "勝率72%でも年−24.5%になる"
+    Else
+        HA_PutR ws, r, "1", "損切 ＝ min(平均足の安値, 直近3日安値) − ATR×0.5（最大 −6%）", "買った直後に逆指値。入れた後は絶対に下げない"
+        HA_PutR ws, r, "2", "+" & HA_RR & "R に届いたら半分売る。残りの損切は買値まで上げる", "Rは1回の損切幅"
+        HA_PutR ws, r, "3", "平均足が陰線2本続いたら残り全部を成行で手仕舞う", "これが平均足の本番"
+        HA_PutR ws, r, "4", HA_HOLDDAYS & "営業日たっても未達の玉は勝ち負けに関係なく手仕舞う", "資金を寝かせない"
+        HA_PutR ws, r, "※", "陰線2本で手仕舞い=+0.43R／陰線1本=+0.15R（早すぎる）", ""
+    End If
     r = r + 1
 
     HA_PutH ws, r, "【4】資金管理"
-    HA_PutR ws, r, "1", "1回のリスクは資金の1%", "3,000,000円なら1回30,000円まで"
-    HA_PutR ws, r, "2", "株数 ＝ (資金×1%) ÷ (エントリー − 損切)　100株単位で切り捨て", "マクロが自動計算します"
+    HA_PutR ws, r, "1", IIf(HA_FIX_MODE, "1銘柄に資金の" & Format(HA_FIX_POS * 100, "0") & "%を使う", "1回のリスクは資金の1%"), IIf(HA_FIX_MODE, "1回の最大損失は資金の" & Format(HA_FIX_POS * HA_FIX_SL * 100, "0.0") & "%", "3,000,000円なら1回30,000円まで")
+    HA_PutR ws, r, "2", "株数はマクロが自動計算（100株単位で切り捨て）", ""
     HA_PutR ws, r, "3", "1銘柄に使う金額は資金の25%まで", ""
     HA_PutR ws, r, "4", "同時保有は5銘柄まで", "3銘柄にすると下落幅がさらに小さい"
     HA_PutR ws, r, "5", "3連敗したら株数を半分にする", ""
@@ -921,11 +964,19 @@ Public Sub 平均足_ルール表示()
     r = r + 1
 
     HA_PutH ws, r, "【5】検証結果　300銘柄 × 直近250日 ・ 手数料往復0.3%込み"
-    HA_PutR ws, r, "", "勝率", "49.2%"
-    HA_PutR ws, r, "", "1回あたりの平均", "+0.40R"
-    HA_PutR ws, r, "", "同時5銘柄・1回1%リスク", "250日で +102.8%　最大下落 13.2%"
-    HA_PutR ws, r, "", "同時3銘柄・1回1%リスク", "250日で +67.4%　最大下落 7.4%"
-    HA_PutR ws, r, "", "プロフィットファクター", "2.15"
+    If HA_FIX_MODE Then
+        HA_PutR ws, r, "", "設定", "出来高1.4倍 / 損切8% / 利確8% / 7日手じまい"
+        HA_PutR ws, r, "", "勝率", "56.3%"
+        HA_PutR ws, r, "", "1回あたりの平均", "+0.83%"
+        HA_PutR ws, r, "", "同時5銘柄・1銘柄に資金の20%", "250日で +49.7%　最大下落 8.2%"
+        HA_PutR ws, r, "", "平均保有日数", "4.6日"
+    Else
+        HA_PutR ws, r, "", "設定", "出来高1.6倍 / ATR基準の損切 / +2Rで半分利確"
+        HA_PutR ws, r, "", "勝率", "49.2%"
+        HA_PutR ws, r, "", "1回あたりの平均", "+0.40R"
+        HA_PutR ws, r, "", "同時5銘柄・1回1%リスク", "250日で +102.8%　最大下落 13.2%"
+        HA_PutR ws, r, "", "プロフィットファクター", "2.15"
+    End If
     r = r + 1
 
     HA_PutH ws, r, "【6】注意"

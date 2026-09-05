@@ -12,9 +12,10 @@ Option Explicit
 '     反転の形が出た銘柄だけを残し、7つの手法で点数を付けて順位を決める。
 '
 '   検証結果（300銘柄×直近250日・手数料込み・損切の窓開けも計算）
-'     出来高1.4倍 / 株価1000円以上 / 損切8% / 利確8% / 5日手じまい / 寄り+2%まで
-'       370回　勝率58.6%　1回あたり平均 +0.88%
-'       同時5銘柄・1銘柄に資金の20% → 250日で +62.0%　最大下落 8.9%
+'     出来高1.4倍 / 株価1000円以上 / 週足10週線の上 / 損切8% / 利確8% / 5日手じまい / 寄り+2%まで
+'       221回　勝率65.2%　1回あたり平均 +1.62%
+'       同時5銘柄・1銘柄に資金の20% → 250日で +51.1%　最大下落 9.1%
+'     週足の条件を外すと 370回　勝率58.6%　250日 +62.0%（回数は増えるが勝率は下がる）
 '     ※直近1年の相場での結果です。100%勝てる方法はありません。
 '==================================================================
 
@@ -37,6 +38,8 @@ Public Const HA_FIX_SL   As Double = 0.08      '固定の損切（8%）
 Public Const HA_FIX_TP   As Double = 0.08      '固定の利確（8%）
 Public Const HA_FIX_POS  As Double = 0.2       '固定方式のとき1銘柄に使う資金の割合（20%）
 Public Const HA_MAXGAP   As Double = 0.02      '翌朝これ以上高く始まったら見送る（+2%）
+Public Const HA_WEEK_ON  As Boolean = True     '週足10週線の上の銘柄だけ買う（勝率が上がります）
+Public Const HA_WEEK_MA  As Long = 10          '週足の移動平均の週数
 Public Const HA_SKIP     As Long = 0            '0=最新日で判定　1=前日で判定（ザラ場中は1）
 '--------------------------------------------------
 
@@ -123,6 +126,18 @@ Private Sub HA_Run(ByVal side As Long)
         Exit Sub
     End If
 
+    '--- 日付の行（週足の判定に使う）---
+    Dim dtc() As Double
+    ReDim dtc(1 To nCol)
+    Dim kk As Long
+    For kk = 1 To nCol
+        If kk = 1 Then
+            dtc(kk) = HA_Num(wsC.Cells(3, 4).Value2)
+        Else
+            dtc(kk) = HA_Num(wsC.Cells(3, 4 + kk).Value2)
+        End If
+    Next kk
+
     '--- まとめて読み込む（速度対策） ---
     Dim aO As Variant, aH As Variant, aL As Variant, aC As Variant, aV As Variant
     Dim aCode As Variant, aName As Variant
@@ -148,10 +163,11 @@ Private Sub HA_Run(ByVal side As Long)
     hit = 0
 
     '--- 絞り込みの内訳を数える（なぜ候補が出ないかを見るため）---
-    Dim cnt(1 To 12) As Long
+    Dim cnt(1 To 13) As Long
 
     Dim i As Long, n As Long, k As Long
     Dim o() As Double, h() As Double, lo() As Double, cl() As Double, vo() As Double
+    Dim dts() As Double
     Dim haO() As Double, haC() As Double, haH() As Double, haL() As Double
 
     For i = 1 To lastRow - R_TOP + 1
@@ -164,7 +180,7 @@ Private Sub HA_Run(ByVal side As Long)
 
         '--- 欠測日を飛ばして 古い→新しい 順に詰め直す ---
         ReDim o(1 To nCol): ReDim h(1 To nCol): ReDim lo(1 To nCol)
-        ReDim cl(1 To nCol): ReDim vo(1 To nCol)
+        ReDim cl(1 To nCol): ReDim vo(1 To nCol): ReDim dts(1 To nCol)
         n = 0
         For k = nCol To 1 Step -1
             Dim pC As Double, pO As Double, pH As Double, pL As Double
@@ -173,6 +189,7 @@ Private Sub HA_Run(ByVal side As Long)
             If pC > 0 And pO > 0 And pH > 0 And pL > 0 Then
                 n = n + 1
                 o(n) = pO: h(n) = pH: lo(n) = pL: cl(n) = pC
+                dts(n) = dtc(k)
                 If IsArray(aV) Then vo(n) = HA_Num(aV(i, k)) Else vo(n) = 0
             End If
         Next k
@@ -281,6 +298,12 @@ Private Sub HA_Run(ByVal side As Long)
         If bodyRate > 0.85 Then GoTo NextStock
         cnt(11) = cnt(11) + 1
 
+        '(10) 週足が10週線の上（大きな流れに逆らわない）
+        If HA_WEEK_ON Then
+            If Not HA_WeekOK(cl, dts, n, side) Then GoTo NextStock
+        End If
+        cnt(12) = cnt(12) + 1
+
         '===== 7つの手法で点数を付ける（順位決め）=====
         Dim score As Long, sig As String
         score = 0: sig = ""
@@ -376,10 +399,11 @@ Private Sub HA_Run(ByVal side As Long)
         atr = HA_Atr(h, lo, cl, n, 14)
         If cl(n) > 0 Then atrPct = atr / cl(n) * 100#
         If atrPct <= 3.5 Then score = score + 1: sig = sig & "値動き安定 "
+        If HA_WEEK_ON Then sig = sig & "週足" & HA_WEEK_MA & "週線上 "
         If bodyRate >= 0.3 And bodyRate <= 0.7 Then score = score + 1
 
         If score < HA_PASS Then GoTo NextStock
-        cnt(12) = cnt(12) + 1
+        cnt(13) = cnt(13) + 1
 
         '===== 損切・利確・株数 =====
         Dim entry As Double, stopP As Double
@@ -477,7 +501,9 @@ NextStock:
              " → 平均足" & IIf(side = 1, "陽線", "陰線") & "2〜5本 " & cnt(5) & _
              " → 前に3本の逆行 " & cnt(6) & " → ヒゲ無し " & cnt(7) & _
              " → 安値切り上げ " & cnt(8) & " → 20日線・乖離 " & cnt(9) & _
-             " → RSI50 " & cnt(10) & " → 実体 " & cnt(11) & " → 合格点" & HA_PASS & " " & cnt(12)
+             " → RSI50 " & cnt(10) & " → 実体 " & cnt(11) & _
+             IIf(HA_WEEK_ON, " → 週足" & HA_WEEK_MA & "週線上 " & cnt(12), "") & _
+             " → 合格点" & HA_PASS & " " & cnt(13)
 
     '--- 出力 ---
     Set wsX = HA_MakeOut()
@@ -615,7 +641,7 @@ Private Sub HA_WriteOut(ByVal ws As Worksheet, ByRef res As Variant, ByVal hit A
         ws.Cells(rr + 4, 1).Value = "4. 同時に「利確1」（買値の+" & Format(HA_FIX_TP * 100, "0") & "%）に売り指値を置く。届いたら全部売り。"
         ws.Cells(rr + 5, 1).Value = "5. どちらにも当たらなければ、" & HA_HOLDDAYS & "営業日たった日の引けで成行手仕舞い。途中で判断しない。"
         ws.Cells(rr + 6, 1).Value = "6. 3連敗したら株数を半分。月の損失が資金の6%になったらその月は休む。"
-        ws.Cells(rr + 7, 1).Value = "※検証（300銘柄×250日・手数料込・窓開けの滑りも計算）：勝率58.6%、1回平均+0.88%、250日+62.0%、最大下落8.9%。"
+        ws.Cells(rr + 7, 1).Value = "※検証（300銘柄×250日・手数料込・窓開けの滑りも計算）：勝率65.2%、1回平均+1.62%、250日+51.1%、最大下落9.1%。"
     Else
         ws.Cells(rr + 2, 1).Value = "2. 買った直後に「損切」を逆指値で入れる。入れた後は絶対に下げない。"
         ws.Cells(rr + 3, 1).Value = "3. 「利確1」に届いたら半分売る。残りの損切は買値まで引き上げる。"
@@ -918,7 +944,7 @@ Public Sub 平均足_ルール表示()
     HA_PutR ws, r, "3", "その前に陰線が3本以上（20日線の上なら2本以上）", "下げの終わりを取るため"
     HA_PutR ws, r, "4", "最新の平均足に下ヒゲが無い", "買い方が完全に優勢な形"
     HA_PutR ws, r, "5", "直近3日の安値 > その前4〜8日の安値", "安値切り上げ＝底が固まった証拠"
-    HA_PutR ws, r, "6", "終値 > 20日線", "逆行しているものは買わない"
+    HA_PutR ws, r, "6", "終値 > 20日線／週足が10週線の上", "大きな流れに逆らわない。勝率58.6%→65.2%"
     HA_PutR ws, r, "7", "25日線からの乖離 ≧ 0%", "下げ続けている株の逆張りは負ける（検証で確認）"
     HA_PutR ws, r, "8", "RSI(14) ≧ 50", "50割れは+0.04R、50超で+0.21R"
     HA_PutR ws, r, "9", "平均足の実体率 ≦ 0.85", "行き過ぎた足は翌日戻される"
@@ -968,11 +994,11 @@ Public Sub 平均足_ルール表示()
 
     HA_PutH ws, r, "【5】検証結果　300銘柄 × 直近250日 ・ 手数料往復0.3%込み"
     If HA_FIX_MODE Then
-        HA_PutR ws, r, "", "設定", "出来高1.4倍 / 株価1000円以上 / 損切8% / 利確8% / 5日手じまい / 寄り+2%まで"
-        HA_PutR ws, r, "", "勝率", "58.6%"
-        HA_PutR ws, r, "", "1回あたりの平均", "+0.88%"
-        HA_PutR ws, r, "", "同時5銘柄・1銘柄に資金の20%", "250日で +62.0%　最大下落 8.9%"
-        HA_PutR ws, r, "", "株価300円以上にすると", "勝率56.8%　250日 +44.8%（低位株が足を引っ張る）"
+        HA_PutR ws, r, "", "設定", "出来高1.4倍 / 株価1000円以上 / 週足10週線上 / 損切8% / 利確8% / 5日手じまい / 寄り+2%まで"
+        HA_PutR ws, r, "", "勝率", "65.2%"
+        HA_PutR ws, r, "", "1回あたりの平均", "+1.62%"
+        HA_PutR ws, r, "", "同時5銘柄・1銘柄に資金の20%", "250日で +51.1%　最大下落 9.1%"
+        HA_PutR ws, r, "", "週足の条件を外すと", "勝率58.6%　250日 +62.0%（回数は増えるが勝率は下がる）"
         HA_PutR ws, r, "", "注", "損切が窓を開けて滑る分も引いた数字です"
     Else
         HA_PutR ws, r, "", "設定", "出来高1.6倍 / ATR基準の損切 / +2Rで半分利確"
@@ -1036,3 +1062,43 @@ Private Sub HA_PutR(ByVal ws As Worksheet, ByRef r As Long, ByVal a As String, _
     ws.Cells(r, 3).Font.Color = RGB(90, 90, 90)
     r = r + 1
 End Sub
+
+'週足が10週線の上か（直前に確定した週で判定）
+Private Function HA_WeekOK(ByRef cl() As Double, ByRef dts() As Double, _
+                           ByVal n As Long, ByVal side As Long) As Boolean
+
+    Dim wc(1 To 80) As Double
+    Dim wCnt As Long, k As Long
+    Dim curKey As Double, wkKey As Double
+    wCnt = 0: curKey = -1
+
+    For k = 1 To n
+        If dts(k) > 40000 Then
+            wkKey = Int(dts(k)) - (Weekday(CDate(dts(k)), vbMonday) - 1)
+            If wkKey <> curKey Then
+                wCnt = wCnt + 1
+                If wCnt > 80 Then Exit For
+                curKey = wkKey
+            End If
+            wc(wCnt) = cl(k)      'その週の最新の終値で上書き
+        End If
+    Next k
+
+    '一番新しい週はまだ途中なので、その1つ前を使う
+    Dim w As Long
+    w = wCnt - 1
+    If w < HA_WEEK_MA + 1 Then Exit Function
+
+    Dim s As Double, j As Long
+    For j = w - HA_WEEK_MA + 1 To w
+        s = s + wc(j)
+    Next j
+    Dim ma As Double
+    ma = s / HA_WEEK_MA
+
+    If side = 1 Then
+        HA_WeekOK = (wc(w) > ma)
+    Else
+        HA_WeekOK = (wc(w) < ma)
+    End If
+End Function

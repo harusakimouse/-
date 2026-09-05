@@ -36,6 +36,7 @@ Public Const HA_FIX_MODE As Boolean = True     'True=固定%（損切8%/利確8%）　Fal
 Public Const HA_FIX_SL   As Double = 0.08      '固定の損切（8%）
 Public Const HA_FIX_TP   As Double = 0.08      '固定の利確（8%）
 Public Const HA_FIX_POS  As Double = 0.2       '固定方式のとき1銘柄に使う資金の割合（20%）
+Public Const HA_MAXGAP   As Double = 0.02      '翌朝これ以上高く始まったら見送る（+2%）
 Public Const HA_SKIP     As Long = 0            '0=最新日で判定　1=前日で判定（ザラ場中は1）
 '--------------------------------------------------
 
@@ -47,7 +48,7 @@ Private Const C_NEW As Long = 5     'E列＝最新日
 Private Const N_MAX As Long = 150   '使う日数の上限
 Private Const OUT_SHEET As String = "平均足"
 Private Const OUT_TOP As Long = 4   '出力の開始行
-Private Const OUT_COLS As Long = 20
+Private Const OUT_COLS As Long = 21
 
 '==================== 入口 ====================
 Public Sub 平均足_買い抽出()
@@ -435,19 +436,20 @@ Private Sub HA_Run(ByVal side As Long)
         res(hit, 5) = HA_Rank(score)
         res(hit, 6) = cl(n)
         res(hit, 7) = HA_Tick(entry)
-        res(hit, 8) = HA_Tick(stopP)
-        res(hit, 9) = HA_Tick(tgt1)
-        res(hit, 10) = HA_Tick(tgt2)
-        res(hit, 11) = shares
-        res(hit, 12) = -riskP * shares
-        res(hit, 13) = Abs(tgt1 - entry) * shares
-        res(hit, 14) = runLen
-        res(hit, 15) = Round(rsiNow, 1)
-        res(hit, 16) = Round(kNow, 1)
-        res(hit, 17) = Round(kairi, 1)
-        res(hit, 18) = Round(volRate, 2)
-        res(hit, 19) = Round(atr, 1)
-        res(hit, 20) = Trim$(sig)
+        res(hit, 8) = HA_Tick(entry * (1 + HA_MAXGAP))   '見送りライン
+        res(hit, 9) = HA_Tick(stopP)
+        res(hit, 10) = HA_Tick(tgt1)
+        res(hit, 11) = HA_Tick(tgt2)
+        res(hit, 12) = shares
+        res(hit, 13) = -riskP * shares
+        res(hit, 14) = Abs(tgt1 - entry) * shares
+        res(hit, 15) = runLen
+        res(hit, 16) = Round(rsiNow, 1)
+        res(hit, 17) = Round(kNow, 1)
+        res(hit, 18) = Round(kairi, 1)
+        res(hit, 19) = Round(volRate, 2)
+        res(hit, 20) = Round(atr, 1)
+        res(hit, 21) = Trim$(sig)
         sc(hit) = score + volRate / 100#    '同点は出来高の多い順
 
 NextStock:
@@ -521,7 +523,7 @@ Private Sub HA_WriteOut(ByVal ws As Worksheet, ByRef res As Variant, ByVal hit A
     Dim ttl As String
     If side = 1 Then ttl = "平均足　買い候補" Else ttl = "平均足　売り候補"
 
-    With ws.Range("A1:T1")
+    With ws.Range("A1:U1")
         .Merge
         .Value = "  " & ttl & "　（反転を取る7手法／" & Format(Now, "yyyy/mm/dd hh:nn") & " 作成）"
         .Font.Name = "Meiryo UI"
@@ -533,7 +535,7 @@ Private Sub HA_WriteOut(ByVal ws As Worksheet, ByRef res As Variant, ByVal hit A
     End With
     ws.Rows(1).RowHeight = 30
 
-    With ws.Range("A2:T2")
+    With ws.Range("A2:U2")
         .Merge
         .Value = "  最新日=" & HA_DateStr(lastDate) & "／使用" & nCol & "日／合格点=" & HA_PASS & _
                  "／資金" & Format(HA_CAPITAL, "#,##0") & "円" & _
@@ -548,8 +550,8 @@ Private Sub HA_WriteOut(ByVal ws As Worksheet, ByRef res As Variant, ByVal hit A
     ws.Rows(2).RowHeight = 20
 
     Dim hd As Variant
-    hd = Array("順位", "コード", "銘柄名", "点数", "評価", "現値", "エントリー", "損切", _
-               "利確1", "利確2", "株数", "想定損失", "想定利益", "連続", "RSI", "%K", _
+    hd = Array("順位", "コード", "銘柄名", "点数", "評価", "現値", "エントリー", "見送りライン", _
+               "損切", "利確1", "利確2", "株数", "想定損失", "想定利益", "連続", "RSI", "%K", _
                "25日乖離%", "出来高倍", "ATR", "根拠（7手法）")
     Dim j As Long
     For j = 0 To UBound(hd)
@@ -590,8 +592,8 @@ Private Sub HA_WriteOut(ByVal ws As Worksheet, ByRef res As Variant, ByVal hit A
             .Borders.LineStyle = xlContinuous
             .Borders.Color = RGB(180, 180, 180)
         End With
-        ws.Range(ws.Cells(OUT_TOP, 6), ws.Cells(OUT_TOP + nOut - 1, 13)).NumberFormat = "#,##0"
-        ws.Range(ws.Cells(OUT_TOP, 15), ws.Cells(OUT_TOP + nOut - 1, 19)).NumberFormat = "0.0"
+        ws.Range(ws.Cells(OUT_TOP, 6), ws.Cells(OUT_TOP + nOut - 1, 14)).NumberFormat = "#,##0"
+        ws.Range(ws.Cells(OUT_TOP, 16), ws.Cells(OUT_TOP + nOut - 1, 20)).NumberFormat = "0.0"
 
         Dim cc As Long
         For cc = 1 To nOut
@@ -608,12 +610,12 @@ Private Sub HA_WriteOut(ByVal ws As Worksheet, ByRef res As Variant, ByVal hit A
     ws.Cells(rr, 1).Value = "【売買ルール　この通りにやる】"
     ws.Cells(rr + 1, 1).Value = "1. 上位（点数の高い順）から、翌日の寄り成りで買う。同時保有は5銘柄まで。"
     If HA_FIX_MODE Then
-        ws.Cells(rr + 2, 1).Value = "2. 買った直後に「損切」（買値の-" & Format(HA_FIX_SL * 100, "0") & "%）を逆指値で入れる。絶対に下げない。"
-        ws.Cells(rr + 3, 1).Value = "3. 同時に「利確1」（買値の+" & Format(HA_FIX_TP * 100, "0") & "%）に売り指値を置く。届いたら全部売り。"
-        ws.Cells(rr + 4, 1).Value = "4. どちらにも当たらなければ、" & HA_HOLDDAYS & "営業日たった日の引けで成行手仕舞い。"
-        ws.Cells(rr + 5, 1).Value = "5. 途中で売買判断はしない。置いた注文をいじらないことが一番大事。"
+        ws.Cells(rr + 2, 1).Value = "2. ただし寄り値が「見送りライン」より高く始まったら、その銘柄は買わない（高値づかみ防止）。"
+        ws.Cells(rr + 3, 1).Value = "3. 買った直後に「損切」（買値の-" & Format(HA_FIX_SL * 100, "0") & "%）を逆指値で入れる。絶対に下げない。"
+        ws.Cells(rr + 4, 1).Value = "4. 同時に「利確1」（買値の+" & Format(HA_FIX_TP * 100, "0") & "%）に売り指値を置く。届いたら全部売り。"
+        ws.Cells(rr + 5, 1).Value = "5. どちらにも当たらなければ、" & HA_HOLDDAYS & "営業日たった日の引けで成行手仕舞い。途中で判断しない。"
         ws.Cells(rr + 6, 1).Value = "6. 3連敗したら株数を半分。月の損失が資金の6%になったらその月は休む。"
-        ws.Cells(rr + 7, 1).Value = "※検証（300銘柄×250日・手数料込）：勝率56.3%、1回平均+0.83%、250日+49.7%、最大下落8.2%。"
+        ws.Cells(rr + 7, 1).Value = "※検証（300銘柄×250日・手数料込・窓開けの滑りも計算）：勝率55.6%、1回平均+0.61%、250日+32.9%、最大下落6.8%。"
     Else
         ws.Cells(rr + 2, 1).Value = "2. 買った直後に「損切」を逆指値で入れる。入れた後は絶対に下げない。"
         ws.Cells(rr + 3, 1).Value = "3. 「利確1」に届いたら半分売る。残りの損切は買値まで引き上げる。"
@@ -628,9 +630,9 @@ Private Sub HA_WriteOut(ByVal ws As Worksheet, ByRef res As Variant, ByVal hit A
     End With
     ws.Cells(rr, 1).Font.Bold = True
 
-    ws.Columns("A:T").AutoFit
+    ws.Columns("A:U").AutoFit
     If ws.Columns("C").ColumnWidth > 18 Then ws.Columns("C").ColumnWidth = 18
-    If ws.Columns("T").ColumnWidth > 60 Then ws.Columns("T").ColumnWidth = 60
+    If ws.Columns("U").ColumnWidth > 60 Then ws.Columns("U").ColumnWidth = 60
     ws.Rows(3).RowHeight = 30
 
     On Error Resume Next
@@ -944,6 +946,7 @@ Public Sub 平均足_ルール表示()
         HA_PutR ws, r, "2", "利確 ＝ 買値の +" & Format(HA_FIX_TP * 100, "0") & "%（売り指値）", "届いたら全部売り"
         HA_PutR ws, r, "3", HA_HOLDDAYS & "営業日たったら引けで成行手仕舞い", "どちらにも当たらなかった玉"
         HA_PutR ws, r, "4", "途中で判断しない。置いた注文をいじらない", "いじると成績が落ちる"
+        HA_PutR ws, r, "5", "寄り値が「見送りライン」（現値+" & Format(HA_MAXGAP * 100, "0") & "%）より高い日は買わない", "高値づかみを避ける。87%は買えます"
         HA_PutR ws, r, "※", "損切8%・利確8%が最良。利確を損切より小さくすると必ず負ける", "勝率72%でも年－24.5%になる"
     Else
         HA_PutR ws, r, "1", "損切 ＝ min(平均足の安値, 直近3日安値) － ATR×0.5（最大 －6%）", "買った直後に逆指値。入れた後は絶対に下げない"
@@ -965,11 +968,12 @@ Public Sub 平均足_ルール表示()
 
     HA_PutH ws, r, "【5】検証結果　300銘柄 × 直近250日 ・ 手数料往復0.3%込み"
     If HA_FIX_MODE Then
-        HA_PutR ws, r, "", "設定", "出来高1.4倍 / 損切8% / 利確8% / 7日手じまい"
-        HA_PutR ws, r, "", "勝率", "56.3%"
-        HA_PutR ws, r, "", "1回あたりの平均", "+0.83%"
-        HA_PutR ws, r, "", "同時5銘柄・1銘柄に資金の20%", "250日で +49.7%　最大下落 8.2%"
-        HA_PutR ws, r, "", "平均保有日数", "4.6日"
+        HA_PutR ws, r, "", "設定", "出来高1.4倍 / 損切8% / 利確8% / 7日手じまい / 寄り+2%まで"
+        HA_PutR ws, r, "", "勝率", "55.6%"
+        HA_PutR ws, r, "", "1回あたりの平均", "+0.61%"
+        HA_PutR ws, r, "", "同時5銘柄・1銘柄に資金の20%", "250日で +32.9%　最大下落 6.8%"
+        HA_PutR ws, r, "", "見送りライン無しの場合", "250日で +26.4%　最大下落 8.4%"
+        HA_PutR ws, r, "", "注", "損切が窓を開けて滑る分も引いた数字です"
     Else
         HA_PutR ws, r, "", "設定", "出来高1.6倍 / ATR基準の損切 / +2Rで半分利確"
         HA_PutR ws, r, "", "勝率", "49.2%"

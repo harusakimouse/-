@@ -41,6 +41,58 @@ Public Sub 平均足_データ取込()
     End If
 End Sub
 
+'保護がかかっていて書き込めない時に、5枚のデータシートを作り直します
+Public Sub 平均足_データシート作り直し()
+
+    Dim shNames As Variant
+    shNames = Array("始値", "高値", "安値", "終値", "出来高")
+
+    Dim msg As String
+    msg = "始値・高値・安値・終値・出来高　の5枚を、保護のかかっていない新しいシートに作り直します。" & vbCrLf & vbCrLf & _
+          "・中のデータは、この直後に元ブックから取り込み直すので消えません。" & vbCrLf & _
+          "・シート保護のパスワードは、以後いっさい不要になります。" & vbCrLf & _
+          "・「平均足」「平均足記録」「メニュー」などの他のシートは触りません。" & vbCrLf & vbCrLf & _
+          "実行してよろしいですか？"
+    If MsgBox(msg, vbYesNo + vbQuestion, "データシートの作り直し") <> vbYes Then Exit Sub
+
+    Dim oldAlert As Boolean, oldUpd As Boolean
+    oldAlert = Application.DisplayAlerts
+    oldUpd = Application.ScreenUpdating
+    Application.DisplayAlerts = False
+    Application.ScreenUpdating = False
+
+    Dim i As Long, ws As Worksheet, nm As String
+    For i = 0 To UBound(shNames)
+        nm = CStr(shNames(i))
+        Set ws = HA_FindSheet(ThisWorkbook, nm)
+        If Not ws Is Nothing Then
+            On Error Resume Next
+            ws.Delete
+            On Error GoTo 0
+        End If
+        Set ws = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.Count))
+        ws.Name = nm
+        ws.Cells(1, 1).Value = nm & "シート"
+        ws.Cells(2, 1).Value = "コード"
+        ws.Cells(2, 2).Value = "銘 柄 名"
+        ws.Cells(3, 1).Value = "日  付"
+        ws.Cells(1, 1).Font.Bold = True
+        ws.Range("A2:B2").Font.Bold = True
+        ws.Cells(3, 4).NumberFormat = "yyyy/mm/dd"
+        ws.Range("D3:GZ3").NumberFormat = "yyyy/mm/dd"
+        ws.Columns("A").ColumnWidth = 8
+        ws.Columns("B").ColumnWidth = 16
+    Next i
+
+    Application.ScreenUpdating = oldUpd
+    Application.DisplayAlerts = oldAlert
+
+    If MsgBox("5枚を作り直しました。" & vbCrLf & vbCrLf & _
+              "続けてデータを取り込みますか？", vbYesNo + vbQuestion) = vbYes Then
+        平均足_取込して抽出
+    End If
+End Sub
+
 Public Sub 平均足_取込して抽出()
     If HA_Import(True) Then HA_Buy
 End Sub

@@ -25,6 +25,30 @@ Private Const C_NEW As Long = 5
 Private Const N_MAX As Long = 300
 
 '============ 全マクロが使う「最新営業日」============
+'============ 日付行のズレを見分ける ============
+'  戻り値 0  … E列の日付は E3 にある（日付と値がそろっている）
+'  戻り値 -1 … E列の日付は D3 にある（日付が1列左にずれている）
+Public Function HA_DateOff() As Long
+    Dim ws As Worksheet
+    On Error Resume Next
+    Set ws = ThisWorkbook.Worksheets("終値")
+    On Error GoTo 0
+    HA_DateOff = 0
+    If ws Is Nothing Then Exit Function
+    If HA_IsDate2(ws.Cells(3, C_NEW).Value2) Then
+        HA_DateOff = 0
+    ElseIf HA_IsDate2(ws.Cells(3, C_NEW - 1).Value2) Then
+        HA_DateOff = -1
+    End If
+End Function
+
+'============ 日付として使える数字か ============
+Public Function HA_IsDate2(ByVal v As Variant) As Boolean
+    HA_IsDate2 = False
+    If Not IsNumeric(v) Then Exit Function
+    If CDbl(v) > 40000 And CDbl(v) < 80000 Then HA_IsDate2 = True
+End Function
+
 Public Function HA_LatestDate() As Date
     Dim ws As Worksheet
     On Error Resume Next
@@ -33,20 +57,17 @@ Public Function HA_LatestDate() As Date
     If ws Is Nothing Then Exit Function
 
     Dim c As Long, dv As Double, best As Double, miss As Long
-    '日付行を左から走査。E列の日付は D3 に入っている
-    dv = 0
-    If IsNumeric(ws.Cells(3, 4).Value2) Then dv = CDbl(ws.Cells(3, 4).Value2)
-    If dv > 40000 And dv < 80000 Then best = dv
+    '日付行を左から走査（D列からE列まで両方見るのでズレても平気）
+    best = 0
     miss = 0
-    For c = C_NEW + 1 To C_NEW + N_MAX
-        dv = 0
-        If IsNumeric(ws.Cells(3, c).Value2) Then dv = CDbl(ws.Cells(3, c).Value2)
-        If dv > 40000 And dv < 80000 Then
+    For c = C_NEW - 1 To C_NEW + N_MAX
+        If HA_IsDate2(ws.Cells(3, c).Value2) Then
+            dv = CDbl(ws.Cells(3, c).Value2)
             If dv > best Then best = dv
             miss = 0
         Else
             miss = miss + 1
-            If miss > 5 Then Exit For
+            If miss > 5 And best > 0 Then Exit For
         End If
     Next c
     If best > 0 Then HA_LatestDate = CDate(best)
@@ -113,15 +134,12 @@ Public Sub 平均足_データチェック()
     ReDim dts(1 To N_MAX): ReDim cols(1 To N_MAX)
     Dim c As Long, dv As Double, miss As Long
     nD = 0: miss = 0
-    dv = 0
-    If IsNumeric(wsC.Cells(3, 4).Value2) Then dv = CDbl(wsC.Cells(3, 4).Value2)
-    If dv > 40000 And dv < 80000 Then
-        nD = 1: dts(1) = dv: cols(1) = C_NEW
-    End If
-    For c = C_NEW + 1 To C_NEW + N_MAX - 1
+    Dim dOff As Long
+    dOff = HA_DateOff()
+    For c = C_NEW To C_NEW + N_MAX - 1
         dv = 0
-        If IsNumeric(wsC.Cells(3, c).Value2) Then dv = CDbl(wsC.Cells(3, c).Value2)
-        If dv > 40000 And dv < 80000 Then
+        If HA_IsDate2(wsC.Cells(3, c + dOff).Value2) Then dv = CDbl(wsC.Cells(3, c + dOff).Value2)
+        If dv > 0 Then
             nD = nD + 1: dts(nD) = dv: cols(nD) = c: miss = 0
         Else
             miss = miss + 1

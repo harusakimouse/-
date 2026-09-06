@@ -107,10 +107,12 @@ Private Sub HA_Run()
 
     '--- 使える列（日付は .Value2 で読む）---
     Dim lastCol As Long, c As Long, dv As Double, miss As Long
+    Dim dOff As Long
+    dOff = HA_DateOff()
     lastCol = C_NEW: miss = 0
     For c = C_NEW + 1 To C_NEW + N_MAX - 1
         dv = 0
-        If IsNumeric(wsC.Cells(3, c).Value2) Then dv = CDbl(wsC.Cells(3, c).Value2)
+        If IsNumeric(wsC.Cells(3, c + dOff).Value2) Then dv = CDbl(wsC.Cells(3, c + dOff).Value2)
         If dv > 40000 And dv < 80000 Then
             lastCol = c: miss = 0
         Else
@@ -126,15 +128,11 @@ Private Sub HA_Run()
         Exit Sub
     End If
 
-    '--- 日付（E列の日付はD3にある）---
+    '--- 日付（列のズレは HA_DateOff が見分ける）---
     Dim dtc() As Double, kk As Long
     ReDim dtc(1 To nCol)
     For kk = 1 To nCol
-        If kk = 1 Then
-            dtc(kk) = HA_Num(wsC.Cells(3, 4).Value2)
-        Else
-            dtc(kk) = HA_Num(wsC.Cells(3, 4 + kk).Value2)
-        End If
+        dtc(kk) = HA_Num(wsC.Cells(3, C_NEW + kk - 1 + dOff).Value2)
     Next kk
 
     Dim lastRow As Long
@@ -312,7 +310,7 @@ NextStock:
              IIf(HA_WEEK_ON, " → 週足" & HA_WEEK_MA & "週線上 " & cnt(8), "")
 
     Set wsX = HA_MakeOut()
-    HA_WriteOut wsX, res, hit, nCol, wsC.Cells(3, 4).Value2, funnel
+    HA_WriteOut wsX, res, hit, nCol, wsC.Cells(3, C_NEW + dOff).Value2, funnel
 
     HA_Restore
     On Error Resume Next

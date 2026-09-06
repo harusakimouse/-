@@ -47,6 +47,7 @@ Public Sub 平均足_メニュー作成()
 
     If Not HA_M_UnlockBook() Then Exit Sub
 
+    On Error GoTo MenuErr
     Application.ScreenUpdating = True
     Application.EnableEvents = True
     Application.DisplayAlerts = True
@@ -127,10 +128,21 @@ Public Sub 平均足_メニュー作成()
     ws.Cells(r + 7, 2).Font.Color = RGB(192, 0, 0)
     ws.Cells(r + 7, 2).Font.Bold = True
 
+    On Error Resume Next
+    ws.Activate
     ws.Range("A1").Select
+    On Error GoTo 0
 
     Application.ScreenUpdating = True
-    MsgBox "「" & SH & "」シートにボタンを作りました。", vbInformation
+    MsgBox "「" & SH & "」シートにボタンを作りました。" & vbCrLf & _
+           "ボタンは⑩まであります。", vbInformation
+    Exit Sub
+
+MenuErr:
+    Application.ScreenUpdating = True
+    Application.EnableEvents = True
+    MsgBox "メニュー作成でエラーが出ました。" & vbCrLf & _
+           "番号 " & Err.Number & "：" & Err.Description, vbExclamation
 End Sub
 
 'ボタンを1つ作る（rは自動で進みます）

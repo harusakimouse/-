@@ -1036,8 +1036,10 @@ Public Sub 平均足_ルール表示()
     ws.Rows("3:" & r).AutoFit
 
     Application.ScreenUpdating = True
+    On Error Resume Next
     ws.Activate
     ws.Range("A1").Select
+    On Error GoTo 0
     MsgBox "「平均足ルール」シートを作りました。", vbInformation
 End Sub
 

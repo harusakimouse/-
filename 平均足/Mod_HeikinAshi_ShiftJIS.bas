@@ -51,7 +51,7 @@ Private Const C_NEW As Long = 5     'E列＝最新日
 Private Const N_MAX As Long = 150   '使う日数の上限
 Private Const OUT_SHEET As String = "平均足"
 Private Const OUT_TOP As Long = 4   '出力の開始行
-Private Const OUT_COLS As Long = 21
+Private Const OUT_COLS As Long = 22
 
 '==================== 入口 ====================
 Public Sub 平均足_買い抽出()
@@ -299,8 +299,15 @@ Private Sub HA_Run(ByVal side As Long)
         cnt(11) = cnt(11) + 1
 
         '(10) 週足が10週線の上（大きな流れに逆らわない）
+        Dim weekDev As Double
+        weekDev = HA_WeekDev(cl, dts, n)
         If HA_WEEK_ON Then
-            If Not HA_WeekOK(cl, dts, n, side) Then GoTo NextStock
+            If weekDev < -998 Then GoTo NextStock          'データ不足
+            If side = 1 Then
+                If weekDev <= 0 Then GoTo NextStock
+            Else
+                If weekDev >= 0 Then GoTo NextStock
+            End If
         End If
         cnt(12) = cnt(12) + 1
 
@@ -471,9 +478,10 @@ Private Sub HA_Run(ByVal side As Long)
         res(hit, 16) = Round(rsiNow, 1)
         res(hit, 17) = Round(kNow, 1)
         res(hit, 18) = Round(kairi, 1)
-        res(hit, 19) = Round(volRate, 2)
-        res(hit, 20) = Round(atr, 1)
-        res(hit, 21) = Trim$(sig)
+        If weekDev > -998 Then res(hit, 19) = Round(weekDev, 1) Else res(hit, 19) = ""
+        res(hit, 20) = Round(volRate, 2)
+        res(hit, 21) = Round(atr, 1)
+        res(hit, 22) = Trim$(sig)
         sc(hit) = score + volRate / 100#    '同点は出来高の多い順
 
 NextStock:
@@ -549,7 +557,7 @@ Private Sub HA_WriteOut(ByVal ws As Worksheet, ByRef res As Variant, ByVal hit A
     Dim ttl As String
     If side = 1 Then ttl = "平均足　買い候補" Else ttl = "平均足　売り候補"
 
-    With ws.Range("A1:U1")
+    With ws.Range("A1:V1")
         .Merge
         .Value = "  " & ttl & "　（反転を取る7手法／" & Format(Now, "yyyy/mm/dd hh:nn") & " 作成）"
         .Font.Name = "Meiryo UI"
@@ -561,12 +569,13 @@ Private Sub HA_WriteOut(ByVal ws As Worksheet, ByRef res As Variant, ByVal hit A
     End With
     ws.Rows(1).RowHeight = 30
 
-    With ws.Range("A2:U2")
+    With ws.Range("A2:V2")
         .Merge
         .Value = "  最新日=" & HA_DateStr(lastDate) & "／使用" & nCol & "日／合格点=" & HA_PASS & _
                  "／資金" & Format(HA_CAPITAL, "#,##0") & "円" & _
                  IIf(HA_FIX_MODE, "・損切-" & Format(HA_FIX_SL * 100, "0") & "%／利確+" & Format(HA_FIX_TP * 100, "0") & "%／" & HA_HOLDDAYS & "日で手じまい", _
                                   "・1回のリスク" & Format(HA_RISK * 100, "0.0") & "%") & _
+                 "／週足フィルター：" & IIf(HA_WEEK_ON, "ON（" & HA_WEEK_MA & "週線の上だけ）", "OFF") & _
                  "／地合い：" & topixNote
         .Font.Name = "Meiryo UI"
         .Font.Size = 10
@@ -578,7 +587,7 @@ Private Sub HA_WriteOut(ByVal ws As Worksheet, ByRef res As Variant, ByVal hit A
     Dim hd As Variant
     hd = Array("順位", "コード", "銘柄名", "点数", "評価", "現値", "エントリー", "見送りライン", _
                "損切", "利確1", "利確2", "株数", "想定損失", "想定利益", "連続", "RSI", "%K", _
-               "25日乖離%", "出来高倍", "ATR", "根拠（7手法）")
+               "25日乖離%", "週足乖離%", "出来高倍", "ATR", "根拠（7手法）")
     Dim j As Long
     For j = 0 To UBound(hd)
         ws.Cells(3, j + 1).Value = hd(j)
@@ -619,7 +628,7 @@ Private Sub HA_WriteOut(ByVal ws As Worksheet, ByRef res As Variant, ByVal hit A
             .Borders.Color = RGB(180, 180, 180)
         End With
         ws.Range(ws.Cells(OUT_TOP, 6), ws.Cells(OUT_TOP + nOut - 1, 14)).NumberFormat = "#,##0"
-        ws.Range(ws.Cells(OUT_TOP, 16), ws.Cells(OUT_TOP + nOut - 1, 20)).NumberFormat = "0.0"
+        ws.Range(ws.Cells(OUT_TOP, 16), ws.Cells(OUT_TOP + nOut - 1, 21)).NumberFormat = "0.0"
 
         Dim cc As Long
         For cc = 1 To nOut
@@ -656,9 +665,9 @@ Private Sub HA_WriteOut(ByVal ws As Worksheet, ByRef res As Variant, ByVal hit A
     End With
     ws.Cells(rr, 1).Font.Bold = True
 
-    ws.Columns("A:U").AutoFit
+    ws.Columns("A:V").AutoFit
     If ws.Columns("C").ColumnWidth > 18 Then ws.Columns("C").ColumnWidth = 18
-    If ws.Columns("U").ColumnWidth > 60 Then ws.Columns("U").ColumnWidth = 60
+    If ws.Columns("V").ColumnWidth > 60 Then ws.Columns("V").ColumnWidth = 60
     ws.Rows(3).RowHeight = 30
 
     On Error Resume Next
@@ -1063,9 +1072,12 @@ Private Sub HA_PutR(ByVal ws As Worksheet, ByRef r As Long, ByVal a As String, _
     r = r + 1
 End Sub
 
-'週足が10週線の上か（直前に確定した週で判定）
-Private Function HA_WeekOK(ByRef cl() As Double, ByRef dts() As Double, _
-                           ByVal n As Long, ByVal side As Long) As Boolean
+'週足が10週線からどれだけ離れているか（%）　直前に確定した週で判定
+'　プラス＝10週線の上　／　-999 ＝ データ不足で判定できない
+Private Function HA_WeekDev(ByRef cl() As Double, ByRef dts() As Double, _
+                            ByVal n As Long) As Double
+
+    HA_WeekDev = -999
 
     Dim wc(1 To 80) As Double
     Dim wCnt As Long, k As Long
@@ -1095,10 +1107,7 @@ Private Function HA_WeekOK(ByRef cl() As Double, ByRef dts() As Double, _
     Next j
     Dim ma As Double
     ma = s / HA_WEEK_MA
+    If ma <= 0 Then Exit Function
 
-    If side = 1 Then
-        HA_WeekOK = (wc(w) > ma)
-    Else
-        HA_WeekOK = (wc(w) < ma)
-    End If
+    HA_WeekDev = (wc(w) - ma) / ma * 100#
 End Function

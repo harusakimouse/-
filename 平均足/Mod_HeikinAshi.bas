@@ -84,6 +84,17 @@ Private Sub HA_Run()
         Exit Sub
     End If
 
+    '--- データが古くないか（楽天RSSの切断・取込忘れを検出）---
+    Dim fmsg As String
+    If Not HA_DataFresh(fmsg) Then
+        If Not HA_SILENT Then
+            If MsgBox("★データが古いです★" & vbCrLf & vbCrLf & fmsg & vbCrLf & vbCrLf & _
+                      "楽天RSSが切れているか、取込を忘れている可能性があります。" & vbCrLf & _
+                      "この状態の候補で売買しないでください。" & vbCrLf & vbCrLf & _
+                      "それでも候補を出しますか？", vbYesNo + vbExclamation, "データが古い") <> vbYes Then Exit Sub
+        End If
+    End If
+
     Application.ScreenUpdating = False
     Application.Calculation = xlCalculationManual
 

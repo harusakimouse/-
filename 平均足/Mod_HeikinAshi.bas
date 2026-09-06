@@ -65,10 +65,6 @@ Public Sub 平均足_買い抽出()
     HA_Run
 End Sub
 
-Public Sub HA_Buy()
-    HA_Run
-End Sub
-
 '==================== 本体 ====================
 Private Sub HA_Run()
 

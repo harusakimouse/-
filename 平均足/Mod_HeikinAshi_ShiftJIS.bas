@@ -65,10 +65,6 @@ Public Sub •½‹Ï‘«_”ƒ‚¢’Šo()
     HA_Run
 End Sub
 
-Public Sub HA_Buy()
-    HA_Run
-End Sub
-
 '==================== –{‘Ì ====================
 Private Sub HA_Run()
 

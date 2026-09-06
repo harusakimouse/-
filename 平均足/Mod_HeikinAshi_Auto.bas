@@ -8,8 +8,8 @@ Option Explicit
 '   ※元ブックは【読み取り専用】で開き、【保存しません】。
 '     元ブックのマクロも動かさない設定で開きます。
 '
-'   ※本体モジュール(Mod_HeikinAshi)は半角名 HA_Buy で呼びます。
-'     日本語名をまたいで呼ばないのでコンパイルエラーになりません。
+'   ※本体は Application.Run で呼びます。モジュールが重複していても
+'     コンパイルエラーになりません。
 '
 '   実行 : Alt+F8 →
 '     平均足_取込して抽出   … 今すぐ取り込んで候補を出す（手動）
@@ -105,7 +105,7 @@ Public Sub 平均足_データシート作り直し()
 End Sub
 
 Public Sub 平均足_取込して抽出()
-    If HA_Import(True) Then HA_Buy
+    If HA_Import(True) Then Application.Run "平均足_買い抽出"
 End Sub
 
 '==================== 自動実行 ====================
@@ -145,7 +145,7 @@ End Sub
 Public Sub 平均足_自動実行()
     HA_SILENT = True
     On Error Resume Next
-    If HA_Import(False) Then HA_Buy
+    If HA_Import(False) Then Application.Run "平均足_買い抽出"
     On Error GoTo 0
     HA_SILENT = False
 

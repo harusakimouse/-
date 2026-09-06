@@ -57,9 +57,18 @@ Private Const R_END As Long = 520
 Private Const C_NEW As Long = 5
 Private Const N_MAX As Long = 150
 Private Const OUT_SHEET As String = "平均足"
-Private Const OUT_TOP As Long = 5      'データ開始行（1行目とA列は余白）
-Private Const HD_ROW  As Long = 4      '見出し行
-Private Const C0      As Long = 1      '列のずらし（A列を空ける）
+'--- シートの並び（1行目とA列は余白）---
+'   2行目 : タイトル
+'   3行目 : 設定の表示
+'   4行目 : 余白
+'   5〜18行目 : ★メモ欄★　自由に使ってください。マクロは一切触りません
+'   19行目 : 見出し
+'   20行目〜 : 候補
+Private Const MEMO_TOP As Long = 5     'メモ欄の開始行
+Private Const MEMO_END As Long = 18    'メモ欄の最終行
+Private Const HD_ROW   As Long = 19    '見出し行
+Private Const OUT_TOP  As Long = 20    'データ開始行
+Private Const C0       As Long = 1     '列のずらし（A列を空ける）
 Private Const OUT_COLS As Long = 20
 
 '==================== 入口 ====================
@@ -337,8 +346,17 @@ End Function
 Private Sub HA_WriteOut(ByVal ws As Worksheet, ByRef res As Variant, ByVal hit As Long, _
                         ByVal nCol As Long, ByVal lastDate As Variant, ByVal funnel As String)
 
-    ws.Cells.UnMerge
-    ws.Cells.Clear
+    '--- メモ欄（5〜18行目）は残して、それ以外だけ消す ---
+    Dim lastClear As Long
+    lastClear = HD_ROW + HA_MAXROWS + 30
+    With ws.Range(ws.Cells(1, 1), ws.Cells(4, 30))
+        .UnMerge
+        .Clear
+    End With
+    With ws.Range(ws.Cells(HD_ROW, 1), ws.Cells(lastClear, 30))
+        .UnMerge
+        .Clear
+    End With
 
     '--- 1行目とA列は余白 ---
     ws.Rows(1).RowHeight = 10
@@ -369,6 +387,15 @@ Private Sub HA_WriteOut(ByVal ws As Worksheet, ByRef res As Variant, ByVal hit A
         .VerticalAlignment = xlCenter
     End With
     ws.Rows(3).RowHeight = 24
+
+    '--- メモ欄の案内（空っぽの時だけ1回書く。以後は触りません）---
+    If Application.WorksheetFunction.CountA(ws.Range(ws.Cells(MEMO_TOP, 1), ws.Cells(MEMO_END, 30))) = 0 Then
+        ws.Cells(MEMO_TOP, 1 + C0).Value = "【メモ欄】" & MEMO_TOP & "〜" & MEMO_END & "行目は自由に使ってください。マクロは触りません。"
+        With ws.Cells(MEMO_TOP, 1 + C0)
+            .Font.Name = "Meiryo UI": .Font.Size = 12: .Font.Bold = True
+            .Font.Color = RGB(150, 150, 150)
+        End With
+    End If
 
     Dim hd As Variant
     hd = Array("順位", "コード", "銘柄名", "現値", "エントリー", "見送りライン", "損切", "利確", _
@@ -442,7 +469,8 @@ Private Sub HA_WriteOut(ByVal ws As Worksheet, ByRef res As Variant, ByVal hit A
     ws.Cells(rr + 7, 1 + C0).Font.Color = RGB(192, 0, 0)
     ws.Cells(rr + 7, 1 + C0).Font.Bold = True
 
-    ws.Columns("B:U").AutoFit
+    ws.Columns("C:U").AutoFit
+    ws.Columns("B").ColumnWidth = 6
     If ws.Columns("D").ColumnWidth > 22 Then ws.Columns("D").ColumnWidth = 22
     If ws.Columns("U").ColumnWidth > 60 Then ws.Columns("U").ColumnWidth = 60
     ws.Rows(HD_ROW).RowHeight = 48

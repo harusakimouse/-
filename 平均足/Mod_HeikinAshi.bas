@@ -59,6 +59,14 @@ Public Sub 平均足_買い抽出()
 End Sub
 
 Public Sub 平均足_売り抽出()
+    '※空売りは検証で負けています。実売買には使わないでください。
+    If MsgBox("【警告】空売りは検証で負けています。" & vbCrLf & vbCrLf & _
+              "300銘柄×250日の結果" & vbCrLf & _
+              "　勝率 41.0%　1回あたり平均 -3.41%" & vbCrLf & _
+              "　前半 -0.20%　後半 -4.08%（どちらの期間も赤字）" & vbCrLf & vbCrLf & _
+              "実際の売買には使わないでください。" & vbCrLf & _
+              "それでも参考として表示しますか？", _
+              vbYesNo + vbExclamation, "空売りは推奨しません") <> vbYes Then Exit Sub
     HA_Run -1
 End Sub
 

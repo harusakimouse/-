@@ -94,8 +94,8 @@ Public Sub 平均足_メニュー作成()
              "OHLCVブックからデータを取り込み、そのまま買い候補を出します（引け後15:31以降）", RGB(0, 112, 192)
     HA_M_Btn ws, r, "② 買い候補だけ出す", "平均足_買い抽出", _
              "取込はせず、今あるデータで買い候補を出し直します", RGB(0, 112, 192)
-    HA_M_Btn ws, r, "③ 売り候補を出す", "平均足_売り抽出", _
-             "空売り・手仕舞いの候補を出します", RGB(112, 48, 160)
+    HA_M_Btn ws, r, "③ 売り候補（使わない）", "平均足_売り抽出", _
+             "空売りは検証で負けています（勝率41%・1回-3.41%）。参考表示のみ。押さないでください", RGB(150, 150, 150)
     HA_M_Btn ws, r, "④ 自動実行を開始", "平均足_自動開始", _
              "毎営業日15:35に、取込→抽出を自動で行います（Excelを開いたままに）", RGB(0, 153, 68)
     HA_M_Btn ws, r, "⑤ 自動実行を止める", "平均足_自動停止", _
@@ -121,12 +121,15 @@ Public Sub 平均足_メニュー作成()
     ws.Cells(r + 5, 2).Value = "5. どちらも当たらなければ、5営業日後の引けで成行手仕舞い"
     ws.Cells(r + 6, 2).Value = "6. 記録シートに　買日・コード・銘柄名・買値・株数　を入れる"
     ws.Cells(r + 7, 2).Value = "※「今の指示」が『休む』になっていたら、その間は新規で買わないこと"
-    With ws.Range(ws.Cells(r, 2), ws.Cells(r + 7, 2))
+    ws.Cells(r + 8, 2).Value = "※このシステムは【買いのみ】です。空売り（③）は検証で負けているので使わないでください"
+    With ws.Range(ws.Cells(r, 2), ws.Cells(r + 8, 2))
         .Font.Name = "Meiryo UI": .Font.Size = 12
     End With
     ws.Cells(r, 2).Font.Bold = True
     ws.Cells(r + 7, 2).Font.Color = RGB(192, 0, 0)
     ws.Cells(r + 7, 2).Font.Bold = True
+    ws.Cells(r + 8, 2).Font.Color = RGB(192, 0, 0)
+    ws.Cells(r + 8, 2).Font.Bold = True
 
     On Error Resume Next
     ws.Activate

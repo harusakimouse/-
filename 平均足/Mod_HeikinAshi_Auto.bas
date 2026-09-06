@@ -21,6 +21,7 @@ Option Explicit
 Public Const HA_SRC_NAME As String = "OHLCV　明日売買　ボリンジャー送信.xlsm"
 Public Const HA_SRC_FIND As String = "OHLCV*.xlsm"   '名前が少し違っても拾う
 Public Const HA_AUTO_TIME As String = "15:35:00"     '自動実行の時刻
+Public Const HA_SHEET_PW As String = ""             'シート保護のパスワード（かかっている場合だけ入れる）
 '--------------------------------------------------
 
 Private Const SRC_MAXROW As Long = 520
@@ -161,7 +162,8 @@ Private Function HA_Import(ByVal showMsg As Boolean) As Boolean
 
     If wbSrc Is Nothing Then
         On Error Resume Next
-        Set wbSrc = Workbooks.Open(FileName:=fPath, ReadOnly:=True, UpdateLinks:=0)
+        Set wbSrc = Workbooks.Open(FileName:=fPath, ReadOnly:=True, UpdateLinks:=0, _
+                                   IgnoreReadOnlyRecommended:=True, Notify:=False)
         On Error GoTo CleanUp
         opened = True
     End If
@@ -289,9 +291,17 @@ Private Function HA_CopyOne(ByVal wsS As Worksheet, ByVal wsD As Worksheet, _
         Exit Function
     End If
 
-    On Error Resume Next
-    wsD.Unprotect
-    On Error GoTo 0
+    'シート保護を外す（パスワード無しの Unprotect はダイアログが出るので必ず指定する）
+    If wsD.ProtectContents Then
+        On Error Resume Next
+        wsD.Unprotect Password:=HA_SHEET_PW
+        On Error GoTo 0
+    End If
+    If wsD.ProtectContents Then
+        info = info & "（このブックの" & wsD.Name & "シートに保護がかかっています。" & _
+                      "モジュール先頭の HA_SHEET_PW にパスワードを入れてください）"
+        Exit Function
+    End If
 
     On Error GoTo CopyErr
     '日付の行（D列〜）

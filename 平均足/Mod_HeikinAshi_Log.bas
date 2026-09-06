@@ -31,7 +31,7 @@ Private Const MAX_ROW As Long = 205    'データ最終行（200件）
 Private Const HD_ROW As Long = 5       '見出し行
 Private Const HD_SIZE As Long = 18     '見出しの文字サイズ
 Private Const DT_SIZE As Long = 16     'データの文字サイズ
-Private Const HOLD_DAYS As Long = 5    '何営業日で手じまいするか
+Private Const HOLD_DAYS As Long = 5    '買った日を0日目として、何営業日後の引けで売るか
 Private Const SL_RATE As Double = 0.08 '損切の幅
 Private Const TP_RATE As Double = 0.08 '利確の幅
 
@@ -146,7 +146,7 @@ Private Sub HA_L_Build(ByVal forceStyle As Boolean)
     Dim r As Long
     For r = TOP_ROW To MAX_ROW
         ws.Cells(r, 7).Formula = "=IF(OR(E" & r & "="""",F" & r & "=""""),"""",E" & r & "*F" & r & ")"
-        ws.Cells(r, 8).Formula = "=IF(E" & r & "="""","""",ROUND(E" & r & "*" & (1 - SL_RATE) & ",0))"
+        ws.Cells(r, 8).Formula = "=IF(E" & r & "="""","""",ROUND(E" & r & "*" & (1 - SL_RATE) & ",0))"   '買付価格が基準
         ws.Cells(r, 9).Formula = "=IF(E" & r & "="""","""",ROUND(E" & r & "*" & (1 + TP_RATE) & ",0))"
         ws.Cells(r, 10).Formula = "=IF(B" & r & "="""","""",WORKDAY(B" & r & "," & HOLD_DAYS & "))"
         ws.Cells(r, 13).Formula = "=IF(OR(L" & r & "="""",E" & r & "="""",F" & r & "=""""),"""",(L" & r & "-E" & r & ")*F" & r & ")"
@@ -265,14 +265,14 @@ Private Sub HA_L_Build(ByVal forceStyle As Boolean)
         ws.Cells(g + 1, 2).Value = "1. 買ったら　買日・コード・銘柄名・買値・株数　の5つだけ入れる。損切値と利確値が自動で出ます。"
         ws.Cells(g + 2, 2).Value = "2. その値段で　逆指値（損切値）と　売り指値（利確値）を証券会社に出す。"
         ws.Cells(g + 3, 2).Value = "3. 売れたら　売日・売値　を入れる。損益と勝率が自動で更新されます。"
-        ws.Cells(g + 4, 2).Value = "4. 「期限日」（買った日から5営業日後）の引けで、勝ち負けに関係なく成行手仕舞い。"
+        ws.Cells(g + 4, 2).Value = "4. 「期限日」（買った日を0日目として5営業日後）の引けで、勝ち負けに関係なく成行手仕舞い。"
         ws.Cells(g + 6, 2).Value = "【怖くなったら、この数字を見てください（300銘柄×250日の検証）】"
         ws.Cells(g + 7, 2).Value = "・負けの平均は −5.19%。−8%満額で切られるのは17回に1回だけです。"
         ws.Cells(g + 8, 2).Value = "・最大の連敗は 4連敗。5連敗以上は1年で一度もありませんでした。"
         ws.Cells(g + 9, 2).Value = "・10回中4回は負けます。それが設計です。負けは家賃だと思ってください。"
         ws.Cells(g + 10, 2).Value = "・ブレーキは「3連敗で株数を半分」だけ。休むのは月間ストップ（資金の-6%）に当たった時だけです。"
-        ws.Cells(g + 11, 2).Value = "・1銘柄は30万円以上にする。15万円では候補の2割しか買えません（候補の株価は平均4,100円）。"
-        ws.Cells(g + 12, 2).Value = "・小さくやりたい時は割合を下げず、運用資金そのものを減らす（例：150万円で1銘柄20%=30万円）。"
+        ws.Cells(g + 11, 2).Value = "・資金200万円では株価2000円以上を100株買えません。この手法には500万円以上が必要です。"
+        ws.Cells(g + 12, 2).Value = "・採用条件B：出来高1.5倍以上／株価2000円以上／損切-8%／利確+8%／5営業日。判定は少額テスト運用。"
         With ws.Range("B" & g & ":B" & (g + 12))
             .Font.Name = "Meiryo UI": .Font.Size = 12
         End With

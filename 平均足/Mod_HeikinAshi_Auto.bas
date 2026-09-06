@@ -108,11 +108,26 @@ Private Function HA_Import(ByVal showMsg As Boolean) As Boolean
 
     HA_Import = False
 
+    '--- 今のExcelの設定を覚えておく ---
+    Dim oldEvents As Boolean, oldUpd As Boolean, oldAlert As Boolean
+    Dim oldSec As Long, oldCalc As Long, oldAsk As Boolean
+    oldEvents = Application.EnableEvents
+    oldUpd = Application.ScreenUpdating
+    oldAlert = Application.DisplayAlerts
+    oldSec = Application.AutomationSecurity
+    oldCalc = Application.Calculation
+    oldAsk = Application.AskToUpdateLinks
+
+    Dim wbSrc As Workbook, opened As Boolean
+    Dim done As Long, detail As String
+
+    On Error GoTo CleanUp
+
     Dim myPath As String
     myPath = ThisWorkbook.Path
     If myPath = "" Then
         If showMsg Then MsgBox "このブックを一度保存してから実行してください。", vbExclamation
-        Exit Function
+        GoTo CleanUp
     End If
 
     '--- 元ファイルを探す ---
@@ -126,47 +141,44 @@ Private Function HA_Import(ByVal showMsg As Boolean) As Boolean
             MsgBox "同じフォルダーに「" & HA_SRC_NAME & "」が見つかりません。" & vbCrLf & _
                    "フォルダー：" & myPath, vbExclamation
         End If
-        Exit Function
+        GoTo CleanUp
     End If
     fPath = myPath & "\" & fName
 
-    '--- すでに開いているか調べる ---
-    Dim wbSrc As Workbook, opened As Boolean
-    On Error Resume Next
-    Set wbSrc = Workbooks(fName)
-    On Error GoTo 0
-
-    Dim oldEvents As Boolean, oldUpd As Boolean, oldSec As Long
-    oldEvents = Application.EnableEvents
-    oldUpd = Application.ScreenUpdating
-    oldSec = Application.AutomationSecurity
-
+    '--- ここが大事：重い再計算を止めてから開く ---
+    Application.StatusBar = "OHLCVデータを読み込んでいます…"
     Application.ScreenUpdating = False
     Application.EnableEvents = False
-    Application.AutomationSecurity = msoAutomationSecurityForceDisable   '元ブックのマクロは動かさない
+    Application.DisplayAlerts = False
+    Application.AskToUpdateLinks = False
+    Application.Calculation = xlCalculationManual          'RSSなどの再計算を止める
+    Application.AutomationSecurity = msoAutomationSecurityForceDisable
+
+    '--- すでに開いているか調べる ---
+    On Error Resume Next
+    Set wbSrc = Workbooks(fName)
+    On Error GoTo CleanUp
 
     If wbSrc Is Nothing Then
         On Error Resume Next
         Set wbSrc = Workbooks.Open(FileName:=fPath, ReadOnly:=True, UpdateLinks:=0)
-        On Error GoTo 0
+        On Error GoTo CleanUp
         opened = True
     End If
 
     If wbSrc Is Nothing Then
-        Application.AutomationSecurity = oldSec
-        Application.EnableEvents = oldEvents
-        Application.ScreenUpdating = oldUpd
         If showMsg Then MsgBox "「" & fName & "」を開けませんでした。", vbExclamation
-        Exit Function
+        GoTo CleanUp
     End If
 
     '--- 5つのシートを写す ---
     Dim shNames As Variant
     shNames = Array("始値", "高値", "安値", "終値", "出来高")
 
-    Dim i As Long, done As Long, detail As String, info As String
+    Dim i As Long, info As String
     Dim wsS As Worksheet, wsD As Worksheet
     For i = 0 To UBound(shNames)
+        Application.StatusBar = "取込中… " & CStr(shNames(i))
         Set wsS = HA_FindSheet(wbSrc, CStr(shNames(i)))
         Set wsD = HA_FindSheet(ThisWorkbook, CStr(shNames(i)))
         info = ""
@@ -182,22 +194,37 @@ Private Function HA_Import(ByVal showMsg As Boolean) As Boolean
         End If
     Next i
 
-    '--- 後始末（元ブックは保存しない）---
+    '--- 元ブックを閉じる（保存しない）---
     If opened Then
-        Application.DisplayAlerts = False
+        Application.StatusBar = "元ブックを閉じています…"
         wbSrc.Close SaveChanges:=False
-        Application.DisplayAlerts = True
     End If
     Set wbSrc = Nothing
 
+CleanUp:
+    Dim errNo As Long, errTx As String
+    errNo = Err.Number: errTx = Err.Description
+    On Error Resume Next
+    If opened And Not wbSrc Is Nothing Then wbSrc.Close SaveChanges:=False
+    Set wbSrc = Nothing
     Application.AutomationSecurity = oldSec
+    Application.AskToUpdateLinks = oldAsk
+    Application.DisplayAlerts = oldAlert
     Application.EnableEvents = oldEvents
+    Application.Calculation = oldCalc
     Application.ScreenUpdating = oldUpd
+    Application.StatusBar = False
+    On Error GoTo 0
+
+    If errNo <> 0 Then
+        If showMsg Then MsgBox "取込中にエラーが出ました。" & vbCrLf & _
+                              "番号 " & errNo & "：" & errTx, vbExclamation
+        Exit Function
+    End If
 
     If done = 0 Then
-        If showMsg Then
-            MsgBox "取り込めませんでした。" & vbCrLf & vbCrLf & detail & vbCrLf & _
-                   "元ブック：" & fName, vbExclamation
+        If showMsg And detail <> "" Then
+            MsgBox "取り込めませんでした。" & vbCrLf & vbCrLf & detail, vbExclamation
         End If
         Exit Function
     End If

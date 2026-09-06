@@ -10,7 +10,46 @@ Option Explicit
 
 Private Const SH As String = "メニュー"
 
+'Excelがおかしくなった時の復旧（画面が固まった・反応しない時に押す）
+Public Sub 平均足_画面を元に戻す()
+    On Error Resume Next
+    Application.ScreenUpdating = True
+    Application.EnableEvents = True
+    Application.DisplayAlerts = True
+    Application.AskToUpdateLinks = True
+    Application.Calculation = xlCalculationAutomatic
+    Application.StatusBar = False
+    Application.Cursor = xlDefault
+    Application.Interactive = True
+    On Error GoTo 0
+    MsgBox "Excelの設定を元に戻しました。" & vbCrLf & _
+           "（画面更新・イベント・自動計算をすべてONにしました）", vbInformation
+End Sub
+
+'ブックの構造保護を外す（保護されているとシートを追加できません）
+Private Function HA_M_UnlockBook() As Boolean
+    HA_M_UnlockBook = True
+    If Not ThisWorkbook.ProtectStructure Then Exit Function
+    On Error Resume Next
+    ThisWorkbook.Unprotect Password:=HA_SHEET_PW
+    On Error GoTo 0
+    If ThisWorkbook.ProtectStructure Then
+        HA_M_UnlockBook = False
+        MsgBox "このブックは「ブックの保護（構造）」がかかっているため、" & vbCrLf & _
+               "シートを追加できません。" & vbCrLf & vbCrLf & _
+               "校閲タブ → ブックの保護 → クリックして解除してください。" & vbCrLf & _
+               "（パスワードを聞かれる場合は、Mod_HeikinAshi_Auto の先頭にある" & vbCrLf & _
+               "　HA_SHEET_PW に入れてから、もう一度実行してください）", vbExclamation
+    End If
+End Function
+
 Public Sub 平均足_メニュー作成()
+
+    If Not HA_M_UnlockBook() Then Exit Sub
+
+    Application.ScreenUpdating = True
+    Application.EnableEvents = True
+    Application.DisplayAlerts = True
 
     Dim ws As Worksheet
     On Error Resume Next
@@ -68,6 +107,8 @@ Public Sub 平均足_メニュー作成()
              "色やフォントを初期状態に戻します（記録は消えません）", RGB(128, 128, 128)
     HA_M_Btn ws, r, "⑨ データシート作り直し", "平均足_データシート作り直し", _
              "始値～出来高の5枚を保護なしで作り直す（パスワードを聞かれる時だけ使う）", RGB(128, 128, 128)
+    HA_M_Btn ws, r, "⑩ 画面を元に戻す", "平均足_画面を元に戻す", _
+             "固まった後などに押す。画面更新・自動計算をすべてONに戻します", RGB(192, 0, 0)
 
     '--- 毎日の手順 ---
     r = r + 1

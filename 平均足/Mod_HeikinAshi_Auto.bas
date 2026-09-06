@@ -55,6 +55,17 @@ Public Sub 平均足_データシート作り直し()
           "実行してよろしいですか？"
     If MsgBox(msg, vbYesNo + vbQuestion, "データシートの作り直し") <> vbYes Then Exit Sub
 
+    If ThisWorkbook.ProtectStructure Then
+        On Error Resume Next
+        ThisWorkbook.Unprotect Password:=HA_SHEET_PW
+        On Error GoTo 0
+    End If
+    If ThisWorkbook.ProtectStructure Then
+        MsgBox "「ブックの保護（構造）」がかかっているため、シートを作り直せません。" & vbCrLf & _
+               "校閲タブ → ブックの保護 → 解除してから実行してください。", vbExclamation
+        Exit Sub
+    End If
+
     Dim oldAlert As Boolean, oldUpd As Boolean
     oldAlert = Application.DisplayAlerts
     oldUpd = Application.ScreenUpdating

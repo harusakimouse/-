@@ -57,7 +57,9 @@ Private Const R_END As Long = 520
 Private Const C_NEW As Long = 5
 Private Const N_MAX As Long = 150
 Private Const OUT_SHEET As String = "平均足"
-Private Const OUT_TOP As Long = 4
+Private Const OUT_TOP As Long = 5      'データ開始行（1行目とA列は余白）
+Private Const HD_ROW  As Long = 4      '見出し行
+Private Const C0      As Long = 1      '列のずらし（A列を空ける）
 Private Const OUT_COLS As Long = 20
 
 '==================== 入口 ====================
@@ -338,30 +340,35 @@ Private Sub HA_WriteOut(ByVal ws As Worksheet, ByRef res As Variant, ByVal hit A
     ws.Cells.UnMerge
     ws.Cells.Clear
 
-    With ws.Range("A1:T1")
+    '--- 1行目とA列は余白 ---
+    ws.Rows(1).RowHeight = 10
+    ws.Columns("A").ColumnWidth = 2
+
+    With ws.Range(ws.Cells(2, 1 + C0), ws.Cells(2, OUT_COLS + C0))
         .Merge
         .Value = "  平均足　買い候補　（" & Format(Now, "yyyy/mm/dd hh:nn") & " 作成）"
-        .Font.Name = "Meiryo UI": .Font.Size = 14: .Font.Bold = True
+        .Font.Name = "Meiryo UI": .Font.Size = 18: .Font.Bold = True
         .Font.Color = RGB(255, 255, 255)
         .Interior.Color = RGB(0, 70, 127)
         .HorizontalAlignment = xlLeft
+        .VerticalAlignment = xlCenter
     End With
-    ws.Rows(1).RowHeight = 30
+    ws.Rows(2).RowHeight = 38
 
-    With ws.Range("A2:T2")
+    With ws.Range(ws.Cells(3, 1 + C0), ws.Cells(3, OUT_COLS + C0))
         .Merge
         .Value = "  最新日=" & HA_DateStr(lastDate) & "／使用" & nCol & "日" & _
-                 "／出来高" & HA_VOLRATE & "倍以上" & _
+                 "／出来高" & HA_VOLRATE & "倍以上／株価" & Format(HA_MINPRICE, "#,##0") & "円以上" & _
                  "／週足" & IIf(HA_WEEK_ON, HA_WEEK_MA & "週線の上だけ", "見ない") & _
-                 "／実体" & IIf(HA_BODY_ON, HA_BODY_MIN & "〜" & HA_BODY_MAX, "制限なし") & _
                  "／損切-" & Format(HA_SL * 100, "0") & "%／利確+" & Format(HA_TP * 100, "0") & "%" & _
                  "／" & HA_HOLDDAYS & "営業日で手じまい" & _
                  "／1銘柄=資金の" & Format(HA_POS * 100, "0") & "%（" & Format(HA_CAPITAL * HA_POS, "#,##0") & "円）"
-        .Font.Name = "Meiryo UI": .Font.Size = 10
+        .Font.Name = "Meiryo UI": .Font.Size = 12: .Font.Bold = True
         .Interior.Color = RGB(226, 239, 218)
         .HorizontalAlignment = xlLeft
+        .VerticalAlignment = xlCenter
     End With
-    ws.Rows(2).RowHeight = 20
+    ws.Rows(3).RowHeight = 24
 
     Dim hd As Variant
     hd = Array("順位", "コード", "銘柄名", "現値", "エントリー", "見送りライン", "損切", "利確", _
@@ -369,16 +376,17 @@ Private Sub HA_WriteOut(ByVal ws As Worksheet, ByRef res As Variant, ByVal hit A
                "実体率", "RSI", "25日乖離%", "ATR", "内訳")
     Dim j As Long
     For j = 0 To UBound(hd)
-        ws.Cells(3, j + 1).Value = hd(j)
+        ws.Cells(HD_ROW, j + 1 + C0).Value = hd(j)
     Next j
-    With ws.Range(ws.Cells(3, 1), ws.Cells(3, OUT_COLS))
-        .Font.Name = "Meiryo UI": .Font.Size = 10: .Font.Bold = True
+    With ws.Range(ws.Cells(HD_ROW, 1 + C0), ws.Cells(HD_ROW, OUT_COLS + C0))
+        .Font.Name = "Meiryo UI": .Font.Size = 18: .Font.Bold = True
         .Font.Color = RGB(255, 255, 255)
         .Interior.Color = RGB(0, 32, 96)
         .HorizontalAlignment = xlCenter
+        .VerticalAlignment = xlCenter
         .WrapText = True
     End With
-    ws.Rows(3).RowHeight = 30
+    ws.Rows(HD_ROW).RowHeight = 48
 
     Dim nOut As Long
     nOut = hit
@@ -386,55 +394,64 @@ Private Sub HA_WriteOut(ByVal ws As Worksheet, ByRef res As Variant, ByVal hit A
 
     Dim r As Long, k As Long
     For r = 1 To nOut
-        ws.Cells(OUT_TOP + r - 1, 1).Value = r
+        ws.Cells(OUT_TOP + r - 1, 1 + C0).Value = r
         For k = 2 To OUT_COLS
-            ws.Cells(OUT_TOP + r - 1, k).Value = res(r, k)
+            ws.Cells(OUT_TOP + r - 1, k + C0).Value = res(r, k)
         Next k
     Next r
 
     If nOut = 0 Then
-        ws.Cells(OUT_TOP, 1).Value = "該当なし（無理に建てない日です）"
-        ws.Cells(OUT_TOP, 1).Font.Bold = True
-        ws.Cells(OUT_TOP + 1, 1).Value = "絞り込みの内訳：" & funnel
+        ws.Cells(OUT_TOP, 1 + C0).Value = "該当なし（無理に建てない日です）"
+        ws.Cells(OUT_TOP, 1 + C0).Font.Bold = True
+        ws.Cells(OUT_TOP, 1 + C0).Font.Size = 16
+        ws.Cells(OUT_TOP + 1, 1 + C0).Value = "絞り込みの内訳：" & funnel
     Else
-        With ws.Range(ws.Cells(OUT_TOP, 1), ws.Cells(OUT_TOP + nOut - 1, OUT_COLS))
-            .Font.Name = "Meiryo UI": .Font.Size = 10
+        With ws.Range(ws.Cells(OUT_TOP, 1 + C0), ws.Cells(OUT_TOP + nOut - 1, OUT_COLS + C0))
+            .Font.Name = "Meiryo UI"
+            .Font.Size = 16
+            .Font.Bold = True
             .Borders.LineStyle = xlContinuous
             .Borders.Color = RGB(180, 180, 180)
+            .VerticalAlignment = xlCenter
         End With
-        ws.Range(ws.Cells(OUT_TOP, 4), ws.Cells(OUT_TOP + nOut - 1, 11)).NumberFormat = "#,##0"
-        ws.Range(ws.Cells(OUT_TOP, 12), ws.Cells(OUT_TOP + nOut - 1, 19)).NumberFormat = "0.0"
-        ws.Range(ws.Cells(OUT_TOP, 1), ws.Cells(OUT_TOP + IIf(nOut < HA_SLOTS, nOut, HA_SLOTS) - 1, OUT_COLS)).Interior.Color = RGB(198, 239, 206)
+        ws.Rows(OUT_TOP & ":" & (OUT_TOP + nOut - 1)).RowHeight = 26
+        ws.Range(ws.Cells(OUT_TOP, 4 + C0), ws.Cells(OUT_TOP + nOut - 1, 11 + C0)).NumberFormat = "#,##0"
+        ws.Range(ws.Cells(OUT_TOP, 12 + C0), ws.Cells(OUT_TOP + nOut - 1, 19 + C0)).NumberFormat = "0.0"
+        Dim topN As Long
+        topN = HA_SLOTS
+        If nOut < topN Then topN = nOut
+        ws.Range(ws.Cells(OUT_TOP, 1 + C0), ws.Cells(OUT_TOP + topN - 1, OUT_COLS + C0)).Interior.Color = RGB(198, 239, 206)
     End If
 
     Dim rr As Long
     rr = OUT_TOP + nOut + 2
-    ws.Cells(rr, 1).Value = "絞り込みの内訳：" & funnel
+    ws.Cells(rr, 1 + C0).Value = "絞り込みの内訳：" & funnel
     rr = rr + 2
-    ws.Cells(rr, 1).Value = "【売買ルール　この通りにやる】"
-    ws.Cells(rr + 1, 1).Value = "1. 上位（出来高倍率の高い順）から、翌日の寄り成りで買う。同時保有は" & HA_SLOTS & "銘柄まで。"
-    ws.Cells(rr + 2, 1).Value = "2. ただし寄り値が「見送りライン」より高く始まったら、その銘柄は買わない。"
-    ws.Cells(rr + 3, 1).Value = "3. 買った直後に「損切」を逆指値、「利確」に売り指値。両方すぐ出す。"
-    ws.Cells(rr + 4, 1).Value = "4. どちらにも当たらなければ、買った日から" & HA_HOLDDAYS & "営業日後の引けで成行手じまい。"
-    ws.Cells(rr + 5, 1).Value = "5. 途中で判断しない。出した注文をいじらない。"
-    ws.Cells(rr + 6, 1).Value = "6. 1銘柄は資金の" & Format(HA_POS * 100, "0") & "%（" & Format(HA_CAPITAL * HA_POS, "#,##0") & "円）。3連敗したら株数を半分。月の損失が資金の6%で当月休み。"
-    ws.Cells(rr + 7, 1).Value = "※検証：勝率63〜65%／1回平均+1.5〜2.0%／PF1.7〜2.1。ただし直近四半期は赤字。今は少額テストのみ。"
-    With ws.Range(ws.Cells(rr, 1), ws.Cells(rr + 7, 1))
-        .Font.Name = "Meiryo UI": .Font.Size = 10
+    ws.Cells(rr, 1 + C0).Value = "【売買ルール　この通りにやる】"
+    ws.Cells(rr + 1, 1 + C0).Value = "1. 上位（出来高倍率の高い順）から、翌日の寄り成りで買う。同時保有は" & HA_SLOTS & "銘柄まで。"
+    ws.Cells(rr + 2, 1 + C0).Value = "2. ただし寄り値が「見送りライン」より高く始まったら、その銘柄は買わない。"
+    ws.Cells(rr + 3, 1 + C0).Value = "3. 買った直後に「損切」を逆指値、「利確」に売り指値。両方すぐ出す。"
+    ws.Cells(rr + 4, 1 + C0).Value = "4. どちらにも当たらなければ、買った日を0日目として" & HA_HOLDDAYS & "営業日後の引けで成行手じまい。"
+    ws.Cells(rr + 5, 1 + C0).Value = "5. 途中で判断しない。出した注文をいじらない。"
+    ws.Cells(rr + 6, 1 + C0).Value = "6. 1銘柄は資金の" & Format(HA_POS * 100, "0") & "%（" & Format(HA_CAPITAL * HA_POS, "#,##0") & "円）。3連敗したら株数を半分。月の損失が資金の6%で当月休み。"
+    ws.Cells(rr + 7, 1 + C0).Value = "※検証：115件 勝率66.1% 平均+1.87% PF1.85 最大DD4.6%。ただし後半PF1.30・直近3か月PF1.03。判定は少額テスト運用。"
+    With ws.Range(ws.Cells(rr, 1 + C0), ws.Cells(rr + 7, 1 + C0))
+        .Font.Name = "Meiryo UI": .Font.Size = 12
     End With
-    ws.Cells(rr, 1).Font.Bold = True
-    ws.Cells(rr + 7, 1).Font.Color = RGB(192, 0, 0)
+    ws.Cells(rr, 1 + C0).Font.Bold = True
+    ws.Cells(rr + 7, 1 + C0).Font.Color = RGB(192, 0, 0)
+    ws.Cells(rr + 7, 1 + C0).Font.Bold = True
 
-    ws.Columns("A:T").AutoFit
-    If ws.Columns("C").ColumnWidth > 18 Then ws.Columns("C").ColumnWidth = 18
-    If ws.Columns("T").ColumnWidth > 60 Then ws.Columns("T").ColumnWidth = 60
-    ws.Rows(3).RowHeight = 30
+    ws.Columns("B:U").AutoFit
+    If ws.Columns("D").ColumnWidth > 22 Then ws.Columns("D").ColumnWidth = 22
+    If ws.Columns("U").ColumnWidth > 60 Then ws.Columns("U").ColumnWidth = 60
+    ws.Rows(HD_ROW).RowHeight = 48
 
+    '--- 行の固定は外す ---
     On Error Resume Next
     ws.Activate
     ActiveWindow.FreezePanes = False
-    ws.Range("A4").Select
-    ActiveWindow.FreezePanes = True
+    ws.Range("B" & OUT_TOP).Select
     On Error GoTo 0
 End Sub
 

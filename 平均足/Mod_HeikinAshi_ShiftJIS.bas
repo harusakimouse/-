@@ -611,3 +611,119 @@ Private Function HA_WeekDev(ByRef cl() As Double, ByRef dts() As Double, ByVal n
     ma = s / HA_WEEK_MA
     HA_WeekDev = (wc(w) - ma) / ma * 100#
 End Function
+
+'==================================================================
+' 売買ルールを「平均足ルール」シートに書き出す
+'==================================================================
+Public Sub 平均足_ルール表示()
+
+    Dim ws As Worksheet
+    On Error Resume Next
+    Set ws = ThisWorkbook.Worksheets("平均足ルール")
+    On Error GoTo 0
+    If ws Is Nothing Then
+        Set ws = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.Count))
+        ws.Name = "平均足ルール"
+    End If
+
+    Application.ScreenUpdating = False
+    ws.Cells.UnMerge
+    ws.Cells.Clear
+
+    With ws.Range("A1:C1")
+        .Merge
+        .Value = "  平均足　売買ルール（検証済み・条件B）"
+        .Font.Name = "Meiryo UI": .Font.Size = 14: .Font.Bold = True
+        .Font.Color = RGB(255, 255, 255)
+        .Interior.Color = RGB(0, 70, 127)
+    End With
+    ws.Rows(1).RowHeight = 30
+
+    Dim r As Long
+    r = 3
+    HA_PutH ws, r, "【1】買う条件（全部そろった時だけ）"
+    HA_PutR ws, r, "1", "平均足が陽線2～5本連続（その前に陰線3本以上）", "下げの終わりを取る"
+    HA_PutR ws, r, "2", "最新の平均足に下ヒゲが無い", "買い方が優勢な形"
+    HA_PutR ws, r, "3", "直近3日の安値 > その前4～8日の安値", "安値切り上げ"
+    HA_PutR ws, r, "4", "終値が20日線の上", "逆行しているものは買わない"
+    HA_PutR ws, r, "5", "当日出来高 ≧ 5日平均 × " & HA_VOLRATE & "倍", "ここが一番効く"
+    HA_PutR ws, r, "6", "週足の終値が" & HA_WEEK_MA & "週線の上", "大きな流れに逆らわない"
+    HA_PutR ws, r, "7", "株価 " & Format(HA_MINPRICE, "#,##0") & "円以上／5日平均出来高 20万株以上", "低位株・薄い株を外す"
+    HA_PutR ws, r, "8", "翌朝の寄りが「見送りライン」（現値+" & Format(HA_MAXGAP * 100, "0") & "%）より高ければ買わない", "高値づかみ防止"
+    r = r + 1
+
+    HA_PutH ws, r, "【2】出口（この3つだけ。途中で判断しない）"
+    HA_PutR ws, r, "1", "損切 ＝ 買値の －" & Format(HA_SL * 100, "0") & "%（逆指値）", "買った直後に入れる。絶対に下げない"
+    HA_PutR ws, r, "2", "利確 ＝ 買値の +" & Format(HA_TP * 100, "0") & "%（売り指値）", "届いたら全部売り"
+    HA_PutR ws, r, "3", "買った日を0日目として" & HA_HOLDDAYS & "営業日後の引けで成行手じまい", "どちらにも当たらなかった玉"
+    HA_PutR ws, r, "※", "損切・利確は「実際の買値」が基準（前日終値ではない）", "GUして買ったらその値段の±8%"
+    r = r + 1
+
+    HA_PutH ws, r, "【3】資金管理"
+    HA_PutR ws, r, "1", "1銘柄に資金の" & Format(HA_POS * 100, "0") & "%（" & Format(HA_CAPITAL * HA_POS, "#,##0") & "円）", "100株単位で切り捨て"
+    HA_PutR ws, r, "2", "同時保有は" & HA_SLOTS & "銘柄まで。出来高倍率の高い順に採用", "点数は使いません"
+    HA_PutR ws, r, "3", "同じ銘柄を持っている間は買い増ししない", ""
+    HA_PutR ws, r, "4", "3連敗したら株数を半分／月の損失が資金の6%で当月休み", ""
+    r = r + 1
+
+    HA_PutH ws, r, "【4】検証結果（300銘柄×250日・手数料往復0.3%込み）"
+    HA_PutR ws, r, "", "取引数 / 勝率", "115件 / 66.1%"
+    HA_PutR ws, r, "", "1回あたりの平均", "+1.87%（勝ち+6.16% / 負け-6.49%）"
+    HA_PutR ws, r, "", "PF（稼いだ÷失った）", "1.85"
+    HA_PutR ws, r, "", "最大ドローダウン / 最大連敗", "4.6% / 6連敗"
+    HA_PutR ws, r, "", "前半PF / 後半PF", "3.59 / 1.30"
+    HA_PutR ws, r, "", "直近3か月", "PF1.03・平均+0.08%（ほぼトントン）"
+    HA_PutR ws, r, "", "資金300万・1銘柄15%での実績", "65件 勝率66.2% PF2.02 最大DD2.7% 年+13.8%"
+    r = r + 1
+
+    HA_PutH ws, r, "【5】注意（必ず読む）"
+    HA_PutR ws, r, "1", "判定は「少額でテスト運用」。実戦投入可ではありません", "記録30件で再判定します"
+    HA_PutR ws, r, "2", "検証は1年分だけ。しかも全銘柄平均+64%という異常な上げ相場でした", ""
+    HA_PutR ws, r, "3", "点数制度は廃止（点数が高いほど成績が悪かった）", "4～6点PF2.77／9点以上PF0.89"
+    HA_PutR ws, r, "4", "空売りは使わない（勝率41%・1回-3.41%）", ""
+    HA_PutR ws, r, "5", "データが2営業日以上古い時は候補を出さない", "⑪データチェックで確認"
+
+    ws.Columns("A").ColumnWidth = 6
+    ws.Columns("B").ColumnWidth = 60
+    ws.Columns("C").ColumnWidth = 46
+    With ws.Range(ws.Cells(3, 1), ws.Cells(r - 1, 3))
+        .Borders.LineStyle = xlContinuous
+        .Borders.Color = RGB(180, 180, 180)
+        .VerticalAlignment = xlTop
+    End With
+    ws.Rows("3:" & r).AutoFit
+
+    Application.ScreenUpdating = True
+    On Error Resume Next
+    ws.Activate
+    ws.Range("A1").Select
+    On Error GoTo 0
+    MsgBox "「平均足ルール」シートを作りました。", vbInformation
+End Sub
+
+Private Sub HA_PutH(ByVal ws As Worksheet, ByRef r As Long, ByVal s As String)
+    With ws.Range(ws.Cells(r, 1), ws.Cells(r, 3))
+        .Merge
+        .Value = s
+        .Font.Name = "Meiryo UI": .Font.Size = 11: .Font.Bold = True
+        .Font.Color = RGB(255, 255, 255)
+        .Interior.Color = RGB(0, 32, 96)
+        .HorizontalAlignment = xlLeft
+    End With
+    ws.Rows(r).RowHeight = 22
+    r = r + 1
+End Sub
+
+Private Sub HA_PutR(ByVal ws As Worksheet, ByRef r As Long, ByVal a As String, _
+                    ByVal b As String, ByVal c As String)
+    ws.Cells(r, 1).Value = a
+    ws.Cells(r, 2).Value = b
+    ws.Cells(r, 3).Value = c
+    With ws.Range(ws.Cells(r, 1), ws.Cells(r, 3))
+        .Font.Name = "Meiryo UI": .Font.Size = 10: .WrapText = True
+    End With
+    ws.Cells(r, 1).HorizontalAlignment = xlCenter
+    ws.Cells(r, 1).Font.Bold = True
+    ws.Cells(r, 3).Font.Color = RGB(90, 90, 90)
+    r = r + 1
+End Sub

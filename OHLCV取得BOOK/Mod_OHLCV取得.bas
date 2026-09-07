@@ -110,7 +110,16 @@ Public Sub 初期設定()
     ws.Columns("B").ColumnWidth = 10
     ws.Columns("C").ColumnWidth = 70
 
+    '--- 集積5シート(始値/高値/安値/終値/出来高) ---
+    Dim nm As Variant: nm = 集積シート名()
+    Dim k As Long
+    For k = LBound(nm) To UBound(nm)
+        集積シート確保 CStr(nm(k))
+    Next k
+    枠固定
+
     ボタン作成
+    ThisWorkbook.Worksheets(SH_CFG).Activate
     Application.ScreenUpdating = True
 
     ログ書く "情報", "初期設定を実行しました"
@@ -278,24 +287,82 @@ Public Sub 銘柄取込_他BOOKから()
         Set wb = Workbooks.Open(Filename:=パス, ReadOnly:=True, UpdateLinks:=0)
     End If
 
-    '--- 全シートを見て、銘柄コードが一番多い列を自動で探す ---
+    '--- 全シートを見て、銘柄コードが多い列を候補として集める ---
+    Dim 候補Ws(1 To 20) As Worksheet
+    Dim 候補列(1 To 20) As Long
+    Dim 候補数(1 To 20) As Long
+    Dim 候補件数 As Long: 候補件数 = 0
+
     Dim ws As Worksheet, c As Long, n As Long
     For Each ws In wb.Worksheets
         c = 0: n = 0
         シート走査 ws, c, n
-        If n > 件数 Then
-            件数 = n: 見つけた列 = c: Set 見つけたWs = ws
+        If n >= 3 Then
+            If 候補件数 < 20 Then
+                候補件数 = 候補件数 + 1
+                Set 候補Ws(候補件数) = ws
+                候補列(候補件数) = c
+                候補数(候補件数) = n
+            End If
         End If
     Next ws
 
-    If 件数 < 3 Or 見つけたWs Is Nothing Then
-        Application.ScreenUpdating = True
+    If 候補件数 = 0 Then
         BOOK後始末 wb, 既に開いていた
-        Set wb = Nothing: Set 見つけたWs = Nothing
+        Set wb = Nothing
+        Application.EnableEvents = True
+        Application.DisplayAlerts = True
+        Application.ScreenUpdating = True
         MsgBox "銘柄コードらしい列が見つかりませんでした。" & vbCrLf & _
                "(4桁のコードが3件以上ある列を探しています)", vbExclamation, "銘柄取込"
         Exit Sub
     End If
+
+    ' 件数の多い順に並べ替え
+    Dim a As Long, b As Long, tn As Long, tc As Long
+    Dim tw As Worksheet
+    For a = 1 To 候補件数 - 1
+        For b = a + 1 To 候補件数
+            If 候補数(b) > 候補数(a) Then
+                tn = 候補数(a): 候補数(a) = 候補数(b): 候補数(b) = tn
+                tc = 候補列(a): 候補列(a) = 候補列(b): 候補列(b) = tc
+                Set tw = 候補Ws(a): Set 候補Ws(a) = 候補Ws(b): Set 候補Ws(b) = tw
+            End If
+        Next b
+    Next a
+
+    Application.ScreenUpdating = True
+
+    ' 候補が1つならそのまま、複数なら選んでもらう
+    Dim 選択 As Long: 選択 = 1
+    If 候補件数 > 1 Then
+        Dim msg As String
+        msg = "BOOK: " & ファイル名 & vbCrLf & _
+              "銘柄コードの列が " & 候補件数 & " か所見つかりました。" & vbCrLf & vbCrLf
+        Dim q As Long
+        For q = 1 To 候補件数
+            msg = msg & q & " : " & 候補Ws(q).Name & "  /  " & _
+                  列文字(候補列(q)) & "列  /  " & 候補数(q) & "件" & vbCrLf
+        Next q
+        msg = msg & vbCrLf & "使う番号を入れてください (既定 1)"
+
+        Dim ans As String
+        ans = InputBox(msg, "銘柄取込 - どこから読みますか", "1")
+        If ans = "" Then
+            BOOK後始末 wb, 既に開いていた
+            Set wb = Nothing
+            Application.EnableEvents = True
+            Application.DisplayAlerts = True
+            Application.ScreenUpdating = True
+            Exit Sub
+        End If
+        選択 = Val(ans)
+        If 選択 < 1 Or 選択 > 候補件数 Then 選択 = 1
+    End If
+
+    Set 見つけたWs = 候補Ws(選択)
+    見つけた列 = 候補列(選択)
+    件数 = 候補数(選択)
 
     ' ★ BOOKを閉じる前に、必要な情報を全部こちらへ移す
     シート名 = 見つけたWs.Name
@@ -317,7 +384,7 @@ Public Sub 銘柄取込_他BOOKから()
         Exit Sub
     End If
 
-    If MsgBox("次の場所からコードを読み込みました。" & vbCrLf & vbCrLf & _
+    If MsgBox("読み込みました。" & vbCrLf & vbCrLf & _
               "BOOK  : " & ファイル名 & vbCrLf & _
               "シート: " & シート名 & vbCrLf & _
               "列    : " & 列名 & "列" & vbCrLf & _
@@ -646,6 +713,7 @@ Private Function 取得実行(ByVal 区分 As String) As Boolean
     rec.Cells(w, 1).Resize(n, 10).Value = buf
 
     CSV追記 buf                       ' ★ここが本命(落ちても残る)
+    集積へ書く buf, 区分                ' 5シートへ右へずらして集積
     ログ書く "取得", 区分 & "  " & n & "銘柄 (値あり " & 有効 & ")"
     自動保存
 
@@ -1043,6 +1111,7 @@ Private Sub ボタン作成()
     ボタン1つ ws, 5, "銘柄反映", "銘柄反映"
     ボタン1つ ws, 6, "RSS状態", "RSS状態を見る"
     ボタン1つ ws, 7, "銘柄取込", "銘柄取込_他BOOKから"
+    ボタン1つ ws, 8, "集積作り直し", "集積を作り直す"
 End Sub
 
 Private Sub ボタン1つ(ByVal ws As Worksheet, ByVal n As Long, _
@@ -1051,6 +1120,302 @@ Private Sub ボタン1つ(ByVal ws As Worksheet, ByVal n As Long, _
     Set b = ws.Shapes.AddFormControl(0, 820, 20 + (n - 1) * 34, 110, 28)
     b.TextFrame.Characters.Text = 表示
     b.OnAction = "'" & ThisWorkbook.Name & "'!" & マクロ
+End Sub
+
+
+'==================================================================
+'  11-B. 集積5シート (行=銘柄 / 列=日付+時刻 で右へ伸びる)
+'
+'   1行目 = 日付
+'   2行目 = 時刻
+'   3行目 = 見出し (A3=コード  B3=銘柄名)
+'   4行目～ = 銘柄
+'   C列から右へ、1日14列ずつ増えます
+'
+'   ※ここは「見るため」の表です。大元は 記録シート と CSV。
+'     おかしくなったら「集積作り直し」ボタンで記録シートから作り直せます。
+'==================================================================
+Private Function 集積シート名() As Variant
+    集積シート名 = Array("始値", "高値", "安値", "終値", "出来高")
+End Function
+
+Private Function 集積元列() As Variant
+    集積元列 = Array(6, 7, 8, 9, 10)      ' buf の 始値/高値/安値/現在値/出来高
+End Function
+
+
+Private Function 集積シート確保(ByVal nm As String) As Worksheet
+    Dim ws As Worksheet: Set ws = シート確保(nm)
+    If CStr(ws.Range("A3").Value) <> "コード" Then
+        ws.Range("A1").Value = "日付"
+        ws.Range("A2").Value = "時刻"
+        ws.Range("A3").Value = "コード"
+        ws.Range("B3").Value = "銘柄名"
+        見出し ws.Range("A3:B3")
+        ws.Range("A1:B2").Font.Bold = True
+        ws.Columns("A").NumberFormat = "@"
+        ws.Columns("A").ColumnWidth = 9
+        ws.Columns("B").ColumnWidth = 20
+    End If
+    Set 集積シート確保 = ws
+End Function
+
+
+Private Sub 枠固定()
+    On Error Resume Next
+    Dim nm As Variant: nm = 集積シート名()
+    Dim k As Long, ws As Worksheet
+    For k = LBound(nm) To UBound(nm)
+        Set ws = ThisWorkbook.Worksheets(CStr(nm(k)))
+        ws.Activate
+        ActiveWindow.FreezePanes = False
+        ws.Range("C4").Select
+        ActiveWindow.FreezePanes = True
+    Next k
+End Sub
+
+
+'------------------------------------------------------------------
+'  1回分のデータを5シートへ書く
+'------------------------------------------------------------------
+Private Sub 集積へ書く(ByRef buf As Variant, ByVal 区分 As String)
+    On Error GoTo L_ERR
+    If Left$(区分, 2) = "手動" Then Exit Sub      ' 手動取得は集積に入れない
+
+    Dim nm As Variant: nm = 集積シート名()
+    Dim cl As Variant: cl = 集積元列()
+    Dim k As Long
+    For k = LBound(nm) To UBound(nm)
+        集積1シート CStr(nm(k)), CLng(cl(k)), buf, 区分
+    Next k
+    Exit Sub
+L_ERR:
+    ログ書く "エラー", "集積書込(" & 区分 & "): " & Err.Description
+End Sub
+
+
+Private Sub 集積1シート(ByVal shName As String, ByVal 元列 As Long, _
+                        ByRef buf As Variant, ByVal 区分 As String)
+    Dim ws As Worksheet: Set ws = 集積シート確保(shName)
+
+    Dim d As Date: d = CDate(buf(LBound(buf, 1), 1))
+    Dim t As Date: t = TimeValue(区分)
+
+    Dim col As Long: col = 集積列(ws, d, t)
+    If col = 0 Then Exit Sub
+
+    Dim map As Object: Set map = 集積行マップ(ws)
+
+    Dim 最終行 As Long
+    最終行 = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+    If 最終行 < 3 Then 最終行 = 3
+
+    ' 新しい銘柄は下に足す
+    Dim i As Long, code As String
+    For i = LBound(buf, 1) To UBound(buf, 1)
+        code = Trim$(CStr(buf(i, 4)))
+        If code <> "" Then
+            If Not map.Exists(code) Then
+                最終行 = 最終行 + 1
+                ws.Cells(最終行, 1).NumberFormat = "@"
+                ws.Cells(最終行, 1).Value = code
+                ws.Cells(最終行, 2).Value = CStr(buf(i, 5))
+                map.Add code, 最終行
+            Else
+                ' 銘柄名が空なら埋める
+                If CStr(ws.Cells(CLng(map(code)), 2).Value) = "" Then
+                    ws.Cells(CLng(map(code)), 2).Value = CStr(buf(i, 5))
+                End If
+            End If
+        End If
+    Next i
+
+    If 最終行 < 4 Then Exit Sub
+
+    ' 値を一括で書く
+    Dim vals() As Variant
+    ReDim vals(1 To 最終行 - 3, 1 To 1)
+    Dim r As Long
+    For i = LBound(buf, 1) To UBound(buf, 1)
+        code = Trim$(CStr(buf(i, 4)))
+        If code <> "" Then
+            If map.Exists(code) Then
+                r = CLng(map(code)) - 3
+                If r >= 1 And r <= UBound(vals, 1) Then vals(r, 1) = buf(i, 元列)
+            End If
+        End If
+    Next i
+    ws.Cells(4, col).Resize(最終行 - 3, 1).Value = vals
+End Sub
+
+
+'------------------------------------------------------------------
+'  その日付+時刻の列を返す (無ければ右端に作る)
+'------------------------------------------------------------------
+Private Function 集積列(ByVal ws As Worksheet, ByVal d As Date, ByVal t As Date) As Long
+    集積列 = 0
+    Dim 最終列 As Long
+    最終列 = ws.Cells(1, ws.Columns.Count).End(xlToLeft).Column
+    If 最終列 < 2 Then 最終列 = 2
+
+    Dim tt As String: tt = Format(t, "hh:mm")
+
+    If 最終列 >= 3 Then
+        Dim h As Variant
+        h = ws.Range(ws.Cells(1, 1), ws.Cells(2, 最終列)).Value
+        Dim c As Long
+        For c = 3 To UBound(h, 2)
+            If IsDate(h(1, c)) And IsDate(h(2, c)) Then
+                If CDate(h(1, c)) = d And Format(h(2, c), "hh:mm") = tt Then
+                    集積列 = c
+                    Exit Function
+                End If
+            End If
+        Next c
+    End If
+
+    Dim nc As Long: nc = 最終列 + 1
+    If nc > 16300 Then
+        ログ書く "重大", ws.Name & " が列の上限です。古い分を別ファイルへ退避してください"
+        Exit Function
+    End If
+    If nc > 15000 Then
+        ログ書く "警告", ws.Name & " の列が " & nc & " です。そろそろ退避してください"
+    End If
+
+    ws.Cells(1, nc).Value = d
+    ws.Cells(1, nc).NumberFormat = "mm/dd"
+    ws.Cells(2, nc).Value = t
+    ws.Cells(2, nc).NumberFormat = "hh:mm"
+    ws.Range(ws.Cells(1, nc), ws.Cells(2, nc)).Font.Bold = True
+    ws.Range(ws.Cells(1, nc), ws.Cells(2, nc)).HorizontalAlignment = xlCenter
+    ws.Columns(nc).ColumnWidth = 9
+    ws.Columns(nc).NumberFormat = "#,##0.##"
+    集積列 = nc
+End Function
+
+
+'------------------------------------------------------------------
+'  コード → 行番号 の対応表
+'------------------------------------------------------------------
+Private Function 集積行マップ(ByVal ws As Worksheet) As Object
+    Dim d As Object: Set d = CreateObject("Scripting.Dictionary")
+    Set 集積行マップ = d
+
+    Dim 最終行 As Long
+    最終行 = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+    If 最終行 < 4 Then Exit Function
+
+    Dim v As Variant
+    v = ws.Range(ws.Cells(4, 1), ws.Cells(最終行, 1)).Value
+    Dim i As Long, sc As String
+    If IsArray(v) Then
+        For i = 1 To UBound(v, 1)
+            sc = Trim$(CStr(v(i, 1)))
+            If sc <> "" Then
+                If Not d.Exists(sc) Then d.Add sc, i + 3
+            End If
+        Next i
+    Else
+        sc = Trim$(CStr(v))
+        If sc <> "" Then d.Add sc, 4
+    End If
+End Function
+
+
+'------------------------------------------------------------------
+'  記録シートから5シートを作り直す (復旧用)
+'------------------------------------------------------------------
+Public Sub 集積を作り直す()
+    Dim rec As Worksheet: Set rec = ThisWorkbook.Worksheets(SH_REC)
+    Dim 最終行 As Long
+    最終行 = rec.Cells(rec.Rows.Count, 1).End(xlUp).Row
+    If 最終行 < 2 Then
+        MsgBox "記録シートにデータがありません。", vbExclamation, "集積の作り直し"
+        Exit Sub
+    End If
+    If 最終行 > 500000 Then
+        MsgBox "記録シートが " & 最終行 & " 行あります。" & vbCrLf & _
+               "多すぎるので、古い分を別ファイルへ退避してから実行してください。", _
+               vbExclamation, "集積の作り直し"
+        Exit Sub
+    End If
+
+    If MsgBox("記録シート " & (最終行 - 1) & " 行から" & vbCrLf & _
+              "始値/高値/安値/終値/出来高 の5シートを作り直します。" & vbCrLf & vbCrLf & _
+              "※今の5シートの中身は消えて、記録シートの内容で作り直されます" & vbCrLf & _
+              "※記録シートとCSVは触りません" & vbCrLf & vbCrLf & _
+              "よろしいですか?", vbYesNo + vbExclamation, "集積の作り直し") <> vbYes Then Exit Sub
+
+    On Error GoTo L_ERR
+    Application.ScreenUpdating = False
+    Application.Calculation = xlCalculationManual
+
+    Dim nm As Variant: nm = 集積シート名()
+    Dim k As Long, ws As Worksheet
+    For k = LBound(nm) To UBound(nm)
+        Set ws = シート確保(CStr(nm(k)))
+        ws.Cells.Clear
+        集積シート確保 CStr(nm(k))
+    Next k
+
+    Dim v As Variant
+    v = rec.Range(rec.Cells(2, 1), rec.Cells(最終行, 10)).Value
+
+    Dim i As Long, st As Long, 件 As Long: 件 = 0
+    Dim キー As String, 前キー As String
+    前キー = ""
+    st = 1
+    For i = 1 To UBound(v, 1) + 1
+        If i <= UBound(v, 1) Then
+            キー = CStr(v(i, 1)) & "|" & CStr(v(i, 2))
+        Else
+            キー = "**終わり**"
+        End If
+        If キー <> 前キー Then
+            If 前キー <> "" And i > st Then
+                ブロック書く v, st, i - 1
+                件 = 件 + 1
+            End If
+            st = i
+            前キー = キー
+        End If
+    Next i
+
+    枠固定
+    ThisWorkbook.Worksheets(SH_CFG).Activate
+    Application.Calculation = xlCalculationAutomatic
+    Application.ScreenUpdating = True
+
+    ログ書く "情報", "集積を作り直しました (" & 件 & "回分)"
+    MsgBox "作り直しました。" & vbCrLf & 件 & " 回分を並べました。", vbInformation, "集積の作り直し"
+    Exit Sub
+
+L_ERR:
+    Application.Calculation = xlCalculationAutomatic
+    Application.ScreenUpdating = True
+    ログ書く "エラー", "集積作り直し: " & Err.Description
+    MsgBox "作り直しに失敗しました: " & Err.Description, vbExclamation, "集積の作り直し"
+End Sub
+
+
+Private Sub ブロック書く(ByRef v As Variant, ByVal 開始 As Long, ByVal 終了 As Long)
+    Dim n As Long: n = 終了 - 開始 + 1
+    If n < 1 Then Exit Sub
+
+    Dim buf() As Variant
+    ReDim buf(1 To n, 1 To 10)
+    Dim i As Long, j As Long
+    For i = 1 To n
+        For j = 1 To 10
+            buf(i, j) = v(開始 + i - 1, j)
+        Next j
+    Next i
+
+    Dim 区分 As String: 区分 = Trim$(CStr(buf(1, 2)))
+    If Left$(区分, 2) = "手動" Then Exit Sub
+    If Len(区分) <> 5 Then Exit Sub
+    集積へ書く buf, 区分
 End Sub
 
 

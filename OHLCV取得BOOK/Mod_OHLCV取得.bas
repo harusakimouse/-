@@ -116,6 +116,13 @@ Public Sub 初期設定()
     For k = LBound(nm) To UBound(nm)
         集積シート確保 CStr(nm(k))
     Next k
+
+    '--- 時刻シート(9:00～15:30 の14枚) ---
+    Dim tm As Variant: tm = 取得時刻一覧()
+    For k = LBound(tm) To UBound(tm)
+        時刻シート確保 CStr(tm(k))
+    Next k
+
     枠固定
 
     ボタン作成
@@ -1124,7 +1131,7 @@ End Sub
 
 
 '==================================================================
-'  11-B. 集積5シート (行=銘柄 / 列=日付+時刻 で右へ伸びる)
+'  11-B. 値別5シート (行=銘柄 / 列=日付+時刻 で右へ伸びる)
 '
 '   1行目 = 日付
 '   2行目 = 時刻
@@ -1164,14 +1171,25 @@ End Function
 Private Sub 枠固定()
     On Error Resume Next
     Dim nm As Variant: nm = 集積シート名()
-    Dim k As Long, ws As Worksheet
+    Dim k As Long
     For k = LBound(nm) To UBound(nm)
-        Set ws = ThisWorkbook.Worksheets(CStr(nm(k)))
-        ws.Activate
-        ActiveWindow.FreezePanes = False
-        ws.Range("C4").Select
-        ActiveWindow.FreezePanes = True
+        枠固定1枚 CStr(nm(k))
     Next k
+    Dim tm As Variant: tm = 取得時刻一覧()
+    For k = LBound(tm) To UBound(tm)
+        枠固定1枚 時刻シート名(CStr(tm(k)))
+    Next k
+End Sub
+
+Private Sub 枠固定1枚(ByVal nm As String)
+    On Error Resume Next
+    Dim ws As Worksheet
+    Set ws = ThisWorkbook.Worksheets(nm)
+    If ws Is Nothing Then Exit Sub
+    ws.Activate
+    ActiveWindow.FreezePanes = False
+    ws.Range("C4").Select
+    ActiveWindow.FreezePanes = True
 End Sub
 
 
@@ -1188,6 +1206,8 @@ Private Sub 集積へ書く(ByRef buf As Variant, ByVal 区分 As String)
     For k = LBound(nm) To UBound(nm)
         集積1シート CStr(nm(k)), CLng(cl(k)), buf, 区分
     Next k
+
+    時刻シートへ書く buf, 区分
     Exit Sub
 L_ERR:
     ログ書く "エラー", "集積書込(" & 区分 & "): " & Err.Description
@@ -1323,6 +1343,168 @@ Private Function 集積行マップ(ByVal ws As Worksheet) As Object
 End Function
 
 
+'==================================================================
+'  11-C. 時刻シート (9:00～15:30 の14枚)
+'
+'   1行目 = 日付 (5列で1日分)
+'   2行目 = 始値 高値 安値 終値 出来高
+'   3行目 = 見出し (A3=コード  B3=銘柄名)
+'   4行目～ = 銘柄
+'   C列から右へ、1日5列ずつ増えます
+'==================================================================
+Private Function 取得時刻一覧() As Variant
+    Dim ws As Worksheet
+    Set ws = ThisWorkbook.Worksheets(SH_CFG)
+    Dim 最終 As Long
+    最終 = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+
+    Dim tmp() As String
+    ReDim tmp(0 To 100)
+    Dim r As Long, n As Long: n = -1
+    For r = 2 To 最終
+        If IsDate(ws.Cells(r, 1).Value) Then
+            If n >= 99 Then Exit For
+            n = n + 1
+            tmp(n) = Format(CDate(ws.Cells(r, 1).Value), "hh:mm")
+        End If
+    Next r
+    If n < 0 Then
+        取得時刻一覧 = Array()
+    Else
+        ReDim Preserve tmp(0 To n)
+        取得時刻一覧 = tmp
+    End If
+End Function
+
+
+Private Function 時刻シート名(ByVal 区分 As String) As String
+    時刻シート名 = Replace(区分, ":", "")
+End Function
+
+
+Private Function 時刻シート確保(ByVal 区分 As String) As Worksheet
+    Dim ws As Worksheet
+    Set ws = シート確保(時刻シート名(区分))
+    If CStr(ws.Range("A3").Value) <> "コード" Then
+        ws.Range("A1").Value = 区分 & " の記録"
+        ws.Range("A2").Value = "項目"
+        ws.Range("A3").Value = "コード"
+        ws.Range("B3").Value = "銘柄名"
+        見出し ws.Range("A3:B3")
+        ws.Range("A1:B2").Font.Bold = True
+        ws.Columns("A").NumberFormat = "@"
+        ws.Columns("A").ColumnWidth = 9
+        ws.Columns("B").ColumnWidth = 20
+    End If
+    Set 時刻シート確保 = ws
+End Function
+
+
+Private Sub 時刻シートへ書く(ByRef buf As Variant, ByVal 区分 As String)
+    On Error GoTo L_ERR
+    Dim ws As Worksheet: Set ws = 時刻シート確保(区分)
+    Dim d As Date: d = CDate(buf(LBound(buf, 1), 1))
+
+    Dim col As Long: col = 時刻シート列(ws, d)
+    If col = 0 Then Exit Sub
+
+    Dim map As Object: Set map = 集積行マップ(ws)
+    Dim 最終行 As Long
+    最終行 = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+    If 最終行 < 3 Then 最終行 = 3
+
+    Dim i As Long, code As String
+    For i = LBound(buf, 1) To UBound(buf, 1)
+        code = Trim$(CStr(buf(i, 4)))
+        If code <> "" Then
+            If Not map.Exists(code) Then
+                最終行 = 最終行 + 1
+                ws.Cells(最終行, 1).NumberFormat = "@"
+                ws.Cells(最終行, 1).Value = code
+                ws.Cells(最終行, 2).Value = CStr(buf(i, 5))
+                map.Add code, 最終行
+            ElseIf CStr(ws.Cells(CLng(map(code)), 2).Value) = "" Then
+                ws.Cells(CLng(map(code)), 2).Value = CStr(buf(i, 5))
+            End If
+        End If
+    Next i
+    If 最終行 < 4 Then Exit Sub
+
+    Dim vals() As Variant
+    ReDim vals(1 To 最終行 - 3, 1 To 5)
+    Dim r As Long, j As Long
+    For i = LBound(buf, 1) To UBound(buf, 1)
+        code = Trim$(CStr(buf(i, 4)))
+        If code <> "" Then
+            If map.Exists(code) Then
+                r = CLng(map(code)) - 3
+                If r >= 1 And r <= UBound(vals, 1) Then
+                    For j = 1 To 5
+                        vals(r, j) = buf(i, 5 + j)
+                    Next j
+                End If
+            End If
+        End If
+    Next i
+    ws.Cells(4, col).Resize(最終行 - 3, 5).Value = vals
+    Exit Sub
+L_ERR:
+    ログ書く "エラー", "時刻シート書込(" & 区分 & "): " & Err.Description
+End Sub
+
+
+'------------------------------------------------------------------
+'  その日の5列ブロックの先頭列を返す (無ければ右端に作る)
+'------------------------------------------------------------------
+Private Function 時刻シート列(ByVal ws As Worksheet, ByVal d As Date) As Long
+    時刻シート列 = 0
+    Dim 最終列 As Long
+    最終列 = ws.Cells(1, ws.Columns.Count).End(xlToLeft).Column
+    If 最終列 < 2 Then 最終列 = 2
+
+    If 最終列 >= 3 Then
+        Dim h As Variant
+        h = ws.Range(ws.Cells(1, 1), ws.Cells(2, 最終列)).Value
+        Dim c As Long
+        For c = 3 To UBound(h, 2)
+            If IsDate(h(1, c)) Then
+                If CDate(h(1, c)) = d And CStr(h(2, c)) = "始値" Then
+                    時刻シート列 = c
+                    Exit Function
+                End If
+            End If
+        Next c
+    End If
+
+    Dim nc As Long: nc = 最終列 + 1
+    If nc + 4 > 16300 Then
+        ログ書く "重大", ws.Name & " が列の上限です。古い分を別ファイルへ退避してください"
+        Exit Function
+    End If
+    If nc > 15000 Then
+        ログ書く "警告", ws.Name & " の列が " & nc & " です。そろそろ退避してください"
+    End If
+
+    Dim lbl As Variant
+    lbl = Array("始値", "高値", "安値", "終値", "出来高")
+    Dim j As Long
+    For j = 0 To 4
+        ws.Cells(1, nc + j).Value = d
+        ws.Cells(1, nc + j).NumberFormat = "mm/dd"
+        ws.Cells(2, nc + j).Value = lbl(j)
+        ws.Columns(nc + j).ColumnWidth = 9
+        ws.Columns(nc + j).NumberFormat = "#,##0.##"
+    Next j
+    With ws.Range(ws.Cells(1, nc), ws.Cells(2, nc + 4))
+        .Font.Bold = True
+        .HorizontalAlignment = xlCenter
+        .Interior.Color = RGB(221, 235, 247)
+    End With
+    ws.Range(ws.Cells(1, nc), ws.Cells(3, nc)).Borders(xlEdgeLeft).Weight = xlMedium
+    時刻シート列 = nc
+End Function
+
+
 '------------------------------------------------------------------
 '  記録シートから5シートを作り直す (復旧用)
 '------------------------------------------------------------------
@@ -1342,8 +1524,8 @@ Public Sub 集積を作り直す()
     End If
 
     If MsgBox("記録シート " & (最終行 - 1) & " 行から" & vbCrLf & _
-              "始値/高値/安値/終値/出来高 の5シートを作り直します。" & vbCrLf & vbCrLf & _
-              "※今の5シートの中身は消えて、記録シートの内容で作り直されます" & vbCrLf & _
+              "集積19シート(OHLCV 5枚 + 時刻別 14枚)を作り直します。" & vbCrLf & vbCrLf & _
+              "※今の19シートの中身は消えて、記録シートの内容で作り直されます" & vbCrLf & _
               "※記録シートとCSVは触りません" & vbCrLf & vbCrLf & _
               "よろしいですか?", vbYesNo + vbExclamation, "集積の作り直し") <> vbYes Then Exit Sub
 
@@ -1357,6 +1539,13 @@ Public Sub 集積を作り直す()
         Set ws = シート確保(CStr(nm(k)))
         ws.Cells.Clear
         集積シート確保 CStr(nm(k))
+    Next k
+
+    Dim tm As Variant: tm = 取得時刻一覧()
+    For k = LBound(tm) To UBound(tm)
+        Set ws = シート確保(時刻シート名(CStr(tm(k))))
+        ws.Cells.Clear
+        時刻シート確保 CStr(tm(k))
     Next k
 
     Dim v As Variant
@@ -1387,7 +1576,7 @@ Public Sub 集積を作り直す()
     Application.Calculation = xlCalculationAutomatic
     Application.ScreenUpdating = True
 
-    ログ書く "情報", "集積を作り直しました (" & 件 & "回分)"
+    ログ書く "情報", "集積19シートを作り直しました (" & 件 & "回分)"
     MsgBox "作り直しました。" & vbCrLf & 件 & " 回分を並べました。", vbInformation, "集積の作り直し"
     Exit Sub
 

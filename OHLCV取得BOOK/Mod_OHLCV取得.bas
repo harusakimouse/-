@@ -1246,7 +1246,7 @@ Private Function 集積シート確保(ByVal nm As String) As Worksheet
     Dim ws As Worksheet: Set ws = シート確保(nm)
     If CStr(ws.Range("A3").Value) <> "コード" Then
         ws.Range("A1").Value = "日付"
-        ws.Range("A2").Value = "時刻"
+        ws.Range("A2").Value = "曜日"
         ws.Range("A3").Value = "コード"
         ws.Range("B3").Value = "銘柄名"
         見出し ws.Range("A3:B3")
@@ -1287,17 +1287,36 @@ End Sub
 '------------------------------------------------------------------
 '  1回分のデータを5シートへ書く
 '------------------------------------------------------------------
+'------------------------------------------------------------------
+'  その日の最後の取得時刻 (OHLCV5シートに入れる分 = 日足)
+'------------------------------------------------------------------
+Private Function 日足区分() As String
+    日足区分 = "15:30"
+    Dim tm As Variant: tm = 取得時刻一覧()
+    If UBound(tm) < LBound(tm) Then Exit Function
+    Dim k As Long, mx As String: mx = ""
+    For k = LBound(tm) To UBound(tm)
+        If CStr(tm(k)) > mx Then mx = CStr(tm(k))
+    Next k
+    If mx <> "" Then 日足区分 = mx
+End Function
+
+
 Private Sub 集積へ書く(ByRef buf As Variant, ByVal 区分 As String)
     On Error GoTo L_ERR
     If Left$(区分, 2) = "手動" Then Exit Sub      ' 手動取得は集積に入れない
 
-    Dim nm As Variant: nm = 集積シート名()
-    Dim cl As Variant: cl = 集積元列()
-    Dim k As Long
-    For k = LBound(nm) To UBound(nm)
-        集積1シート CStr(nm(k)), CLng(cl(k)), buf, 区分
-    Next k
+    ' OHLCV5シートは「日足」。その日の最後の取得(大引け)だけを1列で入れる
+    If 区分 = 日足区分() Then
+        Dim nm As Variant: nm = 集積シート名()
+        Dim cl As Variant: cl = 集積元列()
+        Dim k As Long
+        For k = LBound(nm) To UBound(nm)
+            集積1シート CStr(nm(k)), CLng(cl(k)), buf
+        Next k
+    End If
 
+    ' 時刻別14シートは全部の時刻を入れる
     時刻シートへ書く buf, 区分
     Exit Sub
 L_ERR:
@@ -1306,13 +1325,11 @@ End Sub
 
 
 Private Sub 集積1シート(ByVal shName As String, ByVal 元列 As Long, _
-                        ByRef buf As Variant, ByVal 区分 As String)
+                        ByRef buf As Variant)
     Dim ws As Worksheet: Set ws = 集積シート確保(shName)
 
     Dim d As Date: d = CDate(buf(LBound(buf, 1), 1))
-    Dim t As Date: t = TimeValue(区分)
-
-    Dim col As Long: col = 集積列(ws, d, t)
+    Dim col As Long: col = 集積列(ws, d)
     If col = 0 Then Exit Sub
 
     Dim map As Object: Set map = 集積行マップ(ws)
@@ -1363,21 +1380,19 @@ End Sub
 '------------------------------------------------------------------
 '  その日付+時刻の列を返す (無ければ右端に作る)
 '------------------------------------------------------------------
-Private Function 集積列(ByVal ws As Worksheet, ByVal d As Date, ByVal t As Date) As Long
+Private Function 集積列(ByVal ws As Worksheet, ByVal d As Date) As Long
     集積列 = 0
     Dim 最終列 As Long
     最終列 = ws.Cells(1, ws.Columns.Count).End(xlToLeft).Column
     If 最終列 < 2 Then 最終列 = 2
 
-    Dim tt As String: tt = Format(t, "hh:mm")
-
     If 最終列 >= 3 Then
         Dim h As Variant
-        h = ws.Range(ws.Cells(1, 1), ws.Cells(2, 最終列)).Value
+        h = ws.Range(ws.Cells(1, 1), ws.Cells(1, 最終列)).Value
         Dim c As Long
         For c = 3 To UBound(h, 2)
-            If IsDate(h(1, c)) And IsDate(h(2, c)) Then
-                If CDate(h(1, c)) = d And Format(h(2, c), "hh:mm") = tt Then
+            If IsDate(h(1, c)) Then
+                If CDate(h(1, c)) = d Then
                     集積列 = c
                     Exit Function
                 End If
@@ -1407,8 +1422,8 @@ Private Function 集積列(ByVal ws As Worksheet, ByVal d As Date, ByVal t As Date)
 
     ws.Cells(1, nc).Value = d
     ws.Cells(1, nc).NumberFormat = "yy/mm/dd"
-    ws.Cells(2, nc).Value = t
-    ws.Cells(2, nc).NumberFormat = "hh:mm"
+    ws.Cells(2, nc).NumberFormat = "@"
+    ws.Cells(2, nc).Value = Format(d, "aaa")      ' 曜日
     ws.Range(ws.Cells(1, nc), ws.Cells(2, nc)).Font.Bold = True
     ws.Range(ws.Cells(1, nc), ws.Cells(2, nc)).HorizontalAlignment = xlCenter
     集積列 = nc
@@ -1517,7 +1532,7 @@ Private Sub 見出し書式(ByVal nm As String, ByVal 値別 As Boolean)
         .Borders.Color = RGB(140, 140, 140)
     End With
     ws.Range("A1").Value = "日付"
-    ws.Range("A2").Value = "時刻"
+    If 値別 Then ws.Range("A2").Value = "曜日" Else ws.Range("A2").Value = "項目"
     ws.Range("A3").Value = "コード"
     ws.Range("B3").Value = "銘柄名"
     ws.Range("A1:B2").Interior.Color = RGB(235, 235, 235)
@@ -1527,10 +1542,14 @@ Private Sub 見出し書式(ByVal nm As String, ByVal 値別 As Boolean)
     ws.Rows(3).RowHeight = 20
 
     ws.Range(ws.Cells(1, 3), ws.Cells(1, 最終列)).NumberFormat = "yy/mm/dd"
+    ws.Range(ws.Cells(2, 3), ws.Cells(2, 最終列)).NumberFormat = "@"
     If 値別 Then
-        ws.Range(ws.Cells(2, 3), ws.Cells(2, 最終列)).NumberFormat = "hh:mm"
-    Else
-        ws.Range(ws.Cells(2, 3), ws.Cells(2, 最終列)).NumberFormat = "@"
+        ' 2行目は曜日を入れ直す
+        For c = 3 To 最終列
+            If IsDate(ws.Cells(1, c).Value) Then
+                ws.Cells(2, c).Value = Format(CDate(ws.Cells(1, c).Value), "aaa")
+            End If
+        Next c
     End If
 
     '--- 一番左(最新)を目立たせる ---

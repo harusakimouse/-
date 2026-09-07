@@ -164,11 +164,11 @@ Private Sub 設定初期値(ByVal ws As Worksheet)
 
     ws.Range("A1").Value = "取得時刻"
     見出し ws.Range("A1")
+    ws.Range("A2:A60").NumberFormat = "hh:mm"
     Dim i As Long
     For i = LBound(t) To UBound(t)
         ws.Cells(i + 2, 1).Value = TimeValue(CStr(t(i)))
     Next i
-    ws.Range("A2:A40").NumberFormat = "hh:mm"
     ws.Columns("A").ColumnWidth = 12
 
     ws.Columns("C").ColumnWidth = 20
@@ -196,13 +196,12 @@ Private Sub 実取得時刻補完(ByVal ws As Worksheet)
     最終 = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
     Dim r As Long, hm As String
     For r = 2 To 最終
-        If IsDate(ws.Cells(r, 1).Value) Then
-            hm = Format(CDate(ws.Cells(r, 1).Value), "hh:mm")
-            If hm = "11:30" Or hm = "15:30" Then
-                If Not IsDate(ws.Cells(r, 2).Value) Then
-                    ' 前引け・大引けは確定してから取る(+1分)
-                    ws.Cells(r, 2).Value = TimeSerial(CLng(Left$(hm, 2)), 31, 0)
-                End If
+        hm = 時刻文字(ws.Cells(r, 1).Value)
+        If hm = "11:30" Or hm = "15:30" Then
+            If 時刻文字(ws.Cells(r, 2).Value) = "" Then
+                ' 前引け・大引けは確定してから取る(+1分)
+                ws.Cells(r, 2).NumberFormat = "hh:mm"
+                ws.Cells(r, 2).Value = TimeSerial(CLng(Left$(hm, 2)), 31, 0)
             End If
         End If
     Next r
@@ -682,21 +681,17 @@ Private Sub 時刻チェック()
     最終 = cfg.Cells(cfg.Rows.Count, 1).End(xlUp).Row
     If 最終 < 2 Then Exit Sub
 
-    Dim r As Long, t As Date, 実 As Date, key As String, 予定 As Date
+    Dim r As Long, key As String, 実文 As String, 予定 As Date
     For r = 2 To 最終
-        If IsDate(cfg.Cells(r, 1).Value) Then
-            t = CDate(cfg.Cells(r, 1).Value)
-            key = Format(t, "hh:mm")
+        key = 時刻文字(cfg.Cells(r, 1).Value)
+        If key <> "" Then
 
             ' B列に実取得時刻があればそちらを使う(15:30 → 15:31 など)
-            If IsDate(cfg.Cells(r, 2).Value) Then
-                実 = CDate(cfg.Cells(r, 2).Value)
-            Else
-                実 = t
-            End If
+            実文 = 時刻文字(cfg.Cells(r, 2).Value)
+            If 実文 = "" Then 実文 = key
 
             If Not 済か(key) Then
-                予定 = Date + TimeSerial(Hour(実), Minute(実), 0) + TimeSerial(0, 0, 遅延)
+                予定 = Date + TimeValue(実文) + TimeSerial(0, 0, 遅延)
                 If Now >= 予定 Then
                     If Now <= 予定 + TimeSerial(0, 猶予分, 0) Then
                         If 取得実行(key) Then 済にする key
@@ -1180,6 +1175,7 @@ Private Sub ボタン作成()
     ボタン1つ ws, 7, "銘柄取込", "銘柄取込_他BOOKから"
     ボタン1つ ws, 8, "集積作り直し", "集積を作り直す"
     ボタン1つ ws, 9, "時刻シート作成", "時刻シートを作る"
+    ボタン1つ ws, 10, "過去データ取込", "過去データ取込"
 End Sub
 
 Private Sub ボタン1つ(ByVal ws As Worksheet, ByVal n As Long, _
@@ -1405,6 +1401,253 @@ End Function
 
 
 '==================================================================
+'  10-B. 過去データ取込 (既存BOOKのOHLCV履歴を丸ごと持ってくる)
+'
+'   売買BOOKなどの 始値/高値/安値/終値/出来高 シート
+'   (行=銘柄 / 列=日付) を読んで、このBOOKの記録シートに
+'   「15:30 の記録」として書き写します。
+'   そのあと集積19シートを作り直せば、全部そろいます。
+'==================================================================
+Public Sub 過去データ取込()
+    Dim fn As Variant
+    fn = Application.GetOpenFilename("Excelブック,*.xls*", , _
+         "OHLCV履歴のあるBOOKを選んでください")
+    If VarType(fn) = vbBoolean Then Exit Sub
+
+    Dim パス As String: パス = CStr(fn)
+    Dim ファイル名 As String
+    ファイル名 = Mid$(パス, InStrRev(パス, "\") + 1)
+
+    Dim wb As Workbook
+    Dim 既に開いていた As Boolean
+    On Error Resume Next
+    Set wb = Workbooks(ファイル名)
+    On Error GoTo 0
+    既に開いていた = Not (wb Is Nothing)
+
+    Dim 出力() As Variant
+    Dim 件数 As Long: 件数 = 0
+
+    Application.ScreenUpdating = False
+    Application.EnableEvents = False
+    Application.DisplayAlerts = False
+    On Error GoTo L_ERR
+
+    If Not 既に開いていた Then
+        Set wb = Workbooks.Open(Filename:=パス, ReadOnly:=True, UpdateLinks:=0)
+    End If
+
+    '--- 5シートがあるか確認 ---
+    Dim shs As Variant: shs = 集積シート名()
+    Dim i As Long, ws As Worksheet, 無し As String
+    無し = ""
+    For i = LBound(shs) To UBound(shs)
+        Set ws = Nothing
+        On Error Resume Next
+        Set ws = wb.Worksheets(CStr(shs(i)))
+        On Error GoTo L_ERR
+        If ws Is Nothing Then 無し = 無し & shs(i) & " "
+    Next i
+    If 無し <> "" Then
+        BOOK後始末 wb, 既に開いていた
+        Set wb = Nothing
+        Application.EnableEvents = True
+        Application.DisplayAlerts = True
+        Application.ScreenUpdating = True
+        MsgBox "このBOOKには次のシートがありません。" & vbCrLf & vbCrLf & 無し & vbCrLf & vbCrLf & _
+               "始値/高値/安値/終値/出来高 の5シートが必要です。", vbExclamation, "過去データ取込"
+        Exit Sub
+    End If
+
+    '--- レイアウトを自動判定 (終値シートが基準) ---
+    Dim base As Worksheet: Set base = wb.Worksheets("終値")
+    Dim ヘッダ As Long: ヘッダ = 日付ヘッダ行(base)
+    If ヘッダ = 0 Then
+        BOOK後始末 wb, 既に開いていた
+        Set wb = Nothing
+        Application.EnableEvents = True
+        Application.DisplayAlerts = True
+        Application.ScreenUpdating = True
+        MsgBox "日付の見出し行が見つかりませんでした。", vbExclamation, "過去データ取込"
+        Exit Sub
+    End If
+
+    Dim 最終行 As Long, 最終列 As Long
+    最終行 = base.Cells(base.Rows.Count, 1).End(xlUp).Row
+    最終列 = base.Cells(ヘッダ, base.Columns.Count).End(xlToLeft).Column
+    If 最終行 <= ヘッダ Or 最終列 < 3 Then
+        BOOK後始末 wb, 既に開いていた
+        Set wb = Nothing
+        Application.EnableEvents = True
+        Application.DisplayAlerts = True
+        Application.ScreenUpdating = True
+        MsgBox "履歴データが見つかりませんでした。", vbExclamation, "過去データ取込"
+        Exit Sub
+    End If
+
+    '--- 5シートを配列で読む ---
+    Dim arr(0 To 4) As Variant
+    For i = 0 To 4
+        Set ws = wb.Worksheets(CStr(shs(i)))
+        arr(i) = ws.Range(ws.Cells(ヘッダ, 1), ws.Cells(最終行, 最終列)).Value
+    Next i
+
+    BOOK後始末 wb, 既に開いていた
+    Set wb = Nothing
+    Set base = Nothing
+    Set ws = Nothing
+    Application.EnableEvents = True
+    Application.DisplayAlerts = True
+
+    '--- 日付の列をひろう ---
+    Dim 日列() As Long, 日付() As Date, 日数 As Long
+    ReDim 日列(1 To 最終列): ReDim 日付(1 To 最終列)
+    日数 = 0
+    Dim c As Long, hv As Variant
+    For c = 3 To 最終列
+        hv = arr(3)(1, c)
+        If Not IsError(hv) Then
+            If IsDate(hv) Then
+                If CDate(hv) >= DateSerial(1990, 1, 1) Then
+                    日数 = 日数 + 1
+                    日列(日数) = c
+                    日付(日数) = CDate(hv)
+                End If
+            End If
+        End If
+    Next c
+
+    If 日数 = 0 Then
+        Application.ScreenUpdating = True
+        MsgBox "日付の列が見つかりませんでした。", vbExclamation, "過去データ取込"
+        Exit Sub
+    End If
+
+    '--- 銘柄行をひろって出力を組み立てる ---
+    Dim 行数 As Long: 行数 = UBound(arr(3), 1)
+    ReDim 出力(1 To 行数 * 日数, 1 To 10)
+
+    Dim r As Long, j As Long, k As Long
+    Dim code As String, 銘柄 As String
+    For r = 2 To 行数
+        code = Trim$(CStr(arr(3)(r, 1)))
+        If コードか(code) Then
+            銘柄 = Trim$(CStr(arr(3)(r, 2)))
+            For j = 1 To 日数
+                c = 日列(j)
+                Dim v終 As Double: v終 = 数値(arr(3)(r, c))
+                If v終 > 0 Then
+                    件数 = 件数 + 1
+                    出力(件数, 1) = 日付(j)
+                    出力(件数, 2) = "15:30"
+                    出力(件数, 3) = "(履歴)"
+                    出力(件数, 4) = code
+                    出力(件数, 5) = 銘柄
+                    For k = 0 To 4
+                        出力(件数, 6 + k) = 履歴値(arr(k), r, c, code)
+                    Next k
+                End If
+            Next j
+        End If
+    Next r
+
+    Application.ScreenUpdating = True
+
+    If 件数 = 0 Then
+        MsgBox "書き写せるデータがありませんでした。", vbExclamation, "過去データ取込"
+        Exit Sub
+    End If
+
+    If MsgBox("読み取りました。" & vbCrLf & vbCrLf & _
+              "BOOK  : " & ファイル名 & vbCrLf & _
+              "日数  : " & 日数 & " 日分" & vbCrLf & _
+              "行数  : " & 件数 & " 行" & vbCrLf & vbCrLf & _
+              "記録シートに「15:30 の記録」として書き足しますか?" & vbCrLf & _
+              "※今の記録シートは消しません。足すだけです", _
+              vbYesNo + vbQuestion, "過去データ取込") <> vbYes Then Exit Sub
+
+    '--- 記録シートへ書き足す ---
+    Application.ScreenUpdating = False
+    Dim rec As Worksheet: Set rec = ThisWorkbook.Worksheets(SH_REC)
+    Dim w As Long
+    w = rec.Cells(rec.Rows.Count, 1).End(xlUp).Row + 1
+    If w < 2 Then w = 2
+    rec.Cells(w, 1).Resize(件数, 10).Value = 出力
+
+    ' 日付・時刻の順に並べ替える
+    Dim 末 As Long: 末 = w + 件数 - 1
+    On Error Resume Next
+    rec.Range("A1:J" & 末).Sort _
+        Key1:=rec.Range("A2"), Order1:=xlAscending, _
+        Key2:=rec.Range("B2"), Order2:=xlAscending, _
+        Header:=xlYes
+    On Error GoTo 0
+    Application.ScreenUpdating = True
+
+    ログ書く "情報", "過去データ取込 " & 件数 & "行 / " & 日数 & "日分 (" & ファイル名 & ")"
+
+    If MsgBox(件数 & " 行を記録シートに書き足しました。" & vbCrLf & vbCrLf & _
+              "続けて「集積作り直し」を実行しますか?" & vbCrLf & _
+              "(19シートに全部並べ直します。少し時間がかかります)", _
+              vbYesNo + vbQuestion, "過去データ取込") = vbYes Then
+        集積を作り直す
+    End If
+    Exit Sub
+
+L_ERR:
+    Dim eN As Long, eD As String
+    eN = Err.Number: eD = Err.Description
+    On Error Resume Next
+    BOOK後始末 wb, 既に開いていた
+    Set wb = Nothing
+    Application.EnableEvents = True
+    Application.DisplayAlerts = True
+    Application.ScreenUpdating = True
+    ログ書く "エラー", "過去データ取込: " & eN & " " & eD
+    MsgBox "取込に失敗しました。" & vbCrLf & vbCrLf & _
+           "エラー番号: " & eN & vbCrLf & eD, vbExclamation, "過去データ取込"
+End Sub
+
+
+'------------------------------------------------------------------
+'  日付見出しの行を探す (1～10行目で日付が3つ以上ある行)
+'------------------------------------------------------------------
+Private Function 日付ヘッダ行(ByVal ws As Worksheet) As Long
+    日付ヘッダ行 = 0
+    Dim r As Long, c As Long, n As Long
+    Dim v As Variant
+    For r = 1 To 10
+        n = 0
+        For c = 3 To 40
+            v = ws.Cells(r, c).Value
+            If Not IsError(v) Then
+                If IsDate(v) Then
+                    If CDate(v) >= DateSerial(1990, 1, 1) Then n = n + 1
+                End If
+            End If
+        Next c
+        If n >= 3 Then
+            日付ヘッダ行 = r
+            Exit Function
+        End If
+    Next r
+End Function
+
+
+'------------------------------------------------------------------
+'  同じ行のコードが一致する時だけ値を返す (行ズレ対策)
+'------------------------------------------------------------------
+Private Function 履歴値(ByRef a As Variant, ByVal r As Long, _
+                        ByVal c As Long, ByVal code As String) As Double
+    履歴値 = 0
+    On Error Resume Next
+    If r > UBound(a, 1) Or c > UBound(a, 2) Then Exit Function
+    If Trim$(CStr(a(r, 1))) <> code Then Exit Function
+    履歴値 = 数値(a(r, c))
+End Function
+
+
+'==================================================================
 '  11-C. 時刻シート (9:00～15:30 の14枚)
 '
 '   1行目 = 日付 (5列で1日分)
@@ -1422,11 +1665,13 @@ Private Function 取得時刻一覧() As Variant
     Dim tmp() As String
     ReDim tmp(0 To 100)
     Dim r As Long, n As Long: n = -1
+    Dim hm As String
     For r = 2 To 最終
-        If IsDate(ws.Cells(r, 1).Value) Then
+        hm = 時刻文字(ws.Cells(r, 1).Value)
+        If hm <> "" Then
             If n >= 99 Then Exit For
             n = n + 1
-            tmp(n) = Format(CDate(ws.Cells(r, 1).Value), "hh:mm")
+            tmp(n) = hm
         End If
     Next r
     If n < 0 Then
@@ -1435,6 +1680,33 @@ Private Function 取得時刻一覧() As Variant
         ReDim Preserve tmp(0 To n)
         取得時刻一覧 = tmp
     End If
+End Function
+
+
+'------------------------------------------------------------------
+'  セルの中身を "hh:mm" にする (時刻でなければ "")
+'  ※ 時刻セルは Date で返る時と 数値(0～1)で返る時があるので両対応
+'------------------------------------------------------------------
+Private Function 時刻文字(ByVal v As Variant) As String
+    時刻文字 = ""
+    On Error Resume Next
+    If IsError(v) Then Exit Function
+    If IsEmpty(v) Then Exit Function
+
+    If VarType(v) = vbDate Then
+        時刻文字 = Format(CDate(v), "hh:mm")
+        Exit Function
+    End If
+
+    If IsNumeric(v) Then
+        Dim d As Double: d = CDbl(v)
+        If d >= 0 And d < 1 Then 時刻文字 = Format(d, "hh:mm")
+        Exit Function
+    End If
+
+    Dim t As String: t = Trim$(CStr(v))
+    If t = "" Then Exit Function
+    If IsDate(t) Then 時刻文字 = Format(CDate(t), "hh:mm")
 End Function
 
 
@@ -1452,16 +1724,16 @@ Private Sub 取得時刻補修(ByVal ws As Worksheet)
     最終 = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
     Dim r As Long, 有 As Long: 有 = 0
     For r = 2 To 最終
-        If IsDate(ws.Cells(r, 1).Value) Then 有 = 有 + 1
+        If 時刻文字(ws.Cells(r, 1).Value) <> "" Then 有 = 有 + 1
     Next r
     If 有 > 0 Then Exit Sub
 
+    ws.Range("A2:A60").NumberFormat = "hh:mm"
     Dim t As Variant: t = 既定時刻()
     Dim i As Long
     For i = LBound(t) To UBound(t)
         ws.Cells(i + 2, 1).Value = TimeValue(CStr(t(i)))
     Next i
-    ws.Range("A2:A60").NumberFormat = "hh:mm"
     ws.Columns("A").ColumnWidth = 14
 End Sub
 

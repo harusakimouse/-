@@ -57,13 +57,17 @@ Private g出来高時刻 As Date
 '==================================================================
 Public Sub 初期設定()
     Dim ws As Worksheet
+    Dim 段階 As String
 
+    On Error GoTo L_ERR
     Application.ScreenUpdating = False
 
     '--- 設定シート ---
+    段階 = "設定シート"
     Set ws = シート確保(SH_CFG)
     If CStr(ws.Range("A1").Value) = "" Then 設定初期値 ws
     設定補完 ws
+    取得時刻補修 ws
     実取得時刻補完 ws
     ws.Columns("H").NumberFormat = "@"
 
@@ -114,6 +118,7 @@ Public Sub 初期設定()
     ws.Columns("C").ColumnWidth = 70
 
     '--- 集積5シート(始値/高値/安値/終値/出来高) ---
+    段階 = "集積5シート"
     Dim nm As Variant: nm = 集積シート名()
     Dim k As Long
     For k = LBound(nm) To UBound(nm)
@@ -121,23 +126,34 @@ Public Sub 初期設定()
     Next k
 
     '--- 時刻シート(9:00～15:30 の14枚) ---
-    Dim tm As Variant: tm = 取得時刻一覧()
-    For k = LBound(tm) To UBound(tm)
-        時刻シート確保 CStr(tm(k))
-    Next k
+    段階 = "時刻シート"
+    Dim 報告 As String
+    報告 = 時刻シート一括作成()
 
+    段階 = "枠固定"
     枠固定
-
+    段階 = "ボタン"
     ボタン作成
     ThisWorkbook.Worksheets(SH_CFG).Activate
     Application.ScreenUpdating = True
+    On Error GoTo 0
 
-    ログ書く "情報", "初期設定を実行しました"
+    ログ書く "情報", "初期設定を実行しました (シート " & ThisWorkbook.Worksheets.Count & "枚)"
+
     MsgBox "初期設定が終わりました。" & vbCrLf & vbCrLf & _
+           報告 & vbCrLf & _
+           "このBOOKのシート合計 : " & ThisWorkbook.Worksheets.Count & " 枚" & vbCrLf & _
+           "(作業5枚 + 値別5枚 + 時刻14枚 = 24枚が正常)" & vbCrLf & vbCrLf & _
            "1. 銘柄シートのA列に銘柄コードを入れる" & vbCrLf & _
            "2. 「銘柄反映」ボタンを押す" & vbCrLf & _
-           "3. 「監視開始」ボタンを押す" & vbCrLf & vbCrLf & _
-           "あとは自動です。", vbInformation, "OHLCV取得BOOK"
+           "3. 「監視開始」ボタンを押す", vbInformation, "OHLCV取得BOOK"
+    Exit Sub
+
+L_ERR:
+    Application.ScreenUpdating = True
+    MsgBox "初期設定が [" & 段階 & "] で止まりました。" & vbCrLf & vbCrLf & _
+           "エラー番号: " & Err.Number & vbCrLf & Err.Description, _
+           vbExclamation, "初期設定"
 End Sub
 
 
@@ -1163,6 +1179,7 @@ Private Sub ボタン作成()
     ボタン1つ ws, 6, "RSS状態", "RSS状態を見る"
     ボタン1つ ws, 7, "銘柄取込", "銘柄取込_他BOOKから"
     ボタン1つ ws, 8, "集積作り直し", "集積を作り直す"
+    ボタン1つ ws, 9, "時刻シート作成", "時刻シートを作る"
 End Sub
 
 Private Sub ボタン1つ(ByVal ws As Worksheet, ByVal n As Long, _
@@ -1413,11 +1430,110 @@ Private Function 取得時刻一覧() As Variant
         End If
     Next r
     If n < 0 Then
-        取得時刻一覧 = Array()
+        取得時刻一覧 = 既定時刻()          ' 設定シートが空でも必ず14本返す
     Else
         ReDim Preserve tmp(0 To n)
         取得時刻一覧 = tmp
     End If
+End Function
+
+
+Private Function 既定時刻() As Variant
+    既定時刻 = Array("09:00", "09:10", "09:20", "09:45", "10:00", "10:15", "10:30", _
+                     "11:30", "12:30", "13:30", "14:30", "15:00", "15:20", "15:30")
+End Function
+
+
+'------------------------------------------------------------------
+'  設定シートA列に時刻が1つも無ければ入れ直す
+'------------------------------------------------------------------
+Private Sub 取得時刻補修(ByVal ws As Worksheet)
+    Dim 最終 As Long
+    最終 = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+    Dim r As Long, 有 As Long: 有 = 0
+    For r = 2 To 最終
+        If IsDate(ws.Cells(r, 1).Value) Then 有 = 有 + 1
+    Next r
+    If 有 > 0 Then Exit Sub
+
+    Dim t As Variant: t = 既定時刻()
+    Dim i As Long
+    For i = LBound(t) To UBound(t)
+        ws.Cells(i + 2, 1).Value = TimeValue(CStr(t(i)))
+    Next i
+    ws.Range("A2:A60").NumberFormat = "hh:mm"
+    ws.Columns("A").ColumnWidth = 14
+End Sub
+
+
+'------------------------------------------------------------------
+'  時刻シートを作る (単独でも実行できます)
+'------------------------------------------------------------------
+Public Sub 時刻シートを作る()
+    Dim 結果 As String
+    結果 = 時刻シート一括作成()
+    MsgBox 結果, vbInformation, "時刻シート"
+End Sub
+
+
+Private Function 時刻シート一括作成() As String
+    Dim cfg As Worksheet
+    Set cfg = シート確保(SH_CFG)
+    取得時刻補修 cfg
+
+    Dim tm As Variant: tm = 取得時刻一覧()
+    If UBound(tm) < LBound(tm) Then
+        時刻シート一括作成 = "取得時刻が1つもありません。"
+        Exit Function
+    End If
+
+    Dim 作成 As Long, 既存 As Long, 失敗 As String
+    作成 = 0: 既存 = 0: 失敗 = ""
+
+    Dim k As Long, nm As String, ws As Worksheet
+    For k = LBound(tm) To UBound(tm)
+        nm = 時刻シート名(CStr(tm(k)))
+
+        Set ws = Nothing
+        On Error Resume Next
+        Set ws = ThisWorkbook.Worksheets(nm)
+        On Error GoTo 0
+
+        If ws Is Nothing Then
+            On Error Resume Next
+            Set ws = ThisWorkbook.Worksheets.Add( _
+                     After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.Count))
+            If Err.Number <> 0 Then
+                失敗 = 失敗 & nm & "(追加不可) "
+                Err.Clear
+                On Error GoTo 0
+                GoTo 次へ
+            End If
+            ws.Name = nm
+            If Err.Number <> 0 Then
+                Err.Clear
+                ws.Name = "T" & nm              ' 名前が使えない時の逃げ道
+                If Err.Number <> 0 Then
+                    失敗 = 失敗 & nm & "(名前不可) "
+                    Err.Clear
+                End If
+            End If
+            On Error GoTo 0
+            作成 = 作成 + 1
+        Else
+            既存 = 既存 + 1
+        End If
+
+        時刻シート見出し ws, CStr(tm(k))
+次へ:
+    Next k
+
+    Dim msg As String
+    msg = "時刻シート " & (UBound(tm) - LBound(tm) + 1) & " 本ぶん" & vbCrLf & _
+          "  新しく作った : " & 作成 & " 枚" & vbCrLf & _
+          "  すでにあった : " & 既存 & " 枚" & vbCrLf
+    If 失敗 <> "" Then msg = msg & "  作れなかった : " & 失敗 & vbCrLf
+    時刻シート一括作成 = msg
 End Function
 
 
@@ -1429,6 +1545,14 @@ End Function
 Private Function 時刻シート確保(ByVal 区分 As String) As Worksheet
     Dim ws As Worksheet
     Set ws = シート確保(時刻シート名(区分))
+    時刻シート見出し ws, 区分
+    Set 時刻シート確保 = ws
+End Function
+
+
+Private Sub 時刻シート見出し(ByVal ws As Worksheet, ByVal 区分 As String)
+    On Error Resume Next
+    If ws Is Nothing Then Exit Sub
     If CStr(ws.Range("A3").Value) <> "コード" Then
         ws.Range("A1").Value = 区分 & " の記録"
         ws.Range("A2").Value = "項目"
@@ -1440,8 +1564,7 @@ Private Function 時刻シート確保(ByVal 区分 As String) As Worksheet
         ws.Columns("A").ColumnWidth = 9
         ws.Columns("B").ColumnWidth = 20
     End If
-    Set 時刻シート確保 = ws
-End Function
+End Sub
 
 
 Private Sub 時刻シートへ書く(ByRef buf As Variant, ByVal 区分 As String)

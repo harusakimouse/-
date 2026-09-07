@@ -255,6 +255,7 @@ Private Sub 記録見出し(ByVal ws As Worksheet)
     見出し ws.Range("A1:J1")
     ws.Columns("A").NumberFormat = "yyyy/mm/dd"
     ws.Columns("D").NumberFormat = "@"
+    If CStr(ws.Range("A2").Value) = "" Then ws.Columns("B:C").NumberFormat = "@"
     ws.Columns("F:J").NumberFormat = "#,##0.##"
     ws.Columns("A:J").ColumnWidth = 12
     If Not ws.AutoFilterMode Then ws.Range("A1:J1").AutoFilter
@@ -2022,7 +2023,8 @@ Public Sub 集積を作り直す()
     Dim v As Variant
     v = rec.Range(rec.Cells(2, 1), rec.Cells(最終行, 10)).Value
 
-    Dim i As Long, st As Long, 件 As Long: 件 = 0
+    Dim i As Long, st As Long, 件 As Long, 読 As Long
+    件 = 0: 読 = 0
     Dim キー As String, 前キー As String
     前キー = ""
     st = 1
@@ -2034,9 +2036,9 @@ Public Sub 集積を作り直す()
         End If
         If キー <> 前キー Then
             If 前キー <> "" And i > st Then
-                ブロック書く v, st, i - 1
-                件 = 件 + 1
-                If 件 Mod 5 = 0 Then 進捗 "並べ直し中… " & 件 & " 回分"
+                読 = 読 + 1
+                If ブロック書く(v, st, i - 1) Then 件 = 件 + 1
+                If 読 Mod 5 = 0 Then 進捗 "並べ直し中… " & 読 & " 回分"
             End If
             st = i
             前キー = キー
@@ -2047,8 +2049,18 @@ Public Sub 集積を作り直す()
     ThisWorkbook.Worksheets(SH_CFG).Activate
     画面戻す
 
-    ログ書く "情報", "集積19シートを作り直しました (" & 件 & "回分)"
-    MsgBox "作り直しました。" & vbCrLf & 件 & " 回分を並べました。", vbInformation, "集積の作り直し"
+    ログ書く "情報", "集積19シートを作り直しました (" & 件 & "/" & 読 & "回分)"
+    If 件 = 0 Then
+        MsgBox "並べ直せませんでした。" & vbCrLf & vbCrLf & _
+               "読んだ回数: " & 読 & vbCrLf & _
+               "書けた回数: 0" & vbCrLf & vbCrLf & _
+               "記録シートB列(時刻区分)の中身を確認してください。", _
+               vbExclamation, "集積の作り直し"
+    Else
+        MsgBox "作り直しました。" & vbCrLf & vbCrLf & _
+               "読んだ回数: " & 読 & vbCrLf & _
+               "並べた回数: " & 件, vbInformation, "集積の作り直し"
+    End If
     Exit Sub
 
 L_ERR:
@@ -2058,9 +2070,10 @@ L_ERR:
 End Sub
 
 
-Private Sub ブロック書く(ByRef v As Variant, ByVal 開始 As Long, ByVal 終了 As Long)
+Private Function ブロック書く(ByRef v As Variant, ByVal 開始 As Long, ByVal 終了 As Long) As Boolean
+    ブロック書く = False
     Dim n As Long: n = 終了 - 開始 + 1
-    If n < 1 Then Exit Sub
+    If n < 1 Then Exit Function
 
     Dim buf() As Variant
     ReDim buf(1 To n, 1 To 10)
@@ -2071,11 +2084,17 @@ Private Sub ブロック書く(ByRef v As Variant, ByVal 開始 As Long, ByVal 終了 As L
         Next j
     Next i
 
-    Dim 区分 As String: 区分 = Trim$(CStr(buf(1, 2)))
-    If Left$(区分, 2) = "手動" Then Exit Sub
-    If Len(区分) <> 5 Then Exit Sub
+    ' ★時刻区分は Excel が時刻に変換していることがあるので両対応
+    Dim 区分 As String
+    区分 = 時刻文字(buf(1, 2))
+    If 区分 = "" Then 区分 = Trim$(CStr(buf(1, 2)))
+    If 区分 = "" Then Exit Function
+    If Left$(区分, 2) = "手動" Then Exit Function
+    If Len(区分) <> 5 Then Exit Function
+
     集積へ書く buf, 区分
-End Sub
+    ブロック書く = True
+End Function
 
 
 '==================================================================

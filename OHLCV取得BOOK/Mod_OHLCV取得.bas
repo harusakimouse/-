@@ -1246,7 +1246,7 @@ Private Function 集積シート確保(ByVal nm As String) As Worksheet
     Dim ws As Worksheet: Set ws = シート確保(nm)
     If CStr(ws.Range("A3").Value) <> "コード" Then
         ws.Range("A1").Value = "日付"
-        ws.Range("A2").Value = "曜日"
+        ws.Range("A2").Value = "曜日/取得"
         ws.Range("A3").Value = "コード"
         ws.Range("B3").Value = "銘柄名"
         見出し ws.Range("A3:B3")
@@ -1290,6 +1290,45 @@ End Sub
 '------------------------------------------------------------------
 '  その日の最後の取得時刻 (OHLCV5シートに入れる分 = 日足)
 '------------------------------------------------------------------
+'------------------------------------------------------------------
+'  OHLCV5シートの2行目に入れる文字
+'    今日の列    → 「本日15:31取得」
+'    それ以外    → 曜日 (月/火/…)
+'------------------------------------------------------------------
+Private Function 日付見出し2(ByVal d As Date) As String
+    If d = Date Then
+        日付見出し2 = "本日" & 日足取得時刻() & "取得"
+    Else
+        日付見出し2 = Format(d, "aaa")
+    End If
+End Function
+
+
+'  日足を実際に取りに行く時刻 (設定シートB列。既定 15:31)
+Private Function 日足取得時刻() As String
+    Dim key As String: key = 日足区分()
+    日足取得時刻 = key
+
+    Dim cfg As Worksheet
+    On Error Resume Next
+    Set cfg = ThisWorkbook.Worksheets(SH_CFG)
+    On Error GoTo 0
+    If cfg Is Nothing Then Exit Function
+
+    Dim 最終 As Long
+    最終 = cfg.Cells(cfg.Rows.Count, 1).End(xlUp).Row
+    Dim r As Long, hm As String, jitsu As String
+    For r = 2 To 最終
+        hm = 時刻文字(cfg.Cells(r, 1).Value)
+        If hm = key Then
+            jitsu = 時刻文字(cfg.Cells(r, 2).Value)
+            If jitsu <> "" Then 日足取得時刻 = jitsu
+            Exit Function
+        End If
+    Next r
+End Function
+
+
 Private Function 日足区分() As String
     日足区分 = "15:30"
     Dim tm As Variant: tm = 取得時刻一覧()
@@ -1420,12 +1459,22 @@ Private Function 集積列(ByVal ws As Worksheet, ByVal d As Date) As Long
     ws.Columns(nc).ColumnWidth = 11
     ws.Columns(nc).NumberFormat = 値書式(ws.Name)
 
+    ' 左に入れた場合、ひとつ右にずれた列の「本日」表示を曜日に戻す
+    If nc = 3 Then
+        If IsDate(ws.Cells(1, 4).Value) Then
+            ws.Cells(2, 4).Value = Format(CDate(ws.Cells(1, 4).Value), "aaa")
+        End If
+    End If
+
     ws.Cells(1, nc).Value = d
     ws.Cells(1, nc).NumberFormat = "yy/mm/dd"
     ws.Cells(2, nc).NumberFormat = "@"
-    ws.Cells(2, nc).Value = Format(d, "aaa")      ' 曜日
-    ws.Range(ws.Cells(1, nc), ws.Cells(2, nc)).Font.Bold = True
-    ws.Range(ws.Cells(1, nc), ws.Cells(2, nc)).HorizontalAlignment = xlCenter
+    ws.Cells(2, nc).Value = 日付見出し2(d)
+    With ws.Range(ws.Cells(1, nc), ws.Cells(2, nc))
+        .Font.Bold = True
+        .HorizontalAlignment = xlCenter
+        .ShrinkToFit = True
+    End With
     集積列 = nc
 End Function
 
@@ -1532,7 +1581,7 @@ Private Sub 見出し書式(ByVal nm As String, ByVal 値別 As Boolean)
         .Borders.Color = RGB(140, 140, 140)
     End With
     ws.Range("A1").Value = "日付"
-    If 値別 Then ws.Range("A2").Value = "曜日" Else ws.Range("A2").Value = "項目"
+    If 値別 Then ws.Range("A2").Value = "曜日/取得" Else ws.Range("A2").Value = "項目"
     ws.Range("A3").Value = "コード"
     ws.Range("B3").Value = "銘柄名"
     ws.Range("A1:B2").Interior.Color = RGB(235, 235, 235)
@@ -1544,13 +1593,14 @@ Private Sub 見出し書式(ByVal nm As String, ByVal 値別 As Boolean)
     ws.Range(ws.Cells(1, 3), ws.Cells(1, 最終列)).NumberFormat = "yy/mm/dd"
     ws.Range(ws.Cells(2, 3), ws.Cells(2, 最終列)).NumberFormat = "@"
     If 値別 Then
-        ' 2行目は曜日を入れ直す
+        ' 2行目を入れ直す (今日の列だけ「本日15:31取得」)
         For c = 3 To 最終列
             If IsDate(ws.Cells(1, c).Value) Then
-                ws.Cells(2, c).Value = Format(CDate(ws.Cells(1, c).Value), "aaa")
+                ws.Cells(2, c).Value = 日付見出し2(CDate(ws.Cells(1, c).Value))
             End If
         Next c
     End If
+    ws.Range(ws.Cells(1, 3), ws.Cells(2, 最終列)).ShrinkToFit = True
 
     '--- 一番左(最新)を目立たせる ---
     Dim 幅 As Long

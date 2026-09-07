@@ -1199,6 +1199,7 @@ Private Sub ボタン作成()
     ボタン1つ ws, 8, "集積作り直し", "集積を作り直す"
     ボタン1つ ws, 9, "時刻シート作成", "時刻シートを作る"
     ボタン1つ ws, 10, "過去データ取込", "過去データ取込"
+    ボタン1つ ws, 11, "見出し直し", "見出しを直す"
 End Sub
 
 Private Sub ボタン1つ(ByVal ws As Worksheet, ByVal n As Long, _
@@ -1383,14 +1384,16 @@ Private Function 集積列(ByVal ws As Worksheet, ByVal d As Date, ByVal t As Date)
         ログ書く "警告", ws.Name & " の列が " & nc & " です。そろそろ退避してください"
     End If
 
+    ' ★列の書式を先に入れる (あとで入れると見出しを上書きしてしまう)
+    ws.Columns(nc).ColumnWidth = 9
+    ws.Columns(nc).NumberFormat = 値書式(ws.Name)
+
     ws.Cells(1, nc).Value = d
     ws.Cells(1, nc).NumberFormat = "mm/dd"
     ws.Cells(2, nc).Value = t
     ws.Cells(2, nc).NumberFormat = "hh:mm"
     ws.Range(ws.Cells(1, nc), ws.Cells(2, nc)).Font.Bold = True
     ws.Range(ws.Cells(1, nc), ws.Cells(2, nc)).HorizontalAlignment = xlCenter
-    ws.Columns(nc).ColumnWidth = 9
-    ws.Columns(nc).NumberFormat = "#,##0.##"
     集積列 = nc
 End Function
 
@@ -1398,6 +1401,72 @@ End Function
 '------------------------------------------------------------------
 '  コード → 行番号 の対応表
 '------------------------------------------------------------------
+Private Function 値書式(ByVal nm As String) As String
+    If nm = "出来高" Then
+        値書式 = "#,##0"
+    Else
+        値書式 = "General"      ' "#,##0.##" だと 9,247. と余計な点が出る
+    End If
+End Function
+
+
+'------------------------------------------------------------------
+'  日付・時刻の見出しと数値の表示を直す (すぐ終わります)
+'------------------------------------------------------------------
+Public Sub 見出しを直す()
+    高速化開始
+    Dim nm As Variant: nm = 集積シート名()
+    Dim k As Long
+    For k = LBound(nm) To UBound(nm)
+        見出し書式 CStr(nm(k)), True
+    Next k
+    Dim tm As Variant: tm = 取得時刻一覧()
+    For k = LBound(tm) To UBound(tm)
+        見出し書式 時刻シート名(CStr(tm(k))), False
+    Next k
+    画面戻す
+    MsgBox "日付・時刻・数値の表示を直しました。", vbInformation, "見出し直し"
+End Sub
+
+
+Private Sub 見出し書式(ByVal nm As String, ByVal 値別 As Boolean)
+    On Error Resume Next
+    Dim ws As Worksheet
+    Set ws = ThisWorkbook.Worksheets(nm)
+    If ws Is Nothing Then Exit Sub
+
+    Dim 最終列 As Long, 最終行 As Long
+    最終列 = ws.Cells(1, ws.Columns.Count).End(xlToLeft).Column
+    最終行 = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+    If 最終列 < 3 Then Exit Sub
+    If 最終行 < 4 Then 最終行 = 4
+
+    ' 1) データ部分の数値表示
+    Dim c As Long
+    If 値別 Then
+        ws.Range(ws.Cells(4, 3), ws.Cells(最終行, 最終列)).NumberFormat = 値書式(nm)
+    Else
+        For c = 3 To 最終列
+            If ((c - 3) Mod 5) = 4 Then
+                ws.Range(ws.Cells(4, c), ws.Cells(最終行, c)).NumberFormat = "#,##0"
+            Else
+                ws.Range(ws.Cells(4, c), ws.Cells(最終行, c)).NumberFormat = "General"
+            End If
+        Next c
+    End If
+
+    ' 2) 見出し行 (必ず最後に)
+    ws.Range(ws.Cells(1, 3), ws.Cells(1, 最終列)).NumberFormat = "mm/dd"
+    If 値別 Then
+        ws.Range(ws.Cells(2, 3), ws.Cells(2, 最終列)).NumberFormat = "hh:mm"
+    Else
+        ws.Range(ws.Cells(2, 3), ws.Cells(2, 最終列)).NumberFormat = "@"
+    End If
+    ws.Range(ws.Cells(1, 3), ws.Cells(2, 最終列)).Font.Bold = True
+    ws.Range(ws.Cells(1, 3), ws.Cells(2, 最終列)).HorizontalAlignment = xlCenter
+End Sub
+
+
 Private Function 集積行マップ(ByVal ws As Worksheet) As Object
     Dim d As Object: Set d = CreateObject("Scripting.Dictionary")
     Set 集積行マップ = d
@@ -1962,11 +2031,17 @@ Private Function 時刻シート列(ByVal ws As Worksheet, ByVal d As Date) As Long
     lbl = Array("始値", "高値", "安値", "終値", "出来高")
     Dim j As Long
     For j = 0 To 4
+        ' ★列の書式を先に入れる
+        ws.Columns(nc + j).ColumnWidth = 9
+        If j = 4 Then
+            ws.Columns(nc + j).NumberFormat = "#,##0"      ' 出来高
+        Else
+            ws.Columns(nc + j).NumberFormat = "General"
+        End If
         ws.Cells(1, nc + j).Value = d
         ws.Cells(1, nc + j).NumberFormat = "mm/dd"
+        ws.Cells(2, nc + j).NumberFormat = "@"
         ws.Cells(2, nc + j).Value = lbl(j)
-        ws.Columns(nc + j).ColumnWidth = 9
-        ws.Columns(nc + j).NumberFormat = "#,##0.##"
     Next j
     With ws.Range(ws.Cells(1, nc), ws.Cells(2, nc + 4))
         .Font.Bold = True
@@ -2044,6 +2119,15 @@ Public Sub 集積を作り直す()
             前キー = キー
         End If
     Next i
+
+    Dim nm2 As Variant: nm2 = 集積シート名()
+    For k = LBound(nm2) To UBound(nm2)
+        見出し書式 CStr(nm2(k)), True
+    Next k
+    Dim tm2 As Variant: tm2 = 取得時刻一覧()
+    For k = LBound(tm2) To UBound(tm2)
+        見出し書式 時刻シート名(CStr(tm2(k))), False
+    Next k
 
     枠固定
     ThisWorkbook.Worksheets(SH_CFG).Activate

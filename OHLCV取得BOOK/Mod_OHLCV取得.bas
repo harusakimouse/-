@@ -336,15 +336,15 @@ Public Sub 銘柄取込_他BOOKから()
     Dim 集めた As Object
     見つけた列 = 0: 件数 = 0
 
-    Application.ScreenUpdating = False
-    Application.EnableEvents = False
-    Application.DisplayAlerts = False
+    高速化開始
     On Error GoTo L_ERR
 
     If Not 既に開いていた Then
+        進捗 "元BOOKを開いています… " & ファイル名
         Set wb = Workbooks.Open(Filename:=パス, ReadOnly:=True, UpdateLinks:=0)
     End If
 
+    進捗 "銘柄コードの列を探しています…"
     '--- 全シートを見て、銘柄コードが多い列を候補として集める ---
     Dim 候補Ws(1 To 20) As Worksheet
     Dim 候補列(1 To 20) As Long
@@ -368,9 +368,7 @@ Public Sub 銘柄取込_他BOOKから()
     If 候補件数 = 0 Then
         BOOK後始末 wb, 既に開いていた
         Set wb = Nothing
-        Application.EnableEvents = True
-        Application.DisplayAlerts = True
-        Application.ScreenUpdating = True
+        画面戻す
         MsgBox "銘柄コードらしい列が見つかりませんでした。" & vbCrLf & _
                "(4桁のコードが3件以上ある列を探しています)", vbExclamation, "銘柄取込"
         Exit Sub
@@ -390,6 +388,7 @@ Public Sub 銘柄取込_他BOOKから()
     Next a
 
     Application.ScreenUpdating = True
+    Application.StatusBar = False
 
     ' 候補が1つならそのまま、複数なら選んでもらう
     Dim 選択 As Long: 選択 = 1
@@ -409,9 +408,7 @@ Public Sub 銘柄取込_他BOOKから()
         If ans = "" Then
             BOOK後始末 wb, 既に開いていた
             Set wb = Nothing
-            Application.EnableEvents = True
-            Application.DisplayAlerts = True
-            Application.ScreenUpdating = True
+            画面戻す
             Exit Sub
         End If
         選択 = Val(ans)
@@ -431,9 +428,7 @@ Public Sub 銘柄取込_他BOOKから()
     Set wb = Nothing
     Set 見つけたWs = Nothing
 
-    Application.EnableEvents = True
-    Application.DisplayAlerts = True
-    Application.ScreenUpdating = True
+    画面戻す
     On Error GoTo 0
 
     '--- ここから先は自分のBOOKだけ ---
@@ -479,9 +474,7 @@ L_ERR:
     BOOK後始末 wb, 既に開いていた
     Set wb = Nothing
     Set 見つけたWs = Nothing
-    Application.EnableEvents = True
-    Application.DisplayAlerts = True
-    Application.ScreenUpdating = True
+    画面戻す
     ログ書く "エラー", "銘柄取込: " & eN & " " & eD
     MsgBox "取込に失敗しました。" & vbCrLf & vbCrLf & _
            "エラー番号: " & eN & vbCrLf & eD, vbExclamation, "銘柄取込"
@@ -1064,6 +1057,35 @@ End Sub
 '==================================================================
 '  10. 小道具
 '==================================================================
+'------------------------------------------------------------------
+'  重い処理の前後で使う (他BOOKを開く時は計算を必ず止める)
+'------------------------------------------------------------------
+Private Sub 高速化開始()
+    On Error Resume Next
+    Application.ScreenUpdating = False
+    Application.EnableEvents = False
+    Application.DisplayAlerts = False
+    Application.AskToUpdateLinks = False
+    Application.Calculation = xlCalculationManual
+End Sub
+
+Private Sub 画面戻す()
+    On Error Resume Next
+    Application.Calculation = xlCalculationAutomatic
+    Application.AskToUpdateLinks = True
+    Application.EnableEvents = True
+    Application.DisplayAlerts = True
+    Application.ScreenUpdating = True
+    Application.StatusBar = False
+End Sub
+
+Private Sub 進捗(ByVal msg As String)
+    On Error Resume Next
+    Application.StatusBar = "OHLCV取得BOOK : " & msg
+    DoEvents
+End Sub
+
+
 Private Function シート確保(ByVal nm As String) As Worksheet
     Dim ws As Worksheet
     On Error Resume Next
@@ -1428,16 +1450,23 @@ Public Sub 過去データ取込()
     Dim 出力() As Variant
     Dim 件数 As Long: 件数 = 0
 
-    Application.ScreenUpdating = False
-    Application.EnableEvents = False
-    Application.DisplayAlerts = False
+    If Not 既に開いていた Then
+        If MsgBox("元BOOKを『計算を止めた状態』で開きます。" & vbCrLf & vbCrLf & _
+                  "大きいBOOKだと開くのに1～2分かかることがあります。" & vbCrLf & _
+                  "画面が止まって見えても、そのまま待ってください。" & vbCrLf & vbCrLf & _
+                  "始めますか?", vbYesNo + vbQuestion, "過去データ取込") <> vbYes Then Exit Sub
+    End If
+
+    高速化開始
     On Error GoTo L_ERR
 
     If Not 既に開いていた Then
+        進捗 "元BOOKを開いています… " & ファイル名
         Set wb = Workbooks.Open(Filename:=パス, ReadOnly:=True, UpdateLinks:=0)
     End If
 
     '--- 5シートがあるか確認 ---
+    進捗 "シートを調べています…"
     Dim shs As Variant: shs = 集積シート名()
     Dim i As Long, ws As Worksheet, 無し As String
     無し = ""
@@ -1451,9 +1480,7 @@ Public Sub 過去データ取込()
     If 無し <> "" Then
         BOOK後始末 wb, 既に開いていた
         Set wb = Nothing
-        Application.EnableEvents = True
-        Application.DisplayAlerts = True
-        Application.ScreenUpdating = True
+        画面戻す
         MsgBox "このBOOKには次のシートがありません。" & vbCrLf & vbCrLf & 無し & vbCrLf & vbCrLf & _
                "始値/高値/安値/終値/出来高 の5シートが必要です。", vbExclamation, "過去データ取込"
         Exit Sub
@@ -1465,9 +1492,7 @@ Public Sub 過去データ取込()
     If ヘッダ = 0 Then
         BOOK後始末 wb, 既に開いていた
         Set wb = Nothing
-        Application.EnableEvents = True
-        Application.DisplayAlerts = True
-        Application.ScreenUpdating = True
+        画面戻す
         MsgBox "日付の見出し行が見つかりませんでした。", vbExclamation, "過去データ取込"
         Exit Sub
     End If
@@ -1478,26 +1503,34 @@ Public Sub 過去データ取込()
     If 最終行 <= ヘッダ Or 最終列 < 3 Then
         BOOK後始末 wb, 既に開いていた
         Set wb = Nothing
-        Application.EnableEvents = True
-        Application.DisplayAlerts = True
-        Application.ScreenUpdating = True
+        画面戻す
         MsgBox "履歴データが見つかりませんでした。", vbExclamation, "過去データ取込"
+        Exit Sub
+    End If
+
+    '--- 大きすぎないか確認 ---
+    If (最終行 - ヘッダ) * (最終列 - 2) > 2000000 Then
+        BOOK後始末 wb, 既に開いていた
+        Set wb = Nothing
+        画面戻す
+        MsgBox "データが大きすぎます (" & (最終行 - ヘッダ) & "行 × " & (最終列 - 2) & "列)。" & vbCrLf & _
+               "元BOOKの範囲を絞ってからやり直してください。", vbExclamation, "過去データ取込"
         Exit Sub
     End If
 
     '--- 5シートを配列で読む ---
     Dim arr(0 To 4) As Variant
     For i = 0 To 4
+        進捗 "読み込み中… " & shs(i)
         Set ws = wb.Worksheets(CStr(shs(i)))
         arr(i) = ws.Range(ws.Cells(ヘッダ, 1), ws.Cells(最終行, 最終列)).Value
     Next i
 
+    進捗 "元BOOKを閉じています…"
     BOOK後始末 wb, 既に開いていた
     Set wb = Nothing
     Set base = Nothing
     Set ws = Nothing
-    Application.EnableEvents = True
-    Application.DisplayAlerts = True
 
     '--- 日付の列をひろう ---
     Dim 日列() As Long, 日付() As Date, 日数 As Long
@@ -1518,12 +1551,13 @@ Public Sub 過去データ取込()
     Next c
 
     If 日数 = 0 Then
-        Application.ScreenUpdating = True
+        画面戻す
         MsgBox "日付の列が見つかりませんでした。", vbExclamation, "過去データ取込"
         Exit Sub
     End If
 
     '--- 銘柄行をひろって出力を組み立てる ---
+    進捗 "組み立て中… " & 日数 & "日分"
     Dim 行数 As Long: 行数 = UBound(arr(3), 1)
     ReDim 出力(1 To 行数 * 日数, 1 To 10)
 
@@ -1551,7 +1585,7 @@ Public Sub 過去データ取込()
         End If
     Next r
 
-    Application.ScreenUpdating = True
+    画面戻す
 
     If 件数 = 0 Then
         MsgBox "書き写せるデータがありませんでした。", vbExclamation, "過去データ取込"
@@ -1567,7 +1601,8 @@ Public Sub 過去データ取込()
               vbYesNo + vbQuestion, "過去データ取込") <> vbYes Then Exit Sub
 
     '--- 記録シートへ書き足す ---
-    Application.ScreenUpdating = False
+    高速化開始
+    進捗 "記録シートに書き足しています…"
     Dim rec As Worksheet: Set rec = ThisWorkbook.Worksheets(SH_REC)
     Dim w As Long
     w = rec.Cells(rec.Rows.Count, 1).End(xlUp).Row + 1
@@ -1582,7 +1617,7 @@ Public Sub 過去データ取込()
         Key2:=rec.Range("B2"), Order2:=xlAscending, _
         Header:=xlYes
     On Error GoTo 0
-    Application.ScreenUpdating = True
+    画面戻す
 
     ログ書く "情報", "過去データ取込 " & 件数 & "行 / " & 日数 & "日分 (" & ファイル名 & ")"
 
@@ -1600,9 +1635,7 @@ L_ERR:
     On Error Resume Next
     BOOK後始末 wb, 既に開いていた
     Set wb = Nothing
-    Application.EnableEvents = True
-    Application.DisplayAlerts = True
-    Application.ScreenUpdating = True
+    画面戻す
     ログ書く "エラー", "過去データ取込: " & eN & " " & eD
     MsgBox "取込に失敗しました。" & vbCrLf & vbCrLf & _
            "エラー番号: " & eN & vbCrLf & eD, vbExclamation, "過去データ取込"
@@ -1969,8 +2002,7 @@ Public Sub 集積を作り直す()
               "よろしいですか?", vbYesNo + vbExclamation, "集積の作り直し") <> vbYes Then Exit Sub
 
     On Error GoTo L_ERR
-    Application.ScreenUpdating = False
-    Application.Calculation = xlCalculationManual
+    高速化開始
 
     Dim nm As Variant: nm = 集積シート名()
     Dim k As Long, ws As Worksheet
@@ -2004,6 +2036,7 @@ Public Sub 集積を作り直す()
             If 前キー <> "" And i > st Then
                 ブロック書く v, st, i - 1
                 件 = 件 + 1
+                If 件 Mod 5 = 0 Then 進捗 "並べ直し中… " & 件 & " 回分"
             End If
             st = i
             前キー = キー
@@ -2012,16 +2045,14 @@ Public Sub 集積を作り直す()
 
     枠固定
     ThisWorkbook.Worksheets(SH_CFG).Activate
-    Application.Calculation = xlCalculationAutomatic
-    Application.ScreenUpdating = True
+    画面戻す
 
     ログ書く "情報", "集積19シートを作り直しました (" & 件 & "回分)"
     MsgBox "作り直しました。" & vbCrLf & 件 & " 回分を並べました。", vbInformation, "集積の作り直し"
     Exit Sub
 
 L_ERR:
-    Application.Calculation = xlCalculationAutomatic
-    Application.ScreenUpdating = True
+    画面戻す
     ログ書く "エラー", "集積作り直し: " & Err.Description
     MsgBox "作り直しに失敗しました: " & Err.Description, vbExclamation, "集積の作り直し"
 End Sub

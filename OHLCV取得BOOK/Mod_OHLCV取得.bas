@@ -51,6 +51,9 @@ Private g次ブザー As Date
 Private g前回出来高 As Double
 Private g出来高時刻 As Date
 
+' True のときだけ右端に足す(作り直しで使う。ふだんは左に挿入)
+Private g右端追加 As Boolean
+
 
 '==================================================================
 '  1. 初期設定  ← 最初に1回だけ実行してください
@@ -1377,13 +1380,20 @@ Private Function 集積列(ByVal ws As Worksheet, ByVal d As Date, ByVal t As Date)
         Next c
     End If
 
-    Dim nc As Long: nc = 最終列 + 1
-    If nc > 16300 Then
+    If 最終列 + 1 > 16300 Then
         ログ書く "重大", ws.Name & " が列の上限です。古い分を別ファイルへ退避してください"
         Exit Function
     End If
-    If nc > 15000 Then
-        ログ書く "警告", ws.Name & " の列が " & nc & " です。そろそろ退避してください"
+    If 最終列 + 1 > 15000 Then
+        ログ書く "警告", ws.Name & " の列が " & (最終列 + 1) & " です。そろそろ退避してください"
+    End If
+
+    Dim nc As Long
+    If g右端追加 Then
+        nc = 最終列 + 1                       ' 作り直し中は右端へ(速い)
+    Else
+        ws.Columns(3).Insert Shift:=xlToRight, CopyOrigin:=xlFormatFromRightOrBelow
+        nc = 3                                ' ふだんは左に挿入(新しいものが左)
     End If
 
     ' ★列の書式を先に入れる (あとで入れると見出しを上書きしてしまう)
@@ -2020,13 +2030,21 @@ Private Function 時刻シート列(ByVal ws As Worksheet, ByVal d As Date) As Long
         Next c
     End If
 
-    Dim nc As Long: nc = 最終列 + 1
-    If nc + 4 > 16300 Then
+    If 最終列 + 5 > 16300 Then
         ログ書く "重大", ws.Name & " が列の上限です。古い分を別ファイルへ退避してください"
         Exit Function
     End If
-    If nc > 15000 Then
-        ログ書く "警告", ws.Name & " の列が " & nc & " です。そろそろ退避してください"
+    If 最終列 + 5 > 15000 Then
+        ログ書く "警告", ws.Name & " の列が " & (最終列 + 5) & " です。そろそろ退避してください"
+    End If
+
+    Dim nc As Long
+    If g右端追加 Then
+        nc = 最終列 + 1                       ' 作り直し中は右端へ(速い)
+    Else
+        ws.Range(ws.Columns(3), ws.Columns(7)).Insert _
+            Shift:=xlToRight, CopyOrigin:=xlFormatFromRightOrBelow
+        nc = 3                                ' ふだんは左に挿入(新しいものが左)
     End If
 
     Dim lbl As Variant
@@ -2100,8 +2118,13 @@ Public Sub 集積を作り直す()
     Dim v As Variant
     v = rec.Range(rec.Cells(2, 1), rec.Cells(最終行, 10)).Value
 
-    Dim i As Long, st As Long, 件 As Long, 読 As Long
-    件 = 0: 読 = 0
+    ' 日付+時刻の切れ目を先に全部ひろう
+    Dim bs() As Long, be() As Long, bn As Long
+    ReDim bs(1 To UBound(v, 1) + 1)
+    ReDim be(1 To UBound(v, 1) + 1)
+    bn = 0
+
+    Dim i As Long, st As Long
     Dim キー As String, 前キー As String
     前キー = ""
     st = 1
@@ -2113,14 +2136,25 @@ Public Sub 集積を作り直す()
         End If
         If キー <> 前キー Then
             If 前キー <> "" And i > st Then
-                読 = 読 + 1
-                If ブロック書く(v, st, i - 1) Then 件 = 件 + 1
-                If 読 Mod 5 = 0 Then 進捗 "並べ直し中… " & 読 & " 回分"
+                bn = bn + 1
+                bs(bn) = st
+                be(bn) = i - 1
             End If
             st = i
             前キー = キー
         End If
     Next i
+
+    ' ★新しい順(うしろ)から処理して右へ足す → 左が最新になる
+    g右端追加 = True
+    Dim 件 As Long, 読 As Long, b As Long
+    件 = 0: 読 = 0
+    For b = bn To 1 Step -1
+        読 = 読 + 1
+        If ブロック書く(v, bs(b), be(b)) Then 件 = 件 + 1
+        If 読 Mod 5 = 0 Then 進捗 "並べ直し中… " & 読 & " / " & bn & " 回分"
+    Next b
+    g右端追加 = False
 
     Dim nm2 As Variant: nm2 = 集積シート名()
     For k = LBound(nm2) To UBound(nm2)
@@ -2150,6 +2184,7 @@ Public Sub 集積を作り直す()
     Exit Sub
 
 L_ERR:
+    g右端追加 = False
     画面戻す
     ログ書く "エラー", "集積作り直し: " & Err.Description
     MsgBox "作り直しに失敗しました: " & Err.Description, vbExclamation, "集積の作り直し"

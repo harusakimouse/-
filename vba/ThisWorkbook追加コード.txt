@@ -1,0 +1,15 @@
+【ThisWorkbook に貼る（自動でRSSを準備したい場合だけ）】
+
+VBE の左側 → ThisWorkbook をダブルクリック → 下を貼り付け
+
+Private Sub Workbook_Open()
+    ' ブックが開き切ってから実行する（開いている途中だと失敗するため）
+    Application.OnTime Now, "'" & ThisWorkbook.Name & "'!自動でRSS準備"
+End Sub
+
+
+【標準モジュール（Mod_RSS起動）の末尾に追加】
+
+Public Sub 自動でRSS準備()
+    RSS準備
+End Sub

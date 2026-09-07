@@ -1387,11 +1387,11 @@ Private Function 集積列(ByVal ws As Worksheet, ByVal d As Date, ByVal t As Date)
     End If
 
     ' ★列の書式を先に入れる (あとで入れると見出しを上書きしてしまう)
-    ws.Columns(nc).ColumnWidth = 9
+    ws.Columns(nc).ColumnWidth = 10
     ws.Columns(nc).NumberFormat = 値書式(ws.Name)
 
     ws.Cells(1, nc).Value = d
-    ws.Cells(1, nc).NumberFormat = "mm/dd"
+    ws.Cells(1, nc).NumberFormat = "yy/mm/dd"
     ws.Cells(2, nc).Value = t
     ws.Cells(2, nc).NumberFormat = "hh:mm"
     ws.Range(ws.Cells(1, nc), ws.Cells(2, nc)).Font.Bold = True
@@ -1458,7 +1458,7 @@ Private Sub 見出し書式(ByVal nm As String, ByVal 値別 As Boolean)
     End If
 
     ' 2) 見出し行 (必ず最後に)
-    ws.Range(ws.Cells(1, 3), ws.Cells(1, 最終列)).NumberFormat = "mm/dd"
+    ws.Range(ws.Cells(1, 3), ws.Cells(1, 最終列)).NumberFormat = "yy/mm/dd"
     If 値別 Then
         ws.Range(ws.Cells(2, 3), ws.Cells(2, 最終列)).NumberFormat = "hh:mm"
     Else
@@ -2034,14 +2034,14 @@ Private Function 時刻シート列(ByVal ws As Worksheet, ByVal d As Date) As Long
     Dim j As Long
     For j = 0 To 4
         ' ★列の書式を先に入れる
-        ws.Columns(nc + j).ColumnWidth = 9
+        ws.Columns(nc + j).ColumnWidth = 10
         If j = 4 Then
             ws.Columns(nc + j).NumberFormat = "#,##0"      ' 出来高
         Else
             ws.Columns(nc + j).NumberFormat = "General"
         End If
         ws.Cells(1, nc + j).Value = d
-        ws.Cells(1, nc + j).NumberFormat = "mm/dd"
+        ws.Cells(1, nc + j).NumberFormat = "yy/mm/dd"
         ws.Cells(2, nc + j).NumberFormat = "@"
         ws.Cells(2, nc + j).Value = lbl(j)
     Next j

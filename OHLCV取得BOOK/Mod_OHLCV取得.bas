@@ -227,6 +227,8 @@ Private Sub 設定補完(ByVal ws As Worksheet)
     設定1つ ws, "ブザー間隔秒", 30
     設定1つ ws, "取得遅延秒", 5
     設定1つ ws, "自動保存", "○"
+    設定1つ ws, "自動保存時刻1", TimeSerial(11, 35, 0)
+    設定1つ ws, "自動保存時刻2", TimeSerial(15, 45, 0)
     設定1つ ws, "起動時に自動監視", "○"
     ws.Columns("D").ColumnWidth = 46
 End Sub
@@ -239,6 +241,7 @@ Private Sub 設定1つ(ByVal ws As Worksheet, ByVal 名前 As String, ByVal 既定 As V
     For r = 1 To 30
         If CStr(ws.Cells(r, 3).Value) = "" Then
             ws.Cells(r, 3).Value = 名前
+            If VarType(既定) = vbDate Then ws.Cells(r, 4).NumberFormat = "hh:mm"
             ws.Cells(r, 4).Value = 既定
             見出し ws.Cells(r, 3)
             Exit Sub
@@ -666,6 +669,7 @@ Public Sub TICK処理()
     日付切替チェック
     接続監視
     時刻チェック
+    保存チェック
     g実行中 = False
     Exit Sub
 L_ERR:
@@ -794,9 +798,9 @@ Private Function 取得実行(ByVal 区分 As String) As Boolean
     rec.Cells(w, 1).Resize(n, 10).Value = buf
 
     CSV追記 buf                       ' ★ここが本命(落ちても残る)
-    集積へ書く buf, 区分                ' 5シートへ右へずらして集積
+    集積へ書く buf, 区分                ' 集積19シートへ
     ログ書く "取得", 区分 & "  " & n & "銘柄 (値あり " & 有効 & ")"
-    自動保存
+    If 文字設定("自動保存", "○") = "毎回" Then 保存実行
 
     取得実行 = True
     Exit Function
@@ -892,6 +896,127 @@ Private Function CSV安全(ByVal s As String) As String
     s = Replace(s, vbLf, "")
     s = Replace(s, """", "")
     CSV安全 = s
+End Function
+
+
+'==================================================================
+'  6-B. CSVから記録シートを戻す (もしもの保険)
+'==================================================================
+Public Sub CSV復元()
+    Dim fn As Variant
+    fn = Application.GetOpenFilename("CSVファイル,*.csv", , _
+         "戻したいCSVを選んでください (OHLCV_yyyymmdd.csv)")
+    If VarType(fn) = vbBoolean Then Exit Sub
+
+    Dim rec As Worksheet: Set rec = ThisWorkbook.Worksheets(SH_REC)
+
+    高速化開始
+    On Error GoTo L_ERR
+    進捗 "いまの記録シートを調べています…"
+
+    ' すでに入っている分をひろう(日付|区分|コード)
+    Dim 既出 As Object: Set 既出 = CreateObject("Scripting.Dictionary")
+    Dim 最終行 As Long
+    最終行 = rec.Cells(rec.Rows.Count, 1).End(xlUp).Row
+    If 最終行 >= 2 Then
+        Dim ex As Variant
+        ex = rec.Range(rec.Cells(2, 1), rec.Cells(最終行, 4)).Value
+        Dim i As Long, kk As String
+        For i = 1 To UBound(ex, 1)
+            kk = Format(ex(i, 1), "yyyy/mm/dd") & "|" & 時刻キー(ex(i, 2)) & "|" & Trim$(CStr(ex(i, 4)))
+            If Not 既出.Exists(kk) Then 既出.Add kk, 1
+        Next i
+    End If
+
+    進捗 "CSVを読んでいます…"
+    Dim ff As Integer: ff = FreeFile
+    Open CStr(fn) For Input As #ff
+
+    Dim buf() As Variant
+    ReDim buf(1 To 200000, 1 To 10)
+    Dim n As Long: n = 0
+    Dim line As String, p As Variant, j As Long
+
+    Do While Not EOF(ff)
+        Line Input #ff, line
+        If line <> "" Then
+            p = Split(line, ",")
+            If UBound(p) >= 9 Then
+                If IsDate(p(0)) Then
+                    kk = Format(CDate(p(0)), "yyyy/mm/dd") & "|" & Trim$(CStr(p(1))) & "|" & Trim$(CStr(p(3)))
+                    If Not 既出.Exists(kk) Then
+                        既出.Add kk, 1
+                        n = n + 1
+                        If n > 200000 Then Exit Do
+                        buf(n, 1) = CDate(p(0))
+                        buf(n, 2) = Trim$(CStr(p(1)))
+                        buf(n, 3) = Trim$(CStr(p(2)))
+                        buf(n, 4) = Trim$(CStr(p(3)))
+                        buf(n, 5) = Trim$(CStr(p(4)))
+                        For j = 5 To 9
+                            buf(n, j + 1) = Val(p(j))
+                        Next j
+                    End If
+                End If
+            End If
+        End If
+    Loop
+    Close #ff
+    画面戻す
+
+    If n = 0 Then
+        MsgBox "戻す行はありませんでした。" & vbCrLf & _
+               "(すでに記録シートに入っています)", vbInformation, "CSV復元"
+        Exit Sub
+    End If
+
+    If MsgBox(n & " 行を記録シートに戻しますか?" & vbCrLf & vbCrLf & _
+              "※重複する行は自動で除いてあります", _
+              vbYesNo + vbQuestion, "CSV復元") <> vbYes Then Exit Sub
+
+    高速化開始
+    進捗 "記録シートに戻しています…"
+    Dim w As Long
+    w = rec.Cells(rec.Rows.Count, 1).End(xlUp).Row + 1
+    If w < 2 Then w = 2
+
+    Dim out() As Variant
+    ReDim out(1 To n, 1 To 10)
+    For i = 1 To n
+        For j = 1 To 10
+            out(i, j) = buf(i, j)
+        Next j
+    Next i
+    rec.Cells(w, 1).Resize(n, 10).Value = out
+
+    Dim 末 As Long: 末 = w + n - 1
+    On Error Resume Next
+    rec.Range("A1:J" & 末).Sort _
+        Key1:=rec.Range("A2"), Order1:=xlAscending, _
+        Key2:=rec.Range("B2"), Order2:=xlAscending, Header:=xlYes
+    On Error GoTo 0
+    画面戻す
+
+    ログ書く "情報", "CSV復元 " & n & "行"
+    If MsgBox(n & " 行を戻しました。" & vbCrLf & vbCrLf & _
+              "続けて「集積作り直し」を実行しますか?", _
+              vbYesNo + vbQuestion, "CSV復元") = vbYes Then
+        集積を作り直す
+    End If
+    Exit Sub
+
+L_ERR:
+    On Error Resume Next
+    Close #ff
+    画面戻す
+    ログ書く "エラー", "CSV復元: " & Err.Description
+    MsgBox "復元に失敗しました: " & Err.Description, vbExclamation, "CSV復元"
+End Sub
+
+
+Private Function 時刻キー(ByVal v As Variant) As String
+    時刻キー = 時刻文字(v)
+    If 時刻キー = "" Then 時刻キー = Trim$(CStr(v))
 End Function
 
 
@@ -1195,12 +1320,37 @@ Private Function ザラバ中() As Boolean
     If Weekday(Date, vbMonday) > 5 Then ザラバ中 = False
 End Function
 
-Private Sub 自動保存()
-    If 文字設定("自動保存", "○") <> "○" Then Exit Sub
+Private Sub 保存実行()
     On Error Resume Next
     Application.DisplayAlerts = False
     ThisWorkbook.Save
     Application.DisplayAlerts = True
+    ログ書く "情報", "ブックを保存しました"
+End Sub
+
+'------------------------------------------------------------------
+'  決めた時刻に1日2回だけ保存する
+'  (TICK取得など重い処理と重ならない時刻にしてください)
+'------------------------------------------------------------------
+Private Sub 保存チェック()
+    Dim mode As String: mode = 文字設定("自動保存", "○")
+    If mode = "×" Then Exit Sub
+    If mode = "毎回" Then Exit Sub
+
+    Dim nm As Variant
+    nm = Array("自動保存時刻1", "自動保存時刻2")
+    Dim k As Long, hm As String
+    For k = 0 To 1
+        hm = 時刻文字(設定値(CStr(nm(k))))
+        If hm <> "" Then
+            If Not 済か("保存" & hm) Then
+                If Now >= Date + TimeValue(hm) Then
+                    保存実行
+                    済にする "保存" & hm
+                End If
+            End If
+        End If
+    Next k
 End Sub
 
 
@@ -1227,6 +1377,7 @@ Private Sub ボタン作成()
     ボタン1つ ws, 9, "時刻シート作成", "時刻シートを作る"
     ボタン1つ ws, 10, "過去データ取込", "過去データ取込"
     ボタン1つ ws, 11, "見出し直し", "見出しを直す"
+    ボタン1つ ws, 12, "CSV復元", "CSV復元"
 End Sub
 
 Private Sub ボタン1つ(ByVal ws As Worksheet, ByVal n As Long, _

@@ -1,0 +1,18 @@
+'==================================================================
+'  ThisWorkbook に貼るコード
+'  (VBE 左のツリーで「ThisWorkbook」をダブルクリックして貼り付け)
+'==================================================================
+Option Explicit
+
+Private Sub Workbook_Open()
+    On Error Resume Next
+    ' 開いた5秒後に監視を始める(RSSが立ち上がるのを待つ)
+    Application.OnTime Now + TimeSerial(0, 0, 5), _
+                       "'" & ThisWorkbook.Name & "'!自動起動"
+End Sub
+
+Private Sub Workbook_BeforeClose(Cancel As Boolean)
+    On Error Resume Next
+    監視停止
+    ブザー停止
+End Sub

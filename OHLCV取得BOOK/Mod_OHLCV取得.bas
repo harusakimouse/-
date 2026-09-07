@@ -250,8 +250,23 @@ Public Sub 銘柄取込_他BOOKから()
          "銘柄コードのあるBOOKを選んでください(ボリンジャー送信BOOKなど)")
     If VarType(fn) = vbBoolean Then Exit Sub
 
+    Dim パス As String: パス = CStr(fn)
+    Dim ファイル名 As String
+    ファイル名 = Mid$(パス, InStrRev(パス, "\") + 1)
+
     Dim wb As Workbook
-    Dim 見つけたWs As Worksheet, 見つけた列 As Long, 件数 As Long
+    Dim 既に開いていた As Boolean
+
+    ' すでに開いているなら、それを使う(勝手に閉じない)
+    On Error Resume Next
+    Set wb = Workbooks(ファイル名)
+    On Error GoTo 0
+    既に開いていた = Not (wb Is Nothing)
+
+    Dim 見つけたWs As Worksheet
+    Dim 見つけた列 As Long, 件数 As Long
+    Dim シート名 As String, 列名 As String
+    Dim 集めた As Object
     見つけた列 = 0: 件数 = 0
 
     Application.ScreenUpdating = False
@@ -259,74 +274,73 @@ Public Sub 銘柄取込_他BOOKから()
     Application.DisplayAlerts = False
     On Error GoTo L_ERR
 
-    Set wb = Workbooks.Open(Filename:=CStr(fn), ReadOnly:=True, UpdateLinks:=0)
+    If Not 既に開いていた Then
+        Set wb = Workbooks.Open(Filename:=パス, ReadOnly:=True, UpdateLinks:=0)
+    End If
 
-    ' 全シート・A～L列を見て、銘柄コードが一番多い列を自動で探す
+    '--- 全シートを見て、銘柄コードが一番多い列を自動で探す ---
     Dim ws As Worksheet, c As Long, n As Long
     For Each ws In wb.Worksheets
-        For c = 1 To 12
-            n = コード数(ws, c)
-            If n > 件数 Then
-                件数 = n: 見つけた列 = c: Set 見つけたWs = ws
-            End If
-        Next c
+        c = 0: n = 0
+        シート走査 ws, c, n
+        If n > 件数 Then
+            件数 = n: 見つけた列 = c: Set 見つけたWs = ws
+        End If
     Next ws
 
-    Application.ScreenUpdating = True
-    If 件数 < 3 Then
-        wb.Close SaveChanges:=False
-        Application.EnableEvents = True
-        Application.DisplayAlerts = True
+    If 件数 < 3 Or 見つけたWs Is Nothing Then
+        Application.ScreenUpdating = True
+        BOOK後始末 wb, 既に開いていた
+        Set wb = Nothing: Set 見つけたWs = Nothing
         MsgBox "銘柄コードらしい列が見つかりませんでした。" & vbCrLf & _
                "(4桁のコードが3件以上ある列を探しています)", vbExclamation, "銘柄取込"
         Exit Sub
     End If
 
-    If MsgBox("次の場所からコードを読み込みます。" & vbCrLf & vbCrLf & _
-              "BOOK  : " & wb.Name & vbCrLf & _
-              "シート: " & 見つけたWs.Name & vbCrLf & _
-              "列    : " & Split(見つけたWs.Cells(1, 見つけた列).Address(True, False), "$")(0) & "列" & vbCrLf & _
-              "件数  : " & 件数 & " 件" & vbCrLf & vbCrLf & _
-              "よろしいですか?", vbYesNo + vbQuestion, "銘柄取込") <> vbYes Then
-        wb.Close SaveChanges:=False
-        Application.EnableEvents = True
-        Application.DisplayAlerts = True
-        Exit Sub
-    End If
+    ' ★ BOOKを閉じる前に、必要な情報を全部こちらへ移す
+    シート名 = 見つけたWs.Name
+    列名 = 列文字(見つけた列)
+    Set 集めた = コード収集(見つけたWs, 見つけた列)
 
-    Application.ScreenUpdating = False
+    BOOK後始末 wb, 既に開いていた
+    Set wb = Nothing
+    Set 見つけたWs = Nothing
 
-    ' 読み込み(重複は自動で捨てる)
-    Dim mei As Worksheet: Set mei = ThisWorkbook.Worksheets(SH_MEI)
-    mei.Range("A2:C100000").ClearContents
-
-    Dim 既出 As Object: Set 既出 = CreateObject("Scripting.Dictionary")
-    Dim lastR As Long
-    lastR = 見つけたWs.UsedRange.Row + 見つけたWs.UsedRange.Rows.Count - 1
-    If lastR > 5000 Then lastR = 5000
-
-    Dim r As Long, w As Long: w = 2
-    Dim code As String
-    For r = 1 To lastR
-        code = Trim$(CStr(見つけたWs.Cells(r, 見つけた列).Text))
-        If コードか(code) Then
-            If Not 既出.Exists(code) Then
-                既出.Add code, 1
-                mei.Cells(w, 1).NumberFormat = "@"
-                mei.Cells(w, 1).Value = code
-                w = w + 1
-            End If
-        End If
-    Next r
-
-    wb.Close SaveChanges:=False
     Application.EnableEvents = True
     Application.DisplayAlerts = True
     Application.ScreenUpdating = True
+    On Error GoTo 0
 
-    ログ書く "情報", "銘柄取込 " & (w - 2) & "件 (" & 見つけたWs.Name & ")"
+    '--- ここから先は自分のBOOKだけ ---
+    If 集めた.Count = 0 Then
+        MsgBox "コードを1件も読み取れませんでした。", vbExclamation, "銘柄取込"
+        Exit Sub
+    End If
 
-    If MsgBox((w - 2) & " 銘柄を読み込みました。" & vbCrLf & vbCrLf & _
+    If MsgBox("次の場所からコードを読み込みました。" & vbCrLf & vbCrLf & _
+              "BOOK  : " & ファイル名 & vbCrLf & _
+              "シート: " & シート名 & vbCrLf & _
+              "列    : " & 列名 & "列" & vbCrLf & _
+              "件数  : " & 集めた.Count & " 件 (重複除き)" & vbCrLf & vbCrLf & _
+              "銘柄シートに書き込みますか?" & vbCrLf & _
+              "※今の銘柄リストは入れ替わります", _
+              vbYesNo + vbQuestion, "銘柄取込") <> vbYes Then Exit Sub
+
+    Dim mei As Worksheet: Set mei = ThisWorkbook.Worksheets(SH_MEI)
+    Application.ScreenUpdating = False
+    mei.Range("A2:C100000").ClearContents
+
+    Dim k As Variant, w As Long: w = 2
+    For Each k In 集めた.Keys
+        mei.Cells(w, 1).NumberFormat = "@"
+        mei.Cells(w, 1).Value = CStr(k)
+        w = w + 1
+    Next k
+    Application.ScreenUpdating = True
+
+    ログ書く "情報", "銘柄取込 " & (w - 2) & "件 (" & ファイル名 & " / " & シート名 & " / " & 列名 & "列)"
+
+    If MsgBox((w - 2) & " 銘柄を書き込みました。" & vbCrLf & vbCrLf & _
               "続けて「銘柄反映」を実行しますか?", _
               vbYesNo + vbQuestion, "銘柄取込") = vbYes Then
         銘柄反映
@@ -334,40 +348,111 @@ Public Sub 銘柄取込_他BOOKから()
     Exit Sub
 
 L_ERR:
+    Dim eN As Long, eD As String
+    eN = Err.Number: eD = Err.Description
     On Error Resume Next
-    If Not wb Is Nothing Then wb.Close SaveChanges:=False
+    BOOK後始末 wb, 既に開いていた
+    Set wb = Nothing
+    Set 見つけたWs = Nothing
     Application.EnableEvents = True
     Application.DisplayAlerts = True
     Application.ScreenUpdating = True
-    MsgBox "取込に失敗しました: " & Err.Description, vbExclamation, "銘柄取込"
+    ログ書く "エラー", "銘柄取込: " & eN & " " & eD
+    MsgBox "取込に失敗しました。" & vbCrLf & vbCrLf & _
+           "エラー番号: " & eN & vbCrLf & eD, vbExclamation, "銘柄取込"
 End Sub
 
 
 '------------------------------------------------------------------
-'  その列に銘柄コードが何件あるか数える
+'  開いたBOOKの後始末(元から開いていたBOOKは閉じない)
 '------------------------------------------------------------------
-Private Function コード数(ByVal ws As Worksheet, ByVal col As Long) As Long
-    コード数 = 0
+Private Sub BOOK後始末(ByRef wb As Workbook, ByVal 既に開いていた As Boolean)
     On Error Resume Next
-    Dim lastR As Long
+    If wb Is Nothing Then Exit Sub
+    If 既に開いていた Then Exit Sub
+    wb.Close SaveChanges:=False
+End Sub
+
+
+'------------------------------------------------------------------
+'  1シートを走査して、コードが一番多い列と件数を返す
+'------------------------------------------------------------------
+Private Sub シート走査(ByVal ws As Worksheet, ByRef 最良列 As Long, ByRef 最良件数 As Long)
+    最良列 = 0: 最良件数 = 0
+
+    On Error Resume Next
+    Dim lastR As Long: lastR = 0
     lastR = ws.UsedRange.Row + ws.UsedRange.Rows.Count - 1
-    If lastR < 1 Then Exit Function
+    If Err.Number <> 0 Then Err.Clear: Exit Sub
+    If lastR < 1 Then Exit Sub
     If lastR > 2000 Then lastR = 2000
 
     Dim v As Variant
-    v = ws.Range(ws.Cells(1, col), ws.Cells(lastR, col)).Value
-    If IsEmpty(v) Then Exit Function
+    v = ws.Range(ws.Cells(1, 1), ws.Cells(lastR, 12)).Value
+    If Err.Number <> 0 Then Err.Clear: Exit Sub
+    If Not IsArray(v) Then Exit Sub
+    On Error GoTo 0
 
-    Dim i As Long, n As Long: n = 0
+    Dim c As Long, r As Long, n As Long
+    For c = 1 To UBound(v, 2)
+        n = 0
+        For r = 1 To UBound(v, 1)
+            If コードか(v(r, c)) Then n = n + 1
+        Next r
+        If n > 最良件数 Then 最良件数 = n: 最良列 = c
+    Next c
+End Sub
+
+
+'------------------------------------------------------------------
+'  指定列からコードを集める(重複は捨てる)
+'------------------------------------------------------------------
+Private Function コード収集(ByVal ws As Worksheet, ByVal col As Long) As Object
+    Dim d As Object
+    Set d = CreateObject("Scripting.Dictionary")
+    Set コード収集 = d
+
+    On Error Resume Next
+    Dim lastR As Long: lastR = 0
+    lastR = ws.UsedRange.Row + ws.UsedRange.Rows.Count - 1
+    If lastR < 1 Then Exit Function
+    If lastR > 20000 Then lastR = 20000
+
+    Dim v As Variant
+    v = ws.Range(ws.Cells(1, col), ws.Cells(lastR, col)).Value
+    If Err.Number <> 0 Then Err.Clear: Exit Function
+    On Error GoTo 0
+
+    Dim r As Long, s As String
     If IsArray(v) Then
-        For i = 1 To UBound(v, 1)
-            If コードか(v(i, 1)) Then n = n + 1
-        Next i
+        For r = 1 To UBound(v, 1)
+            If コードか(v(r, 1)) Then
+                s = Trim$(CStr(v(r, 1)))
+                If Not d.Exists(s) Then d.Add s, 1
+            End If
+        Next r
     Else
-        If コードか(v) Then n = 1
+        If コードか(v) Then
+            s = Trim$(CStr(v))
+            If Not d.Exists(s) Then d.Add s, 1
+        End If
     End If
-    コード数 = n
 End Function
+
+
+'------------------------------------------------------------------
+'  列番号 → 列文字 (1→A)
+'------------------------------------------------------------------
+Private Function 列文字(ByVal col As Long) As String
+    Dim s As String, n As Long
+    n = col
+    Do While n > 0
+        s = Chr$(65 + ((n - 1) Mod 26)) & s
+        n = (n - 1) \ 26
+    Loop
+    列文字 = s
+End Function
+
 
 '------------------------------------------------------------------
 '  銘柄コードらしいか (7203 / 130A など4桁)
@@ -377,6 +462,7 @@ Private Function コードか(ByVal v As Variant) As Boolean
     On Error Resume Next
     If IsError(v) Then Exit Function
     If IsEmpty(v) Then Exit Function
+    If VarType(v) = vbDate Then Exit Function
 
     Dim s As String
     s = Trim$(CStr(v))

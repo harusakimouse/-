@@ -98,9 +98,11 @@ Public Sub 初期設定()
     ws.Range("G1").Value = "出来高"
     見出し ws.Range("A1:G1")
     ws.Columns("A").NumberFormat = "@"
-    ws.Columns("C:F").NumberFormat = "General"
-    ws.Columns("G").NumberFormat = "#,##0"
-    ws.Columns("A:G").ColumnWidth = 13
+    ws.Columns("C:F").NumberFormat = 価格書式
+    ws.Columns("G").NumberFormat = 出来高書式
+    ws.Columns("A").ColumnWidth = 9
+    ws.Columns("B").ColumnWidth = 24
+    ws.Columns("C:G").ColumnWidth = 12
     ws.Range("I1").ColumnWidth = 30
     ws.Range("I1").Value = "(監視していません)"
     ws.Range("I1").Font.Bold = True
@@ -260,9 +262,12 @@ Private Sub 記録見出し(ByVal ws As Worksheet)
     ws.Columns("A").NumberFormat = "yyyy/mm/dd"
     ws.Columns("D").NumberFormat = "@"
     If CStr(ws.Range("A2").Value) = "" Then ws.Columns("B:C").NumberFormat = "@"
-    ws.Columns("F:I").NumberFormat = "General"
-    ws.Columns("J").NumberFormat = "#,##0"
-    ws.Columns("A:J").ColumnWidth = 12
+    ws.Columns("F:I").NumberFormat = 価格書式
+    ws.Columns("J").NumberFormat = 出来高書式
+    ws.Columns("A:C").ColumnWidth = 11
+    ws.Columns("D").ColumnWidth = 9
+    ws.Columns("E").ColumnWidth = 24
+    ws.Columns("F:J").ColumnWidth = 12
     If Not ws.AutoFilterMode Then ws.Range("A1:J1").AutoFilter
 End Sub
 
@@ -1248,7 +1253,7 @@ Private Function 集積シート確保(ByVal nm As String) As Worksheet
         ws.Range("A1:B2").Font.Bold = True
         ws.Columns("A").NumberFormat = "@"
         ws.Columns("A").ColumnWidth = 9
-        ws.Columns("B").ColumnWidth = 20
+        ws.Columns("B").ColumnWidth = 24
     End If
     Set 集積シート確保 = ws
 End Function
@@ -1397,7 +1402,7 @@ Private Function 集積列(ByVal ws As Worksheet, ByVal d As Date, ByVal t As Date)
     End If
 
     ' ★列の書式を先に入れる (あとで入れると見出しを上書きしてしまう)
-    ws.Columns(nc).ColumnWidth = 10
+    ws.Columns(nc).ColumnWidth = 11
     ws.Columns(nc).NumberFormat = 値書式(ws.Name)
 
     ws.Cells(1, nc).Value = d
@@ -1413,11 +1418,15 @@ End Function
 '------------------------------------------------------------------
 '  コード → 行番号 の対応表
 '------------------------------------------------------------------
+' 値段: カンマ付き、0.5円や0.25円もそのまま出る、余計な点は出ない
+Private Const 価格書式 As String = "#,##0.0#"
+Private Const 出来高書式 As String = "#,##0"
+
 Private Function 値書式(ByVal nm As String) As String
     If nm = "出来高" Then
-        値書式 = "#,##0"
+        値書式 = 出来高書式
     Else
-        値書式 = "General"      ' "#,##0.##" だと 9,247. と余計な点が出る
+        値書式 = 価格書式
     End If
 End Function
 
@@ -1450,32 +1459,95 @@ Private Sub 見出し書式(ByVal nm As String, ByVal 値別 As Boolean)
     Dim 最終列 As Long, 最終行 As Long
     最終列 = ws.Cells(1, ws.Columns.Count).End(xlToLeft).Column
     最終行 = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
-    If 最終列 < 3 Then Exit Sub
+    If 最終列 < 3 Then 最終列 = 3
     If 最終行 < 4 Then 最終行 = 4
 
-    ' 1) データ部分の数値表示
+    '--- 列幅 ---
+    ws.Columns("A").ColumnWidth = 9
+    ws.Columns("B").ColumnWidth = 24
+    ws.Range(ws.Columns(3), ws.Columns(最終列)).ColumnWidth = 11
+
+    '--- データ部 ---
     Dim c As Long
+    With ws.Range(ws.Cells(4, 3), ws.Cells(最終行, 最終列))
+        .Interior.ColorIndex = xlNone
+        .HorizontalAlignment = xlRight
+        .Font.Bold = False
+        .Font.Color = RGB(0, 0, 0)
+    End With
+
     If 値別 Then
         ws.Range(ws.Cells(4, 3), ws.Cells(最終行, 最終列)).NumberFormat = 値書式(nm)
     Else
         For c = 3 To 最終列
             If ((c - 3) Mod 5) = 4 Then
-                ws.Range(ws.Cells(4, c), ws.Cells(最終行, c)).NumberFormat = "#,##0"
+                ws.Range(ws.Cells(4, c), ws.Cells(最終行, c)).NumberFormat = 出来高書式
             Else
-                ws.Range(ws.Cells(4, c), ws.Cells(最終行, c)).NumberFormat = "General"
+                ws.Range(ws.Cells(4, c), ws.Cells(最終行, c)).NumberFormat = 価格書式
             End If
         Next c
     End If
 
-    ' 2) 見出し行 (必ず最後に)
+    '--- コード/銘柄名 ---
+    ws.Columns("A").NumberFormat = "@"
+    With ws.Range(ws.Cells(4, 1), ws.Cells(最終行, 1))
+        .HorizontalAlignment = xlCenter
+        .Font.Bold = True
+        .Font.Color = RGB(150, 0, 0)
+    End With
+    With ws.Range(ws.Cells(4, 2), ws.Cells(最終行, 2))
+        .HorizontalAlignment = xlLeft
+        .Font.Bold = False
+        .Font.Color = RGB(0, 0, 128)
+    End With
+    With ws.Range(ws.Cells(4, 1), ws.Cells(最終行, 2))
+        .Interior.Color = RGB(248, 248, 248)
+        .Borders.LineStyle = xlContinuous
+        .Borders.Color = RGB(190, 190, 190)
+    End With
+
+    '--- 見出し(1～3行目) ---
+    With ws.Range(ws.Cells(1, 1), ws.Cells(3, 最終列))
+        .Interior.Color = RGB(221, 235, 247)
+        .Font.Bold = True
+        .Font.Color = RGB(0, 0, 0)
+        .HorizontalAlignment = xlCenter
+        .VerticalAlignment = xlCenter
+        .Borders.LineStyle = xlContinuous
+        .Borders.Color = RGB(140, 140, 140)
+    End With
+    ws.Range("A1").Value = "日付"
+    ws.Range("A2").Value = "時刻"
+    ws.Range("A3").Value = "コード"
+    ws.Range("B3").Value = "銘柄名"
+    ws.Range("A1:B2").Interior.Color = RGB(235, 235, 235)
+    ws.Range("A1:B2").HorizontalAlignment = xlLeft
+    ws.Rows(1).RowHeight = 18
+    ws.Rows(2).RowHeight = 18
+    ws.Rows(3).RowHeight = 20
+
     ws.Range(ws.Cells(1, 3), ws.Cells(1, 最終列)).NumberFormat = "yy/mm/dd"
     If 値別 Then
         ws.Range(ws.Cells(2, 3), ws.Cells(2, 最終列)).NumberFormat = "hh:mm"
     Else
         ws.Range(ws.Cells(2, 3), ws.Cells(2, 最終列)).NumberFormat = "@"
     End If
-    ws.Range(ws.Cells(1, 3), ws.Cells(2, 最終列)).Font.Bold = True
-    ws.Range(ws.Cells(1, 3), ws.Cells(2, 最終列)).HorizontalAlignment = xlCenter
+
+    '--- 一番左(最新)を目立たせる ---
+    Dim 幅 As Long
+    If 値別 Then 幅 = 1 Else 幅 = 5
+    If 2 + 幅 <= 最終列 Then
+        ws.Range(ws.Cells(4, 3), ws.Cells(最終行, 2 + 幅)).Interior.Color = RGB(255, 249, 219)
+        ws.Range(ws.Cells(1, 3), ws.Cells(3, 2 + 幅)).Interior.Color = RGB(255, 217, 102)
+        ws.Range(ws.Cells(1, 3), ws.Cells(最終行, 2 + 幅)).Borders(xlEdgeRight).Weight = xlMedium
+    End If
+
+    '--- 日ごとの区切り線 ---
+    If Not 値別 Then
+        For c = 3 To 最終列 Step 5
+            ws.Range(ws.Cells(1, c), ws.Cells(最終行, c)).Borders(xlEdgeLeft).Weight = xlMedium
+        Next c
+    End If
 End Sub
 
 
@@ -1949,7 +2021,7 @@ Private Sub 時刻シート見出し(ByVal ws As Worksheet, ByVal 区分 As String)
         ws.Range("A1:B2").Font.Bold = True
         ws.Columns("A").NumberFormat = "@"
         ws.Columns("A").ColumnWidth = 9
-        ws.Columns("B").ColumnWidth = 20
+        ws.Columns("B").ColumnWidth = 24
     End If
 End Sub
 
@@ -2052,11 +2124,11 @@ Private Function 時刻シート列(ByVal ws As Worksheet, ByVal d As Date) As Long
     Dim j As Long
     For j = 0 To 4
         ' ★列の書式を先に入れる
-        ws.Columns(nc + j).ColumnWidth = 10
+        ws.Columns(nc + j).ColumnWidth = 11
         If j = 4 Then
-            ws.Columns(nc + j).NumberFormat = "#,##0"      ' 出来高
+            ws.Columns(nc + j).NumberFormat = 出来高書式   ' 出来高
         Else
-            ws.Columns(nc + j).NumberFormat = "General"
+            ws.Columns(nc + j).NumberFormat = 価格書式
         End If
         ws.Cells(1, nc + j).Value = d
         ws.Cells(1, nc + j).NumberFormat = "yy/mm/dd"

@@ -698,7 +698,14 @@ Private Sub 時刻チェック()
                 予定 = Date + TimeValue(実文) + TimeSerial(0, 0, 遅延)
                 If Now >= 予定 Then
                     If Now <= 予定 + TimeSerial(0, 猶予分, 0) Then
-                        If 取得実行(key) Then 済にする key
+                        Dim 遅れ As Long
+                        遅れ = CLng((Now - 予定) * 86400#)
+                        If 取得実行(key) Then
+                            済にする key
+                            If 遅れ > 60 Then
+                                ログ書く "警告", key & " は予定より " & 遅れ & "秒 遅れて取れました(他BOOKと重なった可能性)"
+                            End If
+                        End If
                     Else
                         ログ書く "警告", key & " は " & 猶予分 & "分過ぎても取れませんでした(あきらめ)"
                         済にする key
@@ -732,8 +739,14 @@ Private Function 取得実行(ByVal 区分 As String) As Boolean
     Set ban = ThisWorkbook.Worksheets(SH_BAN)
     Set rec = ThisWorkbook.Worksheets(SH_REC)
 
-    ban.Calculate                     ' RSSを最新にする
-    DoEvents
+    ' ★他BOOKが「計算を手動」にしていても正しい値を取る
+    Dim 旧計算 As Long
+    旧計算 = Application.Calculation
+    If 旧計算 <> xlCalculationAutomatic Then
+        Application.Calculation = xlCalculationAutomatic
+        ログ書く "情報", 区分 & " 他BOOKが計算を止めていたので一時的に戻しました"
+    End If
+    ban.Calculate
 
     Dim 最終 As Long
     最終 = ban.Cells(ban.Rows.Count, 1).End(xlUp).Row
@@ -764,6 +777,8 @@ Private Function 取得実行(ByVal 区分 As String) As Boolean
         If buf(i, 9) > 0 Then 有効 = 有効 + 1
     Next r
 
+    If 旧計算 <> xlCalculationAutomatic Then Application.Calculation = 旧計算
+
     ' 半分も取れていなければ失敗。30秒後にまた挑戦する
     If 有効 * 2 < n Then
         ログ書く "再試行", 区分 & " 有効 " & 有効 & "/" & n & " → 30秒後に再挑戦"
@@ -786,6 +801,8 @@ Private Function 取得実行(ByVal 区分 As String) As Boolean
     取得実行 = True
     Exit Function
 L_ERR:
+    On Error Resume Next
+    If 旧計算 <> 0 And 旧計算 <> xlCalculationAutomatic Then Application.Calculation = 旧計算
     ログ書く "エラー", "取得実行(" & 区分 & "): " & Err.Description
     取得実行 = False
 End Function

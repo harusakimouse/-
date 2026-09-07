@@ -54,6 +54,10 @@ Private g出来高時刻 As Date
 ' True のときだけ右端に足す(作り直しで使う。ふだんは左に挿入)
 Private g右端追加 As Boolean
 
+' 値段: カンマ付き、0.5円や0.25円もそのまま出る、余計な点は出ない
+Private Const 価格書式 As String = "#,##0.0#"
+Private Const 出来高書式 As String = "#,##0"
+
 
 '==================================================================
 '  1. 初期設定  ← 最初に1回だけ実行してください
@@ -935,12 +939,12 @@ Public Sub CSV復元()
     Dim buf() As Variant
     ReDim buf(1 To 200000, 1 To 10)
     Dim n As Long: n = 0
-    Dim line As String, p As Variant, j As Long
+    Dim 行文 As String, p As Variant, j As Long
 
     Do While Not EOF(ff)
-        Line Input #ff, line
-        If line <> "" Then
-            p = Split(line, ",")
+        Line Input #ff, 行文
+        If 行文 <> "" Then
+            p = Split(行文, ",")
             If UBound(p) >= 9 Then
                 If IsDate(p(0)) Then
                     kk = Format(CDate(p(0)), "yyyy/mm/dd") & "|" & Trim$(CStr(p(1))) & "|" & Trim$(CStr(p(3)))
@@ -1650,10 +1654,6 @@ End Function
 '------------------------------------------------------------------
 '  コード → 行番号 の対応表
 '------------------------------------------------------------------
-' 値段: カンマ付き、0.5円や0.25円もそのまま出る、余計な点は出ない
-Private Const 価格書式 As String = "#,##0.0#"
-Private Const 出来高書式 As String = "#,##0"
-
 Private Function 値書式(ByVal nm As String) As String
     If nm = "出来高" Then
         値書式 = 出来高書式

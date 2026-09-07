@@ -95,7 +95,8 @@ Public Sub 初期設定()
     ws.Range("G1").Value = "出来高"
     見出し ws.Range("A1:G1")
     ws.Columns("A").NumberFormat = "@"
-    ws.Columns("C:G").NumberFormat = "#,##0.##"
+    ws.Columns("C:F").NumberFormat = "General"
+    ws.Columns("G").NumberFormat = "#,##0"
     ws.Columns("A:G").ColumnWidth = 13
     ws.Range("I1").ColumnWidth = 30
     ws.Range("I1").Value = "(監視していません)"
@@ -256,7 +257,8 @@ Private Sub 記録見出し(ByVal ws As Worksheet)
     ws.Columns("A").NumberFormat = "yyyy/mm/dd"
     ws.Columns("D").NumberFormat = "@"
     If CStr(ws.Range("A2").Value) = "" Then ws.Columns("B:C").NumberFormat = "@"
-    ws.Columns("F:J").NumberFormat = "#,##0.##"
+    ws.Columns("F:I").NumberFormat = "General"
+    ws.Columns("J").NumberFormat = "#,##0"
     ws.Columns("A:J").ColumnWidth = 12
     If Not ws.AutoFilterMode Then ws.Range("A1:J1").AutoFilter
 End Sub

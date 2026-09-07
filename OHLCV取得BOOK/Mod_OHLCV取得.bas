@@ -10,6 +10,8 @@ Option Explicit
 ' 【取得時刻】設定シート A列 で自由に変更できます
 '   9:00 9:10 9:20 9:45 10:00 10:15 10:30
 '   11:30 12:30 13:30 14:30 15:00 15:20 15:30
+'   ※15:30 は大引けが確定する 15:31 に取りに行きます
+'     (設定シートB列「実取得時刻」で調整できます)
 '
 ' 【PCトラブル対策】
 '   1回取るたびに   (1)記録シートに追記
@@ -62,6 +64,7 @@ Public Sub 初期設定()
     Set ws = シート確保(SH_CFG)
     If CStr(ws.Range("A1").Value) = "" Then 設定初期値 ws
     設定補完 ws
+    実取得時刻補完 ws
     ws.Columns("H").NumberFormat = "@"
 
     '--- 銘柄シート ---
@@ -160,6 +163,37 @@ Private Sub 設定初期値(ByVal ws As Worksheet)
     見出し ws.Range("G1")
     ws.Columns("G").ColumnWidth = 14
     ws.Columns("H").ColumnWidth = 14
+End Sub
+
+
+Private Sub 実取得時刻補完(ByVal ws As Worksheet)
+    ' B列 = 実際に取りに行く時刻。空ならA列と同じ。
+    ' 15:30 は大引け確定を取りたいので 15:31 を既定にする。
+    If CStr(ws.Range("B1").Value) = "" Then
+        ws.Range("B1").Value = "実取得時刻"
+        見出し ws.Range("B1")
+        ws.Columns("B").ColumnWidth = 12
+        ws.Range("B2:B60").NumberFormat = "hh:mm"
+    End If
+
+    Dim 最終 As Long
+    最終 = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+    Dim r As Long
+    For r = 2 To 最終
+        If IsDate(ws.Cells(r, 1).Value) Then
+            If Format(CDate(ws.Cells(r, 1).Value), "hh:mm") = "15:30" Then
+                If Not IsDate(ws.Cells(r, 2).Value) Then
+                    ws.Cells(r, 2).Value = TimeSerial(15, 31, 0)
+                End If
+            End If
+        End If
+    Next r
+
+    ws.Range("A1").Value = "取得時刻(表示)"
+    ws.Range("F1").Value = "※B列=実際に取りに行く時刻。空ならA列と同じ"
+    ws.Range("F2").Value = "※15:30は大引け確定を取るため15:31"
+    ws.Range("F1:F2").Font.Color = RGB(0, 0, 192)
+    ws.Columns("F").ColumnWidth = 3
 End Sub
 
 
@@ -630,13 +664,21 @@ Private Sub 時刻チェック()
     最終 = cfg.Cells(cfg.Rows.Count, 1).End(xlUp).Row
     If 最終 < 2 Then Exit Sub
 
-    Dim r As Long, t As Date, key As String, 予定 As Date
+    Dim r As Long, t As Date, 実 As Date, key As String, 予定 As Date
     For r = 2 To 最終
         If IsDate(cfg.Cells(r, 1).Value) Then
             t = CDate(cfg.Cells(r, 1).Value)
             key = Format(t, "hh:mm")
+
+            ' B列に実取得時刻があればそちらを使う(15:30 → 15:31 など)
+            If IsDate(cfg.Cells(r, 2).Value) Then
+                実 = CDate(cfg.Cells(r, 2).Value)
+            Else
+                実 = t
+            End If
+
             If Not 済か(key) Then
-                予定 = Date + TimeValue(key) + TimeSerial(0, 0, 遅延)
+                予定 = Date + TimeSerial(Hour(実), Minute(実), 0) + TimeSerial(0, 0, 遅延)
                 If Now >= 予定 Then
                     If Now <= 予定 + TimeSerial(0, 猶予分, 0) Then
                         If 取得実行(key) Then 済にする key
@@ -1079,7 +1121,7 @@ End Function
 
 Private Function 監視時間帯() As Boolean
     Dim t As Date: t = TimeValue(Format(Now, "hh:nn:ss"))
-    監視時間帯 = (t >= TimeSerial(9, 0, 0) And t <= TimeSerial(15, 35, 0))
+    監視時間帯 = (t >= TimeSerial(9, 0, 0) And t <= TimeSerial(15, 40, 0))
     If Weekday(Date, vbMonday) > 5 Then 監視時間帯 = False
 End Function
 

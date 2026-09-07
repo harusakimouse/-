@@ -10,7 +10,7 @@ Option Explicit
 ' 【取得時刻】設定シート A列 で自由に変更できます
 '   9:00 9:10 9:20 9:45 10:00 10:15 10:30
 '   11:30 12:30 13:30 14:30 15:00 15:20 15:30
-'   ※15:30 は大引けが確定する 15:31 に取りに行きます
+'   ※11:30 は前引け確定後の 11:31、15:30 は大引け確定後の 15:31 に取ります
 '     (設定シートB列「実取得時刻」で調整できます)
 '
 ' 【PCトラブル対策】
@@ -178,12 +178,14 @@ Private Sub 実取得時刻補完(ByVal ws As Worksheet)
 
     Dim 最終 As Long
     最終 = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
-    Dim r As Long
+    Dim r As Long, hm As String
     For r = 2 To 最終
         If IsDate(ws.Cells(r, 1).Value) Then
-            If Format(CDate(ws.Cells(r, 1).Value), "hh:mm") = "15:30" Then
+            hm = Format(CDate(ws.Cells(r, 1).Value), "hh:mm")
+            If hm = "11:30" Or hm = "15:30" Then
                 If Not IsDate(ws.Cells(r, 2).Value) Then
-                    ws.Cells(r, 2).Value = TimeSerial(15, 31, 0)
+                    ' 前引け・大引けは確定してから取る(+1分)
+                    ws.Cells(r, 2).Value = TimeSerial(CLng(Left$(hm, 2)), 31, 0)
                 End If
             End If
         End If
@@ -191,7 +193,7 @@ Private Sub 実取得時刻補完(ByVal ws As Worksheet)
 
     ws.Range("A1").Value = "取得時刻(表示)"
     ws.Range("F1").Value = "※B列=実際に取りに行く時刻。空ならA列と同じ"
-    ws.Range("F2").Value = "※15:30は大引け確定を取るため15:31"
+    ws.Range("F2").Value = "※11:30は11:31 / 15:30は15:31(引け確定後に取る)"
     ws.Range("F1:F2").Font.Color = RGB(0, 0, 192)
     ws.Columns("F").ColumnWidth = 3
 End Sub

@@ -18,7 +18,7 @@ Option Explicit
 '   CSVは1行ずつ書き込むので、途中で落ちてもそこまでは必ず残ります。
 '
 ' 【RSS切断】
-'   30秒ごとに監視。切れたらブザーを10分間鳴らします。
+'   30秒ごとに監視。切れたらブザーを30秒おきに10分間鳴らします。
 '   「ブザー停止」ボタンでいつでも止まります。
 '
 ' 【他BOOKとの競合】
@@ -61,6 +61,7 @@ Public Sub 初期設定()
     '--- 設定シート ---
     Set ws = シート確保(SH_CFG)
     If CStr(ws.Range("A1").Value) = "" Then 設定初期値 ws
+    設定補完 ws
     ws.Columns("H").NumberFormat = "@"
 
     '--- 銘柄シート ---
@@ -135,13 +136,6 @@ Private Sub 設定初期値(ByVal ws As Worksheet)
     ws.Range("A2:A40").NumberFormat = "hh:mm"
     ws.Columns("A").ColumnWidth = 12
 
-    ws.Range("C1").Value = "CSV保存フォルダ": ws.Range("D1").Value = ThisWorkbook.Path
-    ws.Range("C2").Value = "ブザー使用":       ws.Range("D2").Value = "○"
-    ws.Range("C3").Value = "ブザー継続分":     ws.Range("D3").Value = 10
-    ws.Range("C4").Value = "取得遅延秒":       ws.Range("D4").Value = 5
-    ws.Range("C5").Value = "自動保存":         ws.Range("D5").Value = "○"
-    ws.Range("C6").Value = "起動時に自動監視": ws.Range("D6").Value = "○"
-    見出し ws.Range("C1:C6")
     ws.Columns("C").ColumnWidth = 20
     ws.Columns("D").ColumnWidth = 46
 
@@ -150,6 +144,33 @@ Private Sub 設定初期値(ByVal ws As Worksheet)
     見出し ws.Range("G1")
     ws.Columns("G").ColumnWidth = 14
     ws.Columns("H").ColumnWidth = 14
+End Sub
+
+
+Private Sub 設定補完(ByVal ws As Worksheet)
+    設定1つ ws, "CSV保存フォルダ", ThisWorkbook.Path
+    設定1つ ws, "ブザー使用", "○"
+    設定1つ ws, "ブザー継続分", 10
+    設定1つ ws, "ブザー間隔秒", 30
+    設定1つ ws, "取得遅延秒", 5
+    設定1つ ws, "自動保存", "○"
+    設定1つ ws, "起動時に自動監視", "○"
+    ws.Columns("D").ColumnWidth = 46
+End Sub
+
+Private Sub 設定1つ(ByVal ws As Worksheet, ByVal 名前 As String, ByVal 既定 As Variant)
+    Dim r As Long
+    For r = 1 To 30
+        If CStr(ws.Cells(r, 3).Value) = 名前 Then Exit Sub
+    Next r
+    For r = 1 To 30
+        If CStr(ws.Cells(r, 3).Value) = "" Then
+            ws.Cells(r, 3).Value = 名前
+            ws.Cells(r, 4).Value = 既定
+            見出し ws.Cells(r, 3)
+            Exit Sub
+        End If
+    Next r
 End Sub
 
 
@@ -225,68 +246,151 @@ End Sub
 '------------------------------------------------------------------
 Public Sub 銘柄取込_他BOOKから()
     Dim fn As Variant
-    fn = Application.GetOpenFilename("Excelブック,*.xls*", , "銘柄コードのあるBOOKを選んでください")
+    fn = Application.GetOpenFilename("Excelブック,*.xls*", , _
+         "銘柄コードのあるBOOKを選んでください(ボリンジャー送信BOOKなど)")
     If VarType(fn) = vbBoolean Then Exit Sub
 
-    Dim シート名 As String, 列 As String, 開始 As Long, 終了 As Long
-    シート名 = InputBox("コードが入っているシート名", "銘柄取込", "終値")
-    If シート名 = "" Then Exit Sub
-    列 = InputBox("コードの列", "銘柄取込", "A")
-    If 列 = "" Then Exit Sub
-    開始 = Val(InputBox("開始行", "銘柄取込", "6"))
-    終了 = Val(InputBox("終了行", "銘柄取込", "505"))
-    If 開始 < 1 Or 終了 < 開始 Then Exit Sub
+    Dim wb As Workbook
+    Dim 見つけたWs As Worksheet, 見つけた列 As Long, 件数 As Long
+    見つけた列 = 0: 件数 = 0
 
-    Dim wb As Workbook, ws As Worksheet
     Application.ScreenUpdating = False
     Application.EnableEvents = False
+    Application.DisplayAlerts = False
     On Error GoTo L_ERR
 
     Set wb = Workbooks.Open(Filename:=CStr(fn), ReadOnly:=True, UpdateLinks:=0)
-    Set ws = Nothing
-    On Error Resume Next
-    Set ws = wb.Worksheets(シート名)
-    On Error GoTo L_ERR
-    If ws Is Nothing Then
+
+    ' 全シート・A～L列を見て、銘柄コードが一番多い列を自動で探す
+    Dim ws As Worksheet, c As Long, n As Long
+    For Each ws In wb.Worksheets
+        For c = 1 To 12
+            n = コード数(ws, c)
+            If n > 件数 Then
+                件数 = n: 見つけた列 = c: Set 見つけたWs = ws
+            End If
+        Next c
+    Next ws
+
+    Application.ScreenUpdating = True
+    If 件数 < 3 Then
         wb.Close SaveChanges:=False
-        GoTo L_ERR2
+        Application.EnableEvents = True
+        Application.DisplayAlerts = True
+        MsgBox "銘柄コードらしい列が見つかりませんでした。" & vbCrLf & _
+               "(4桁のコードが3件以上ある列を探しています)", vbExclamation, "銘柄取込"
+        Exit Sub
     End If
 
+    If MsgBox("次の場所からコードを読み込みます。" & vbCrLf & vbCrLf & _
+              "BOOK  : " & wb.Name & vbCrLf & _
+              "シート: " & 見つけたWs.Name & vbCrLf & _
+              "列    : " & Split(見つけたWs.Cells(1, 見つけた列).Address(True, False), "$")(0) & "列" & vbCrLf & _
+              "件数  : " & 件数 & " 件" & vbCrLf & vbCrLf & _
+              "よろしいですか?", vbYesNo + vbQuestion, "銘柄取込") <> vbYes Then
+        wb.Close SaveChanges:=False
+        Application.EnableEvents = True
+        Application.DisplayAlerts = True
+        Exit Sub
+    End If
+
+    Application.ScreenUpdating = False
+
+    ' 読み込み(重複は自動で捨てる)
     Dim mei As Worksheet: Set mei = ThisWorkbook.Worksheets(SH_MEI)
     mei.Range("A2:C100000").ClearContents
 
+    Dim 既出 As Object: Set 既出 = CreateObject("Scripting.Dictionary")
+    Dim lastR As Long
+    lastR = 見つけたWs.UsedRange.Row + 見つけたWs.UsedRange.Rows.Count - 1
+    If lastR > 5000 Then lastR = 5000
+
     Dim r As Long, w As Long: w = 2
     Dim code As String
-    For r = 開始 To 終了
-        code = Trim$(CStr(ws.Cells(r, 列).Value))
-        If code <> "" And code <> "0" Then
-            mei.Cells(w, 1).NumberFormat = "@"
-            mei.Cells(w, 1).Value = code
-            w = w + 1
+    For r = 1 To lastR
+        code = Trim$(CStr(見つけたWs.Cells(r, 見つけた列).Text))
+        If コードか(code) Then
+            If Not 既出.Exists(code) Then
+                既出.Add code, 1
+                mei.Cells(w, 1).NumberFormat = "@"
+                mei.Cells(w, 1).Value = code
+                w = w + 1
+            End If
         End If
     Next r
 
     wb.Close SaveChanges:=False
     Application.EnableEvents = True
+    Application.DisplayAlerts = True
     Application.ScreenUpdating = True
 
-    ログ書く "情報", "銘柄取込 " & (w - 2) & "件"
-    MsgBox (w - 2) & " 銘柄を読み込みました。" & vbCrLf & _
-           "続けて「銘柄反映」を押してください。", vbInformation, "銘柄取込"
+    ログ書く "情報", "銘柄取込 " & (w - 2) & "件 (" & 見つけたWs.Name & ")"
+
+    If MsgBox((w - 2) & " 銘柄を読み込みました。" & vbCrLf & vbCrLf & _
+              "続けて「銘柄反映」を実行しますか?", _
+              vbYesNo + vbQuestion, "銘柄取込") = vbYes Then
+        銘柄反映
+    End If
     Exit Sub
 
-L_ERR2:
-    Application.EnableEvents = True
-    Application.ScreenUpdating = True
-    MsgBox "シート「" & シート名 & "」が見つかりません。", vbExclamation, "銘柄取込"
-    Exit Sub
 L_ERR:
     On Error Resume Next
     If Not wb Is Nothing Then wb.Close SaveChanges:=False
     Application.EnableEvents = True
+    Application.DisplayAlerts = True
     Application.ScreenUpdating = True
     MsgBox "取込に失敗しました: " & Err.Description, vbExclamation, "銘柄取込"
 End Sub
+
+
+'------------------------------------------------------------------
+'  その列に銘柄コードが何件あるか数える
+'------------------------------------------------------------------
+Private Function コード数(ByVal ws As Worksheet, ByVal col As Long) As Long
+    コード数 = 0
+    On Error Resume Next
+    Dim lastR As Long
+    lastR = ws.UsedRange.Row + ws.UsedRange.Rows.Count - 1
+    If lastR < 1 Then Exit Function
+    If lastR > 2000 Then lastR = 2000
+
+    Dim v As Variant
+    v = ws.Range(ws.Cells(1, col), ws.Cells(lastR, col)).Value
+    If IsEmpty(v) Then Exit Function
+
+    Dim i As Long, n As Long: n = 0
+    If IsArray(v) Then
+        For i = 1 To UBound(v, 1)
+            If コードか(v(i, 1)) Then n = n + 1
+        Next i
+    Else
+        If コードか(v) Then n = 1
+    End If
+    コード数 = n
+End Function
+
+'------------------------------------------------------------------
+'  銘柄コードらしいか (7203 / 130A など4桁)
+'------------------------------------------------------------------
+Private Function コードか(ByVal v As Variant) As Boolean
+    コードか = False
+    On Error Resume Next
+    If IsError(v) Then Exit Function
+    If IsEmpty(v) Then Exit Function
+
+    Dim s As String
+    s = Trim$(CStr(v))
+    If Len(s) <> 4 Then Exit Function
+    If Left$(s, 1) = "0" Then Exit Function
+
+    Dim i As Long, ch As String
+    For i = 1 To 3
+        ch = Mid$(s, i, 1)
+        If ch < "0" Or ch > "9" Then Exit Function
+    Next i
+    ch = UCase$(Mid$(s, 4, 1))
+    If (ch >= "0" And ch <= "9") Or (ch >= "A" And ch <= "Z") Then コードか = True
+End Function
 
 
 '==================================================================
@@ -640,13 +744,15 @@ Public Sub ブザー鳴動()
     End If
 
     Beep
-    待つ 0.25
+    待つ 0.3
     Beep
-    待つ 0.25
+    待つ 0.3
     Beep
 
+    Dim 間隔 As Long
+    間隔 = 数値設定("ブザー間隔秒", 30)
     On Error Resume Next
-    g次ブザー = Now + TimeSerial(0, 0, 3)
+    g次ブザー = Now + TimeSerial(0, 0, 間隔)
     Application.OnTime g次ブザー, "'" & ThisWorkbook.Name & "'!ブザー鳴動"
 End Sub
 

@@ -1,100 +1,111 @@
-Attribute VB_Name = "Mod_RSS起動"
+Attribute VB_Name = "Mod_RSS_MS2"
 Option Explicit
 
 '==================================================================
 ' MarketSpeed2 RSS 自動接続モジュール
-'   ・RSSアドイン(xll)をExcelに読み込む
-'   ・MarketSpeed2 が起動していなければ起動する
-'   ・RSSが返事をするまで待ってから、ブックを開いて再計算する
-'  ボタンには「一発起動」を登録してください
+'   MS2 の起動・ログインは人がやる（パスキーが必要なため）
+'   このブックは「RSSがつながったのを見つけて自動で再計算する」係
 '==================================================================
 
-' Excelが64bitなら64bit版、32bitなら32bit版を使う
 #If Win64 Then
     Private Const XLL_NAME As String = "MarketSpeed2_RSS_64bit.xll"
 #Else
     Private Const XLL_NAME As String = "MarketSpeed2_RSS_32bit.xll"
 #End If
 
-Private Const WAIT_SEC As Long = 60      '待つ秒数の上限
-Private Const TEST_CODE As String = "7203.T"   '接続確認用の銘柄(トヨタ)
+Private Const CHECK_SEC  As Long = 10    '何秒ごとに見に行くか
+Private Const MAX_TRY    As Long = 90    '10秒×90回＝約15分であきらめる
+Private Const TEST_CODE  As String = "7203.T"
 
+Private g_NextTime As Date
+Private g_Tries    As Long
 
 '------------------------------------------------------------------
-' ★ボタン用：RSSを準備してから、起動リストのブックを開く
+' ブックを開いたときに自動で呼ばれる（ThisWorkbookから）
 '------------------------------------------------------------------
-Public Sub 一発起動()
-    If Not RSS準備() Then Exit Sub
-    On Error Resume Next
-    Application.Run "Mod_Launcher.起動"      '既存の起動マクロ
-    On Error GoTo 0
-    Application.CalculateFullRebuild          'RSS式を貼り直して接続
+Public Sub 自動RSS準備()
+    g_Tries = 0
+    RSSアドイン読込
+    RSS再チェック
 End Sub
 
-
 '------------------------------------------------------------------
-' ★RSSだけ準備する（成功=True）
+' RSSがつながるまで10秒ごとに見に行く（つながったら再計算して終了）
 '------------------------------------------------------------------
-Public Function RSS準備() As Boolean
-    Dim xllPath As String
-    Dim t As Double
-
-    RSS準備 = False
-
-    '--- ① アドイン(xll)の場所を探す ---
-    xllPath = XLLパスを探す()
-    If xllPath = "" Then
-        MsgBox "RSSアドインが見つかりません。" & vbCrLf & vbCrLf & _
-               "探した場所：" & vbCrLf & _
-               Environ$("LOCALAPPDATA") & "\MarketSpeed2\Bin\rss\" & vbCrLf & _
-               "ファイル名：" & XLL_NAME, vbExclamation, "RSS準備"
-        Exit Function
+Public Sub RSS再チェック()
+    If RSS応答あり() Then
+        g_NextTime = 0
+        Application.CalculateFullRebuild
+        Exit Sub
     End If
 
-    '--- ② アドインをExcelに読み込む（読み込み済みでも害なし） ---
+    g_Tries = g_Tries + 1
+    If g_Tries > MAX_TRY Then
+        g_NextTime = 0
+        Exit Sub
+    End If
+
+    g_NextTime = Now + TimeSerial(0, 0, CHECK_SEC)
     On Error Resume Next
-    Application.RegisterXLL xllPath
+    Application.OnTime g_NextTime, "'" & ThisWorkbook.Name & "'!RSS再チェック"
     On Error GoTo 0
+End Sub
 
-    '--- ③ MarketSpeed2 が動いていなければ起動する ---
-    If Not MS2が起動中() Then
-        If Not MS2を起動する() Then
-            MsgBox "MarketSpeed2 を自動起動できませんでした。" & vbCrLf & _
-                   "手でMarketSpeed2を起動してログインしてから、もう一度押してください。", _
-                   vbExclamation, "RSS準備"
-            Exit Function
+'------------------------------------------------------------------
+' 監視をやめる（ブックを閉じるときに呼ぶ）
+'------------------------------------------------------------------
+Public Sub 監視停止()
+    On Error Resume Next
+    If g_NextTime > 0 Then
+        Application.OnTime g_NextTime, "'" & ThisWorkbook.Name & "'!RSS再チェック", , False
+    End If
+    g_NextTime = 0
+    On Error GoTo 0
+End Sub
+
+'------------------------------------------------------------------
+' ★ボタン用：RSSを確かめてから、起動リストのブックを開く
+'------------------------------------------------------------------
+Public Sub 一発起動()
+    RSSアドイン読込
+
+    If Not RSS応答あり() Then
+        MsgBox "MarketSpeed2 を起動してログインしてください。" & vbCrLf & _
+               "ログインが終わったら [OK] を押します。", vbInformation, "RSS"
+        If Not RSS接続待ち(60) Then
+            MsgBox "RSSが応答しません。MarketSpeed2 のログインを確認してください。", _
+                   vbExclamation, "RSS"
+            Exit Sub
         End If
-        '起動直後はログイン画面が出るので、ログインを待つ
-        t = Timer
-        Do While Not MS2が起動中()
-            DoEvents
-            If Timer - t > 30 Then Exit Do
-        Loop
     End If
 
-    '--- ④ RSSが値を返すまで待つ ---
-    If RSS接続待ち(WAIT_SEC) Then
-        RSS準備 = True
-        Exit Function
-    End If
+    On Error Resume Next
+    Application.Run "Mod_Launcher.起動"
+    On Error GoTo 0
+    Application.CalculateFullRebuild
+End Sub
 
-    'ログインしていない可能性が高い
-    MsgBox "MarketSpeed2 にログインしてください。" & vbCrLf & _
-           "ログインが終わったら [OK] を押します。", vbInformation, "RSS準備"
-
-    If RSS接続待ち(WAIT_SEC) Then
-        RSS準備 = True
+'------------------------------------------------------------------
+' ★今すぐつなぎ直す（手動用・いつ押してもよい）
+'------------------------------------------------------------------
+Public Sub RSS今すぐ再接続()
+    RSSアドイン読込
+    If RSS応答あり() Then
+        Application.CalculateFullRebuild
+        MsgBox "RSSにつながりました。", vbInformation, "RSS"
     Else
-        MsgBox "RSSが応答しません。MarketSpeed2 のログイン状態を確認してください。", _
-               vbExclamation, "RSS準備"
+        g_Tries = 0
+        RSS再チェック
+        MsgBox "RSSがまだ応答しません。" & vbCrLf & _
+               "MarketSpeed2 にログインすれば自動でつながります（10秒ごとに確認中）。", _
+               vbExclamation, "RSS"
     End If
-End Function
-
+End Sub
 
 '------------------------------------------------------------------
-' xll のフルパスを返す（無ければ空文字）
+' RSSアドイン(xll)を読み込む（既に有効なら何も起きない）
 '------------------------------------------------------------------
-Private Function XLLパスを探す() As String
+Private Sub RSSアドイン読込()
     Dim cand As Variant, p As Variant
 
     cand = Array(Environ$("LOCALAPPDATA") & "\MarketSpeed2\Bin\rss\" & XLL_NAME, _
@@ -103,57 +114,16 @@ Private Function XLLパスを探す() As String
 
     For Each p In cand
         If Dir$(CStr(p)) <> "" Then
-            XLLパスを探す = CStr(p)
-            Exit Function
-        End If
-    Next p
-    XLLパスを探す = ""
-End Function
-
-
-'------------------------------------------------------------------
-' MarketSpeed2 が動いているか
-'------------------------------------------------------------------
-Private Function MS2が起動中() As Boolean
-    Dim svc As Object, col As Object
-
-    MS2が起動中 = False
-    On Error Resume Next
-    Set svc = GetObject("winmgmts:\\.\root\cimv2")
-    If svc Is Nothing Then Exit Function
-    Set col = svc.ExecQuery("SELECT ProcessId FROM Win32_Process WHERE Name='MarketSpeed2.exe'")
-    If Not col Is Nothing Then MS2が起動中 = (col.Count > 0)
-    On Error GoTo 0
-End Function
-
-
-'------------------------------------------------------------------
-' MarketSpeed2 を起動する（成功=True）
-'------------------------------------------------------------------
-Private Function MS2を起動する() As Boolean
-    Dim cand As Variant, p As Variant
-
-    cand = Array(Environ$("LOCALAPPDATA") & "\MarketSpeed2\MarketSpeed2.exe", _
-                 Environ$("LOCALAPPDATA") & "\MarketSpeed2\Bin\MarketSpeed2.exe", _
-                 "C:\Program Files (x86)\MarketSpeed2\MarketSpeed2.exe", _
-                 "C:\Program Files\MarketSpeed2\MarketSpeed2.exe")
-
-    MS2を起動する = False
-    For Each p In cand
-        If Dir$(CStr(p)) <> "" Then
             On Error Resume Next
-            Shell """" & CStr(p) & """", vbNormalFocus
-            If Err.Number = 0 Then MS2を起動する = True
-            Err.Clear
+            Application.RegisterXLL CStr(p)
             On Error GoTo 0
-            Exit Function
+            Exit Sub
         End If
     Next p
-End Function
-
+End Sub
 
 '------------------------------------------------------------------
-' RSSが値を返すまで待つ（返した=True）
+' RSSが値を返すまで待つ
 '------------------------------------------------------------------
 Private Function RSS接続待ち(ByVal sec As Long) As Boolean
     Dim t As Double
@@ -169,7 +139,6 @@ Private Function RSS接続待ち(ByVal sec As Long) As Boolean
     Loop While Timer - t < sec
 End Function
 
-
 '------------------------------------------------------------------
 ' RSSが使える状態か（1回だけ試す）
 '------------------------------------------------------------------
@@ -180,9 +149,7 @@ Private Function RSS応答あり() As Boolean
     On Error Resume Next
     v = Application.Evaluate("RssMarket(""" & TEST_CODE & """,""銘柄名"")")
     If Err.Number = 0 Then
-        If Not IsError(v) Then
-            RSS応答あり = (Len(CStr(v)) > 0)
-        End If
+        If Not IsError(v) Then RSS応答あり = (Len(CStr(v)) > 0)
     End If
     Err.Clear
     On Error GoTo 0

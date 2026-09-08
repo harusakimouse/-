@@ -154,3 +154,15 @@ Private Function RSS応答あり() As Boolean
     Err.Clear
     On Error GoTo 0
 End Function
+
+'------------------------------------------------------------------
+' 指定秒だけ待つ（Excelを固めない待ち方）
+'   ブックを1本ずつ間隔をあけて開くために使う
+'------------------------------------------------------------------
+Public Sub 少し待つ(ByVal sec As Long)
+    Dim t As Double
+    t = Timer
+    Do While Timer - t < sec
+        DoEvents
+    Loop
+End Sub

@@ -39,12 +39,28 @@ tw_add=('\r\n'
 "End Sub\r\n").encode('cp932')
 tw_new=tw_old+tw_add
 
+
+def patch_wait(name, src):
+    t = src.decode('cp932')
+    if name=='Module1':
+        old = '            ok = ok + 1\r\n        Else\r\n'
+        new = '            ok = ok + 1\r\n            少し待つ 3\r\n        Else\r\n'
+    else:
+        old = ('                        ws.Cells(r, "E").Value = "起動OK(相手マクロ警告 " & errNo & ")"\r\n'
+               '                    End If\r\n')
+        new = ('                        ws.Cells(r, "E").Value = "起動OK(相手マクロ警告 " & errNo & ")"\r\n'
+               '                    End If\r\n'
+               '                    少し待つ 3\r\n')
+    assert t.count(old)==1, (name, t.count(old))
+    return t.replace(old,new).encode('cp932')
+
 # ---- build stream table ----
 streams={}
 for m in mods:
     raw=o.openstream('VBA/'+m['name']).read()
     src=decompress_stream(bytearray(raw[m['off']:]))
     if m['name']=='ThisWorkbook': src=tw_new
+    if m['name'] in ('Module1','Mod_Launcher'): src=patch_wait(m['name'],src)
     streams[m['name']]=cfb.compress(src)
     assert decompress_stream(bytearray(streams[m['name']]))==src
 streams[new_mod_name]=cfb.compress(new_src)

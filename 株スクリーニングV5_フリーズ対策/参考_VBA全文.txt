@@ -1,0 +1,3294 @@
+-------------------------------------------------------------------------------
+VBA MACRO ThisWorkbook.cls 
+in file: xl/vbaProject.bin - OLE stream: 'VBA/ThisWorkbook'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+(empty macro)
+-------------------------------------------------------------------------------
+VBA MACRO Sheet1.cls 
+in file: xl/vbaProject.bin - OLE stream: 'VBA/Sheet1'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+(empty macro)
+-------------------------------------------------------------------------------
+VBA MACRO Sheet6.cls 
+in file: xl/vbaProject.bin - OLE stream: 'VBA/Sheet6'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+(empty macro)
+-------------------------------------------------------------------------------
+VBA MACRO Sheet9.cls 
+in file: xl/vbaProject.bin - OLE stream: 'VBA/Sheet9'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+(empty macro)
+-------------------------------------------------------------------------------
+VBA MACRO Sheet7.cls 
+in file: xl/vbaProject.bin - OLE stream: 'VBA/Sheet7'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+(empty macro)
+-------------------------------------------------------------------------------
+VBA MACRO Sheet8.cls 
+in file: xl/vbaProject.bin - OLE stream: 'VBA/Sheet8'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+(empty macro)
+-------------------------------------------------------------------------------
+VBA MACRO Sheet5.cls 
+in file: xl/vbaProject.bin - OLE stream: 'VBA/Sheet5'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+(empty macro)
+-------------------------------------------------------------------------------
+VBA MACRO Sheet2.cls 
+in file: xl/vbaProject.bin - OLE stream: 'VBA/Sheet2'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+(empty macro)
+-------------------------------------------------------------------------------
+VBA MACRO Sheet3.cls 
+in file: xl/vbaProject.bin - OLE stream: 'VBA/Sheet3'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+(empty macro)
+-------------------------------------------------------------------------------
+VBA MACRO Sheet4.cls 
+in file: xl/vbaProject.bin - OLE stream: 'VBA/Sheet4'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+(empty macro)
+-------------------------------------------------------------------------------
+VBA MACRO Mod_S2_Rules.bas 
+in file: xl/vbaProject.bin - OLE stream: 'VBA/Mod_S2_Rules'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Option Explicit
+
+'==============================================================================
+' 5. スクリーニングとスコア
+'==============================================================================
+' 買える銘柄か（母集団フィルタ）
+
+
+' 条件フィルタ。通れば True、落ちた理由を why に返す
+
+
+
+' 候補を選び、スコア順に並べて返す。戻り値 = 候補数
+
+
+' レジーム判定（200日線 + 傾き + ヒステリシス）
+
+'==============================================================================
+' 6. 売買エンジン（本番とバックテストで完全に同じコードを使う）
+'==============================================================================
+Public bkPos() As TPos
+Public bkPosN As Long
+Public bkOrd() As TOrd
+Public bkOrdN As Long
+Public bkCool() As TCool
+Public bkCoolN As Long
+Public bkTr() As TTrade
+Public bkTrN As Long
+Public bkCash As Double
+Public bkFill As TBufS
+Public bkSell As TBufS
+Public bkBuy As TBufS
+Public bkHold As TBufS
+Public bkNote As TBufS
+' バックテストの結果（S2_OutBacktest へは引数ではなくここで渡す）
+Public btDate() As Double        ' 日付はシリアル値で持つ
+Public btEq() As Double
+Public btExpo() As Double
+Public btN As Long
+Public btT0 As Long
+
+
+
+
+
+
+
+
+
+
+' 前回のシグナルで出した注文が本当に約定したかを1件ずつ聞く。
+' このブックは証券会社を見ていないので、聞かなければ「約定した」ものとして進んでしまう。
+
+
+
+' 保留注文を t 日に約定させる
+
+' 損切り価格（定率とATRの広いほう＝低いほう）
+
+' 保有の見直し（t 日の終値で判定 → 翌営業日の注文を出す）
+
+
+' 新規エントリー
+
+'==============================================================================
+' 9. バックテスト（本番と同じルールで過去を歩かせる）
+'==============================================================================
+
+
+' 未確保の動的配列に UBound を掛けると落ちるので、安全に 0 を返す
+
+Public Function S2_Tradable(ByVal i As Long) As Boolean
+    Dim cd As String, nm As String, n As Long
+    cd = gCode(i)
+    If Len(cd) <> 4 Then Exit Function
+    For n = 1 To 4
+        If Mid$(cd, n, 1) < "0" Or Mid$(cd, n, 1) > "9" Then Exit Function
+    Next n
+    If cd = cfRegime Then Exit Function
+    If cfExETF Then
+        n = CLng(cd)
+        If n >= 8951 And n <= 8999 Then Exit Function        ' REIT の帯
+        If n >= 1300 And n <= 1399 Then
+            If S2_HasFundWord(gName(i)) Then Exit Function
+        End If
+        If S2_HasFundWord(gName(i)) Then Exit Function
+    End If
+    S2_Tradable = True
+End Function
+
+Public Function S2_HasFundWord(ByVal nm As String) As Boolean
+    Dim w As Variant, k As Variant
+    w = Array("ＥＴＦ", "ETF", "ＥＴＮ", "ETN", "上場", "投資法人", "リート", "ＲＥＩＴ", "REIT", _
+              "ＮＦ", "ＮＥＸＴ", "ＭＡＸＩＳ", "シェアーズ", "連動型", "インデックス", _
+              "ファンド", "ダイワ上場", "日経２２５", "ＴＯＰＩＸ", "上場投信", "ブル", "ベア", _
+              "ダブル", "レバレッジ", "インバース", "先物")
+    For Each k In w
+        If InStr(nm, CStr(k)) > 0 Then S2_HasFundWord = True: Exit Function
+    Next k
+End Function
+
+Public Function S2_Pass(ByVal i As Long, ByRef ind As TInd, ByRef why As String) As Boolean
+    why = ""
+    If Not ind.Ok Then why = "履歴不足": Exit Function
+    If gStale(i) > 3 Then why = "株価が更新されていない": Exit Function
+    If ind.px > cfPriceMax Then why = "株価が上限超": Exit Function
+    If ind.px < cfPriceMin Then why = "株価が下限未満": Exit Function
+    If ind.px <= ind.Sma Then why = "200日線より下": Exit Function
+    If cfRegSlope > 0 Then
+        If ind.Slope <= 0 Then why = "200日線が下向き": Exit Function
+    End If
+    If ind.dev > cfDMax Then why = "上がり過ぎ": Exit Function
+    If ind.Rsi < cfRsiLo Then why = "RSIが低い": Exit Function
+    If ind.Rsi > cfRsiHi Then why = "RSIが高い": Exit Function
+    If ind.Mom <= 0 Then why = "3ヶ月で上がっていない": Exit Function
+    If gHasV And cfLiqMin > 0 Then
+        If ind.Turn < cfLiqMin Then why = "売買代金が少ない": Exit Function
+    End If
+    S2_Pass = True
+End Function
+
+Public Function S2_DevScore(ByVal dev As Double) As Double
+    If dev <= 0 Then
+        S2_DevScore = 0
+    ElseIf dev <= cfDBest Then
+        S2_DevScore = dev / cfDBest * 100
+    ElseIf dev >= cfDMax Then
+        S2_DevScore = 0
+    Else
+        S2_DevScore = (cfDMax - dev) / (cfDMax - cfDBest) * 100
+    End If
+End Function
+
+Public Function S2_Clamp100(ByVal x As Double) As Double
+    If x < 0 Then x = 0
+    If x > 1 Then x = 1
+    S2_Clamp100 = x * 100
+End Function
+
+Public Function S2_Rank(ByRef outIdx() As Long, ByRef outInd() As TInd) As Long
+    Dim i As Long, j As Long, c As Long
+    Dim cand() As Long, ci() As TInd
+    Dim why As String, ind As TInd
+
+    ReDim cand(1 To gN)
+    ReDim ci(1 To gN)
+    c = 0
+    For i = 1 To gN
+        If S2_Tradable(i) Then
+            ind = S2_Ind(i)
+            If S2_Pass(i, ind, why) Then
+                c = c + 1
+                cand(c) = i
+                ci(c) = ind
+            End If
+        End If
+    Next i
+    If c = 0 Then S2_Rank = 0: Exit Function
+
+    ' 値動きの質（候補だけ計算する）
+    For j = 1 To c
+        ci(j).Qual = S2_MaxDD(cand(j), sCurT)
+    Next j
+
+    If cfAbsScore Then
+        Dim w As Double
+        w = cfWDev + cfWRsi + cfWMom + cfWQual
+        For j = 1 To c
+            ci(j).Score = (cfWDev * S2_DevScore(ci(j).dev) _
+                         + cfWRsi * S2_Clamp100((ci(j).Rsi - cfRsiLo) / (cfRsiHi - cfRsiLo)) _
+                         + cfWMom * S2_Clamp100(ci(j).Mom / cfMomFull) _
+                         + cfWQual * S2_Clamp100(1 - ci(j).Qual / cfQualDD)) / w
+        Next j
+    Else
+        Dim rv() As Double, mv() As Double, qv() As Double
+        ReDim rv(1 To c): ReDim mv(1 To c): ReDim qv(1 To c)
+        For j = 1 To c
+            rv(j) = ci(j).Rsi: mv(j) = ci(j).Mom: qv(j) = -ci(j).Qual
+        Next j
+        Dim w2 As Double
+        w2 = cfWDev + cfWRsi + cfWMom + cfWQual
+        For j = 1 To c
+            ci(j).Score = (cfWDev * S2_DevScore(ci(j).dev) _
+                         + cfWRsi * S2_Pct(rv, c, ci(j).Rsi) _
+                         + cfWMom * S2_Pct(mv, c, ci(j).Mom) _
+                         + cfWQual * S2_Pct(qv, c, -ci(j).Qual)) / w2
+        Next j
+    End If
+
+    ' スコア降順（挿入ソート：候補数はふつう数百なので十分速い）
+    ReDim outIdx(1 To c)
+    ReDim outInd(1 To c)
+    For j = 1 To c
+        outIdx(j) = cand(j)
+        outInd(j) = ci(j)
+    Next j
+    Dim k As Long, ti As Long, td As TInd
+    For j = 2 To c
+        ti = outIdx(j): td = outInd(j)
+        k = j - 1
+        Do While k >= 1
+            If outInd(k).Score >= td.Score Then Exit Do
+            outIdx(k + 1) = outIdx(k): outInd(k + 1) = outInd(k)
+            k = k - 1
+        Loop
+        outIdx(k + 1) = ti: outInd(k + 1) = td
+    Next j
+    S2_Rank = c
+End Function
+
+Public Function S2_Pct(ByRef vals() As Double, ByVal cnt As Long, ByVal x As Double) As Double
+    Dim i As Long, c As Long
+    If cnt <= 1 Then S2_Pct = 100: Exit Function
+    For i = 1 To cnt
+        If vals(i) < x Then c = c + 1
+    Next i
+    S2_Pct = c / (cnt - 1) * 100
+End Function
+
+Public Function S2_Regime(ByVal prev As String, ByRef txt As String) As String
+    Dim i As Long, ind As TInd, up As Boolean, band As Double
+    txt = "判定不能（コード " & cfRegime & " のデータがありません）"
+    If Not gIdx.Exists(cfRegime) Then S2_Regime = "RISK_OFF": Exit Function
+    i = gIdx(cfRegime)
+    ind = S2_Ind(i)
+    If Not ind.Ok Then S2_Regime = "RISK_OFF": Exit Function
+
+    band = cfRegBand
+    If prev = "RISK_ON" Then
+        up = (ind.px >= ind.Sma * (1 - band))
+    Else
+        up = (ind.px >= ind.Sma * (1 + band))
+    End If
+    If cfRegSlope > 0 Then
+        If ind.Slope < 0 Then up = False
+    End If
+    txt = gCode(i) & " " & gName(i) & "  " & Format(ind.px, "#,##0") & _
+          IIf(ind.px > ind.Sma, " > ", " < ") & "200日線 " & Format(ind.Sma, "#,##0") & _
+          "  傾き " & Format(ind.Slope * 100, "+0.0;-0.0") & "%"
+    If up Then S2_Regime = "RISK_ON" Else S2_Regime = "RISK_OFF"
+End Function
+
+Public Sub S2_BookInit(ByVal cash As Double)
+    ReDim bkPos(1 To 8): bkPosN = 0
+    ReDim bkOrd(1 To 8): bkOrdN = 0
+    ReDim bkCool(1 To 8): bkCoolN = 0
+    ReDim bkTr(1 To 64): bkTrN = 0
+    bkCash = cash
+End Sub
+
+Public Sub PosAdd(ByRef p As TPos)
+    If bkPosN >= UBound(bkPos) Then ReDim Preserve bkPos(1 To bkPosN * 2)
+    bkPosN = bkPosN + 1
+    bkPos(bkPosN) = p
+End Sub
+
+Public Sub PosDel(ByVal k As Long)
+    Dim i As Long
+    For i = k To bkPosN - 1
+        bkPos(i) = bkPos(i + 1)
+    Next i
+    If bkPosN > 0 Then bkPosN = bkPosN - 1
+End Sub
+
+Public Sub OrdAdd(ByVal Side As String, ByVal cd As String, ByVal nm As String, ByVal sh As Long, ByVal why As String, ByVal sd As String, ByVal rp As Double)
+    If bkOrdN >= UBound(bkOrd) Then ReDim Preserve bkOrd(1 To bkOrdN * 2)
+    bkOrdN = bkOrdN + 1
+    With bkOrd(bkOrdN)
+        .Side = Side: .Code = cd: .nm = nm: .Shares = sh
+        .Reason = why: .SDate = sd: .RefPx = rp
+    End With
+End Sub
+
+Public Sub TrAdd(ByRef tr As TTrade)
+    If bkTrN >= UBound(bkTr) Then ReDim Preserve bkTr(1 To bkTrN * 2)
+    bkTrN = bkTrN + 1
+    bkTr(bkTrN) = tr
+End Sub
+
+Public Sub CoolAdd(ByVal cd As String, ByVal d As Date)
+    Dim i As Long, untilS As String
+    untilS = Format(d + Int(cfCool * 1.45) + 1, "yyyy-mm-dd")
+    If cfCool <= 0 Then Exit Sub
+    For i = 1 To bkCoolN
+        If bkCool(i).Code = cd Then bkCool(i).UntilD = untilS: Exit Sub
+    Next i
+    If bkCoolN >= UBound(bkCool) Then ReDim Preserve bkCool(1 To bkCoolN * 2)
+    bkCoolN = bkCoolN + 1
+    bkCool(bkCoolN).Code = cd
+    bkCool(bkCoolN).UntilD = untilS
+End Sub
+
+Public Function IsCooling(ByVal cd As String, ByVal d As Date) As Boolean
+    Dim i As Long
+    For i = 1 To bkCoolN
+        If bkCool(i).Code = cd Then
+            If Format(d, "yyyy-mm-dd") <= bkCool(i).UntilD Then IsCooling = True
+            Exit Function
+        End If
+    Next i
+End Function
+
+Public Function PosFind(ByVal cd As String) As Long
+    Dim i As Long
+    For i = 1 To bkPosN
+        If bkPos(i).Code = cd Then PosFind = i: Exit Function
+    Next i
+End Function
+
+Public Function OrdFind(ByVal cd As String, ByVal Side As String) As Long
+    Dim i As Long
+    For i = 1 To bkOrdN
+        If bkOrd(i).Code = cd And bkOrd(i).Side = Side Then OrdFind = i: Exit Function
+    Next i
+End Function
+
+Public Sub S2_ConfirmFills()
+    Dim i As Long, keepN As Long, ans As Long
+    Dim msg As String, kept() As TOrd
+    If bkOrdN = 0 Then Exit Sub
+    If Not cfConfirm Then Exit Sub
+    If gQuiet Then
+        ' 自動実行中は誰も答えられない。黙って約定させたことを必ず残す。
+        S2_Warn "★自動更新のため約定の確認をしていません。" & bkOrdN & _
+                "件を約定したものとして記録しました。実際の約定をご確認ください。"
+        S2_Log "自動更新: 未確認のまま " & bkOrdN & "件を約定処理"
+        Exit Sub
+    End If
+
+    ReDim kept(1 To bkOrdN)
+    For i = 1 To bkOrdN
+        msg = "前回の【更新】で出した注文です。" & vbCrLf & vbCrLf & _
+              IIf(bkOrd(i).Side = "BUY", "【買い】", "【売り】") & "  " & _
+              bkOrd(i).Code & "  " & bkOrd(i).nm & vbCrLf & _
+              "    " & bkOrd(i).Shares & "株 / 参考 " & Format(bkOrd(i).RefPx, "#,##0") & "円" & vbCrLf & _
+              "    " & bkOrd(i).SDate & " のシグナル" & vbCrLf & vbCrLf & _
+              "この注文は約定しましたか？" & vbCrLf & vbCrLf & _
+              "　はい　 … 約定したものとして記録します" & vbCrLf & _
+              "　いいえ … 取り消します（記録しません）"
+        ans = MsgBox(msg, vbYesNo + vbQuestion, "S2 約定の確認  " & i & " / " & bkOrdN)
+        If ans = vbYes Then
+            keepN = keepN + 1
+            kept(keepN) = bkOrd(i)
+        Else
+            S2_Warn IIf(bkOrd(i).Side = "BUY", "買い", "売り") & " " & bkOrd(i).Code & " " & _
+                    bkOrd(i).nm & " は約定しなかったため取り消しました"
+            S2_Log "注文取消 " & bkOrd(i).Side & " " & bkOrd(i).Code & " " & bkOrd(i).nm & _
+                   " " & bkOrd(i).Shares & "株"
+        End If
+    Next i
+    For i = 1 To keepN
+        bkOrd(i) = kept(i)
+    Next i
+    bkOrdN = keepN
+End Sub
+
+Public Function S2_Equity(ByVal t As Long) As Double
+    Dim i As Long, e As Double, k As Long
+    e = bkCash
+    For i = 1 To bkPosN
+        If gIdx.Exists(bkPos(i).Code) Then
+            k = gIdx(bkPos(i).Code)
+            e = e + bkPos(i).Shares * gC(k, t)
+        Else
+            e = e + bkPos(i).Shares * bkPos(i).Entry
+        End If
+    Next i
+    S2_Equity = e
+End Function
+
+Public Function S2_FillPx(ByVal i As Long, ByVal t As Long) As Double
+    If InStr(cfFill, "始値") > 0 And gHasO Then
+        S2_FillPx = gO(i, t)
+        If S2_FillPx <= 0 Then S2_FillPx = gC(i, t)
+    Else
+        S2_FillPx = gC(i, t)
+    End If
+End Function
+
+Public Sub S2_FillOrders(ByVal t As Long)
+    Dim j As Long, i As Long, k As Long, px As Double, fill As Double
+    Dim p As TPos, tr As TTrade, ind As TInd
+    For j = 1 To bkOrdN
+        If Not gIdx.Exists(bkOrd(j).Code) Then GoTo NextOrd
+        i = gIdx(bkOrd(j).Code)
+        px = S2_FillPx(i, t)
+        If px <= 0 Then GoTo NextOrd
+
+        If bkOrd(j).Side = "BUY" Then
+            fill = px * (1 + cfCostPct)
+            If bkOrd(j).Shares <= 0 Then GoTo NextOrd
+            If fill * bkOrd(j).Shares > bkCash Then
+                ' 寄付が飛んで買えなかった場合は株数を落とす
+                Dim sh As Long
+                sh = Int(bkCash / fill / cfLot) * cfLot
+                If sh <= 0 Then
+                    BufAdd bkNote, "・" & bkOrd(j).Code & " " & bkOrd(j).nm & "  資金不足で見送り"
+                    GoTo NextOrd
+                End If
+                bkOrd(j).Shares = sh
+            End If
+            ind = S2_Ind(i)
+            p.Code = bkOrd(j).Code
+            p.nm = bkOrd(j).nm
+            p.Entry = fill
+            p.Shares = bkOrd(j).Shares
+            p.EDate = Format(gDate(t), "yyyy-mm-dd")
+            p.Peak = px
+            p.StopPx = S2_StopOf(fill, ind.Atr)
+            p.ArmPx = fill * (1 + cfArm)
+            p.Armed = False
+            p.Bars = 0
+            PosAdd p
+            bkCash = bkCash - fill * p.Shares
+            BufAdd bkFill, "買 " & Format(gDate(t), "mm/dd") & " " & p.Code & " " & p.nm & _
+                   "  " & Format(fill, "#,##0.0") & " x " & p.Shares & "株"
+        Else
+            k = PosFind(bkOrd(j).Code)
+            If k = 0 Then GoTo NextOrd
+            fill = px * (1 - cfCostPct)
+            tr.Code = bkPos(k).Code
+            tr.nm = bkPos(k).nm
+            tr.EDate = bkPos(k).EDate
+            tr.XDate = Format(gDate(t), "yyyy-mm-dd")
+            tr.Entry = bkPos(k).Entry
+            tr.Exit_ = fill
+            tr.Shares = bkPos(k).Shares
+            tr.Pnl = (fill - bkPos(k).Entry) * bkPos(k).Shares
+            If bkPos(k).Entry > 0 Then tr.PnlPct = fill / bkPos(k).Entry - 1
+            tr.Reason = bkOrd(j).Reason
+            tr.Bars = bkPos(k).Bars
+            TrAdd tr
+            bkCash = bkCash + fill * bkPos(k).Shares
+            BufAdd bkFill, "売 " & Format(gDate(t), "mm/dd") & " " & tr.Code & " " & tr.nm & _
+                   "  " & Format(fill, "#,##0.0") & " x " & tr.Shares & "株  " & _
+                   Format(tr.Pnl, "+#,##0;-#,##0") & "円 (" & Format(tr.PnlPct * 100, "+0.0;-0.0") & "%)"
+            If InStr(tr.Reason, "損切り") > 0 Or InStr(tr.Reason, "トレール") > 0 Then
+                CoolAdd tr.Code, gDate(t)
+            End If
+            PosDel k
+        End If
+NextOrd:
+    Next j
+    bkOrdN = 0
+    ReDim bkOrd(1 To 8)
+End Sub
+
+Public Function S2_StopOf(ByVal Entry As Double, ByVal Atr As Double) As Double
+    Dim a As Double, b As Double
+    a = Entry * (1 - cfStopPct)
+    If cfStopAtr > 0 And Atr > 0 Then
+        b = Entry - cfStopAtr * Atr
+        If b < a Then a = b
+    End If
+    If a < 0 Then a = 0
+    S2_StopOf = a
+End Function
+
+Public Sub S2_ExitScan(ByVal t As Long, ByVal regime As String)
+    Dim k As Long, i As Long, px As Double, Pnl As Double, why As String
+    For k = 1 To bkPosN
+        If Not gIdx.Exists(bkPos(k).Code) Then
+            BufAdd bkHold, "・" & bkPos(k).Code & " " & bkPos(k).nm & "  株価データ無し（要確認）"
+            GoTo NextK
+        End If
+        i = gIdx(bkPos(k).Code)
+        px = gC(i, t)
+        bkPos(k).Bars = bkPos(k).Bars + 1
+        If gH(i, t) > bkPos(k).Peak Then bkPos(k).Peak = gH(i, t)
+        If px > bkPos(k).Peak Then bkPos(k).Peak = px
+        If bkPos(k).Peak >= bkPos(k).ArmPx Then bkPos(k).Armed = True
+        Pnl = px / bkPos(k).Entry - 1
+
+        why = ""
+        If px <= bkPos(k).StopPx Then
+            why = "損切り"
+        ElseIf bkPos(k).Armed And px <= bkPos(k).Peak * (1 - cfTrail) Then
+            why = "トレール"
+        ElseIf cfTimeStop > 0 And bkPos(k).Bars >= cfTimeStop Then
+            why = "期限切れ"
+        ElseIf cfRegimeExit And regime <> "RISK_ON" Then
+            why = "相場悪化"
+        End If
+
+        If why <> "" Then
+            If OrdFind(bkPos(k).Code, "SELL") = 0 Then
+                OrdAdd "SELL", bkPos(k).Code, bkPos(k).nm, bkPos(k).Shares, why, _
+                       Format(gDate(t), "yyyy-mm-dd"), px
+            End If
+            BufAdd bkSell, "・" & bkPos(k).Code & " " & bkPos(k).nm & "  【" & why & "】" & vbLf & _
+                   "   終値 " & Format(px, "#,##0") & " / 取得 " & Format(bkPos(k).Entry, "#,##0") & _
+                   " / " & Format(Pnl * 100, "+0.0;-0.0") & "%  " & _
+                   Format((px - bkPos(k).Entry) * bkPos(k).Shares, "+#,##0;-#,##0") & "円" & vbLf & _
+                   "   → 翌営業日の" & S2_FillWord() & "で売り"
+        Else
+            BufAdd bkHold, "・" & bkPos(k).Code & " " & bkPos(k).nm & "  取得 " & _
+                   Format(bkPos(k).Entry, "#,##0") & " -> " & Format(px, "#,##0") & _
+                   " (" & Format(Pnl * 100, "+0.0;-0.0") & "%)  " & bkPos(k).Bars & "日目" & vbLf & _
+                   "   高値 " & Format(bkPos(k).Peak, "#,##0") & " / 損切り " & Format(bkPos(k).StopPx, "#,##0") & _
+                   " / トレール " & IIf(bkPos(k).Armed, _
+                        "起動済 " & Format(bkPos(k).Peak * (1 - cfTrail), "#,##0"), _
+                        "未起動 " & Format(bkPos(k).ArmPx, "#,##0") & "で起動")
+        End If
+NextK:
+    Next k
+End Sub
+
+Public Function S2_FillWord() As String
+    If InStr(cfFill, "始値") > 0 And gHasO Then
+        S2_FillWord = "寄付"
+    ElseIf InStr(cfFill, "当日") > 0 Then
+        S2_FillWord = "終値（当日）"
+    Else
+        S2_FillWord = "終値"
+    End If
+End Function
+
+Public Sub S2_EntryScan(ByVal t As Long, ByVal regime As String, ByRef idx() As Long, ByRef ind() As TInd, ByVal c As Long)
+    Dim j As Long, i As Long, k As Long, slots As Long, notes As Long
+    Dim eq As Double, budget As Double, usable As Double, committed As Double
+    Dim risk As Double, dist As Double, sh As Long, px As Double, cr As Double, mx As Double
+    If regime <> "RISK_ON" Then Exit Sub
+    If c = 0 Then Exit Sub
+
+    eq = S2_Equity(t)
+    slots = cfMaxPos - bkPosN
+    For j = 1 To bkOrdN
+        If bkOrd(j).Side = "BUY" Then slots = slots - 1
+        If bkOrd(j).Side = "SELL" Then slots = slots + 1
+    Next j
+    If slots <= 0 Then Exit Sub
+
+    For j = 1 To c
+        If slots <= 0 Then Exit For
+        i = idx(j)
+        If PosFind(gCode(i)) > 0 Then GoTo NextJ
+        If OrdFind(gCode(i), "BUY") > 0 Then GoTo NextJ
+        If IsCooling(gCode(i), gDate(t)) Then
+            If notes < 10 Then
+                BufAdd bkNote, "・" & gCode(i) & " " & gName(i) & "  直近に決済したため見送り（クールダウン）"
+                notes = notes + 1
+            End If
+            GoTo NextJ
+        End If
+        ' 保有と似すぎた値動きは避ける
+        If cfCorrMax < 1 Then
+            mx = 0
+            For k = 1 To bkPosN
+                If gIdx.Exists(bkPos(k).Code) Then
+                    cr = S2_Corr(i, CLng(gIdx(bkPos(k).Code)), t)
+                    If cr > mx Then mx = cr
+                End If
+            Next k
+            If mx > cfCorrMax Then
+                If notes < 10 Then
+                    BufAdd bkNote, "・" & gCode(i) & " " & gName(i) & "  保有と値動きが似すぎ（相関 " & _
+                           Format(mx, "0.00") & "）で見送り"
+                    notes = notes + 1
+                End If
+                GoTo NextJ
+            End If
+        End If
+
+        px = ind(j).px
+        If px <= 0 Then GoTo NextJ
+        usable = bkCash - eq * cfCashBuf - committed
+        If usable < 0 Then usable = 0
+
+        If InStr(cfSizing, "リスク") > 0 Then
+            dist = px - S2_StopOf(px, ind(j).Atr)
+            If dist <= 0 Then dist = px * cfStopPct
+            risk = eq * cfRiskPct
+            budget = risk / dist * px
+            If budget > eq * cfPct Then budget = eq * cfPct
+        Else
+            budget = eq * cfPct
+        End If
+        If budget > usable Then budget = usable
+        sh = Int(budget / (px * (1 + cfCostPct)) / cfLot) * cfLot
+        If sh <= 0 Then
+            If notes < 10 Then
+                BufAdd bkNote, "・" & gCode(i) & " " & gName(i) & "  1単元 " & _
+                       Format(px * cfLot, "#,##0") & "円に足りず見送り"
+                notes = notes + 1
+            End If
+            GoTo NextJ
+        End If
+
+        OrdAdd "BUY", gCode(i), gName(i), sh, "新規エントリー", Format(gDate(t), "yyyy-mm-dd"), px
+        committed = committed + px * (1 + cfCostPct) * sh
+        slots = slots - 1
+        BufAdd bkBuy, "・" & gCode(i) & " " & gName(i) & "  スコア " & Format(ind(j).Score, "0.0") & vbLf & _
+               "   " & Format(px, "#,##0") & "円 x " & sh & "株 = " & Format(px * sh, "#,##0") & "円" & vbLf & _
+               "   損切り " & Format(S2_StopOf(px, ind(j).Atr), "#,##0") & _
+               " / トレール起動 " & Format(px * (1 + cfArm), "#,##0") & vbLf & _
+               "   RSI " & Format(ind(j).Rsi, "0.0") & " / 200日乖離 " & Format(ind(j).dev * 100, "+0.0") & _
+               "% / " & Format(cfMom / 21, "0") & "ヶ月 " & Format(ind(j).Mom * 100, "+0.0") & "%" & _
+               " / ATR " & Format(ind(j).AtrP * 100, "0.0") & "%" & vbLf & _
+               "   → 翌営業日の" & S2_FillWord() & "で買い"
+NextJ:
+    Next j
+End Sub
+
+Public Sub S2_バックテスト()
+    Dim src As Workbook, wasOpen As Boolean
+    Dim oldEv As Boolean, t0 As Long, t As Long, i As Long
+    Dim regime As String, regTxt As String, prevReg As String
+    Dim idx() As Long, ind() As TInd, c As Long
+
+    If Not S2_LoadSettings() Then Exit Sub
+    If MsgBox("過去 " & cfBtDays & " 営業日を、いまの設定でシミュレーションします。" & vbCrLf & _
+              "銘柄数によっては数分かかります。実行しますか？" & vbCrLf & vbCrLf & _
+              "※このシミュレーションは「翌営業日に約定できた」前提です。" & vbCrLf & _
+              "　実際の成績を保証するものではありません。", _
+              vbYesNo + vbQuestion, "S2 バックテスト") = vbNo Then Exit Sub
+
+    oldEv = Application.EnableEvents
+    On Error GoTo EH
+    Application.ScreenUpdating = False
+    Application.StatusBar = "S2: データを読み込み中..."
+    gStep = "データ元ブックを開く"
+    Set src = S2_OpenSrc(wasOpen)
+    If src Is Nothing Then GoTo EX
+    gStep = "株価読込"
+    If Not S2_Build(src, cfHistMax + cfBtDays) Then GoTo EX
+    If Not wasOpen Then
+        Application.EnableEvents = False
+        src.Close SaveChanges:=False
+        Application.EnableEvents = True
+    End If
+    Set src = Nothing
+
+    t0 = gT - cfBtDays + 1
+    If t0 < 205 Then t0 = 205
+    If t0 > gT Then
+        S2_Msg "履歴が足りません。BT_DAYS を減らすか、元ブックの日数を増やしてください。" & vbCrLf & _
+               "（読めた日数 " & gT & "日）", vbExclamation, "S2"
+        GoTo EX
+    End If
+
+    gStep = "指標の助走"
+    Application.StatusBar = "S2: 指標を助走中... (" & gN & "銘柄)"
+    S2_IndWarm t0
+    bkFill.n = 0: bkSell.n = 0: bkBuy.n = 0: bkHold.n = 0: bkNote.n = 0
+    S2_BookInit cfCap
+    prevReg = "RISK_OFF"
+
+    ReDim btEq(1 To gT - t0 + 1)
+    ReDim btDate(1 To gT - t0 + 1)
+    ReDim btExpo(1 To gT - t0 + 1)
+    btN = 0
+    btT0 = t0
+
+    gStep = "シミュレーション"
+    For t = t0 To gT
+        If t > t0 Then S2_IndNext
+        If (t - t0) Mod 5 = 0 Then
+            Application.StatusBar = "S2: バックテスト " & (t - t0 + 1) & " / " & (gT - t0 + 1) & _
+                                    " 日目　資産 " & Format(S2_Equity(t), "#,##0") & "円"
+            DoEvents
+        End If
+        regime = S2_Regime(prevReg, regTxt)
+        prevReg = regime
+        bkSell.n = 0: bkBuy.n = 0: bkHold.n = 0: bkNote.n = 0
+        If InStr(cfFill, "当日") = 0 Then S2_FillOrders t
+        S2_ExitScan t, regime
+        c = S2_Rank(idx, ind)
+        S2_EntryScan t, regime, idx, ind, c
+        If InStr(cfFill, "当日") > 0 Then S2_FillOrders t
+        btN = btN + 1
+        btDate(btN) = CDbl(gDate(t))
+        btEq(btN) = S2_Equity(t)
+        btExpo(btN) = 1 - bkCash / btEq(btN)
+    Next t
+
+    gStep = "結果の出力"
+    Application.StatusBar = "S2: 結果を書き出し中..."
+    S2_OutBacktest
+    Application.StatusBar = False
+    Application.ScreenUpdating = True
+    Dim note As String
+    If btN < cfBtDays * 0.9 Then
+        note = note & vbCrLf & vbCrLf & "※指定 " & cfBtDays & "営業日に対し " & btN & _
+               "営業日しか回せていません（200日移動平均の助走に使うため）。"
+    End If
+    If bkTrN = 0 Then
+        note = note & vbCrLf & "※決済が0回です。買って持ち続けただけの結果で、" & vbCrLf & _
+               "　損切りやトレーリングは検証できていません。"
+    End If
+    S2_Msg "バックテストが終わりました。「" & SH_BT & "」シートをご覧ください。" & vbCrLf & vbCrLf & _
+           "期間 " & Format(gDate(t0), "yyyy/mm/dd") & " ～ " & Format(gDate(gT), "yyyy/mm/dd") & _
+           "（" & btN & "営業日）" & vbCrLf & _
+           "最終資産 " & Format(btEq(btN), "#,##0") & "円 （" & _
+           Format(btEq(btN) / cfCap * 100 - 100, "+0.0;-0.0") & "%）" & _
+           "　決済 " & bkTrN & "回" & note, vbInformation, "S2 バックテスト"
+
+EX:
+    On Error Resume Next
+    If Not src Is Nothing Then
+        If Not wasOpen Then src.Close SaveChanges:=False
+    End If
+    Application.EnableEvents = oldEv
+    Application.StatusBar = False
+    Application.ScreenUpdating = True
+    Exit Sub
+EH:
+    Dim eN2 As Long, eD As String
+    eN2 = Err.Number: eD = Err.Description
+    On Error Resume Next
+    If Not src Is Nothing Then
+        If Not wasOpen Then src.Close SaveChanges:=False
+    End If
+    Application.EnableEvents = oldEv
+    Application.StatusBar = False
+    Application.ScreenUpdating = True
+    S2_Log "バックテストエラー " & eN2 & " : " & eD & "  [" & gStep & "]"
+    S2_Msg "エラー " & eN2 & vbCrLf & eD & vbCrLf & vbCrLf & "場所 : " & gStep & vbCrLf & vbCrLf & _
+           "メモリ不足の場合は、設定の BT_DAYS を小さくしてください。", vbCritical, "S2"
+End Sub
+
+Public Sub S2_OutBacktest()
+    Dim ws As Worksheet, dmy As Boolean, r As Long, j As Long
+    Dim eN As Long, t0 As Long
+    Dim pk As Double, dd As Double, mdd As Double, mddDate As Double
+    eN = btN
+    t0 = btT0
+    Dim yrs As Double, cagr As Double, avgExp As Double
+    Dim win As Long, sw As Double, sl As Double, tot As Double
+    Dim rets() As Double, mu As Double, sd As Double, sharpe As Double
+    Dim sWin As String, sPf As String
+
+    gStep = "結果の出力: 前提チェック"
+    If eN < 1 Then
+        S2_Msg "バックテストの結果が空です（0営業日）。" & vbCrLf & _
+               "設定の BT_DAYS と、元ブックの履歴日数を確認してください。", vbExclamation, "S2"
+        Exit Sub
+    End If
+    If t0 < 1 Or t0 > gT Then t0 = gT - eN + 1
+    If t0 < 1 Then t0 = 1
+
+    gStep = "結果の出力: シート作成"
+    Set ws = S2_Sheet(SH_BT, dmy)
+    On Error Resume Next
+    ws.Cells.Clear
+    Dim z As Long
+    For z = ws.Shapes.Count To 1 Step -1
+        ws.Shapes(z).Delete
+    Next z
+    For z = ws.ChartObjects.Count To 1 Step -1
+        ws.ChartObjects(z).Delete
+    Next z
+    On Error GoTo 0
+
+    gStep = "結果の出力: 集計"
+    ' 配列の実際の確保数を確かめてから使う。
+    ' ここで落ちると原因が分からないので、UBound を安全に取って en を丸める。
+    Dim cap As Long, capE As Long, capD As Long, capX As Long
+    capE = S2_UB(btEq)
+    capD = S2_UB(btDate)
+    capX = S2_UB(btExpo)
+    cap = capE
+    If capD < cap Then cap = capD
+    If capX < cap Then cap = capX
+    If cap < 1 Then
+        S2_Msg "バックテストの結果を書き出せません。" & vbCrLf & vbCrLf & _
+               "日数 " & eN & " に対して、資産の記録が確保されていません。" & vbCrLf & _
+               "（資産 " & capE & " / 日付 " & capD & " / 建玉比率 " & capX & "）" & vbCrLf & vbCrLf & _
+               "設定の BT_DAYS を小さくして、もう一度お試しください。", vbExclamation, "S2"
+        Exit Sub
+    End If
+    If eN > cap Then eN = cap
+
+    pk = btEq(1)
+    mddDate = btDate(1)
+    ReDim rets(1 To eN)
+    For j = 1 To eN
+        If btEq(j) > pk Then pk = btEq(j)
+        If pk > 0 Then
+            dd = 1 - btEq(j) / pk
+            If dd > mdd Then mdd = dd: mddDate = btDate(j)
+        End If
+        avgExp = avgExp + btExpo(j)
+        ' VBA の And は短絡しないため、j > 1 の判定は入れ子にする
+        ' （でないと j = 1 のときに btEq(0) を引いてしまう）
+        If j > 1 Then
+            If btEq(j - 1) > 0 Then rets(j) = btEq(j) / btEq(j - 1) - 1
+        End If
+    Next j
+    avgExp = avgExp / eN
+    yrs = eN / 245#
+    If yrs > 0 And cfCap > 0 And btEq(eN) > 0 Then cagr = (btEq(eN) / cfCap) ^ (1 / yrs) - 1
+    For j = 2 To eN
+        mu = mu + rets(j)
+    Next j
+    If eN > 2 Then
+        mu = mu / (eN - 1)
+        For j = 2 To eN
+            sd = sd + (rets(j) - mu) ^ 2
+        Next j
+        sd = Sqr(sd / (eN - 2))
+        If sd > 0 Then sharpe = mu / sd * Sqr(245#)
+    End If
+    gStep = "結果の出力: 取引の集計"
+    Dim nTr As Long
+    nTr = bkTrN
+    If nTr > 0 Then
+        If nTr > UBound(bkTr) Then nTr = UBound(bkTr)
+    End If
+    For j = 1 To nTr
+        tot = tot + bkTr(j).Pnl
+        If bkTr(j).Pnl > 0 Then win = win + 1: sw = sw + bkTr(j).Pnl Else sl = sl - bkTr(j).Pnl
+    Next j
+    ' IIf は両方の枝を評価するので、0除算を避けてここで作っておく
+    If bkTrN > 0 Then sWin = Format(win / bkTrN * 100, "0.0") & "%" Else sWin = "-"
+    If sl > 0 Then sPf = Format(sw / sl, "0.00") Else sPf = "-"
+
+    gStep = "結果の出力: サマリー"
+    ws.Range("A1").Value = "バックテスト結果　" & Format(gDate(t0), "yyyy/mm/dd") & " ～ " & _
+                            Format(gDate(gT), "yyyy/mm/dd") & "　(" & eN & "営業日)"
+    ws.Range("A1").Font.Bold = True
+    ws.Range("A1").Font.Size = S2_FS(3)
+    r = 2
+    S2_KV ws, r, "元手", Format(cfCap, "#,##0") & " 円"
+    S2_KV ws, r, "最終資産", Format(btEq(eN), "#,##0") & " 円"
+    S2_KV ws, r, "トータルリターン", Format(btEq(eN) / cfCap * 100 - 100, "+0.0;-0.0") & "%"
+    ' 46営業日を1年に引き伸ばした年率は意味を持たないので出さない
+    Dim sCagr As String
+    If eN >= 120 Then
+        sCagr = Format(cagr * 100, "+0.0;-0.0") & "%"
+    Else
+        sCagr = "-（" & eN & "営業日では算出しません）"
+    End If
+    S2_KV ws, r, "年率（CAGR）", sCagr
+    S2_KV ws, r, "最大ドローダウン", Format(mdd * 100, "0.0") & "%　(" & Format(CDate(mddDate), "yyyy/mm/dd") & ")"
+    S2_KV ws, r, "シャープレシオ（概算）", Format(sharpe, "0.00")
+    S2_KV ws, r, "平均建玉比率", Format(avgExp * 100, "0.0") & "%"
+    S2_KV ws, r, "決済回数", bkTrN & " 回"
+    S2_KV ws, r, "勝率", sWin
+    S2_KV ws, r, "プロフィットファクター", sPf
+    S2_KV ws, r, "実現損益", Format(tot, "+#,##0;-#,##0") & " 円"
+    S2_KV ws, r, "未決済", bkPosN & " 銘柄"
+    r = r + 1
+    S2_KV ws, r, "条件", "最大" & cfMaxPos & "銘柄 / " & cfSizing & " / 損切り" & _
+                 Format(cfStopPct * 100, "0") & "%・ATR" & Format(cfStopAtr, "0.0") & "倍 / " & _
+                 "トレール" & Format(cfArm * 100, "0") & "→" & Format(cfTrail * 100, "0") & "%"
+    S2_KV ws, r, "約定", cfFill & " / 片道コスト " & Format(cfCostPct * 100, "0.00") & "%"
+    S2_KV ws, r, "注意", "実際の約定・板の厚み・貸借規制などは考慮していません"
+    ' この結果をどこまで信じてよいかを、結果のすぐ横に書いておく
+    If eN < cfBtDays * 0.9 Then
+        r = r + 1
+        S2_KV ws, r, "★期間が足りません", _
+              "指定 " & cfBtDays & "営業日に対し " & eN & "営業日しか回せていません。" & _
+              "200日移動平均の助走に " & (gT - eN) & "営業日を使うためです。" & _
+              "元ブックの履歴を " & (cfBtDays + 205) & "営業日ぶんまで増やすと指定どおり回せます。"
+    End If
+    If bkTrN = 0 Then
+        r = r + 1
+        S2_KV ws, r, "★決済が0回です", _
+              "期間中に一度も売っていません。買って持ち続けただけの結果で、" & _
+              "損切り・トレーリング・期限切れは一度も発動していません。" & _
+              "出口のルールはこの検証では確かめられていません。"
+    End If
+    If eN < 120 Then
+        r = r + 1
+        S2_KV ws, r, "★期間が短すぎます", _
+              eN & "営業日（約" & Format(eN / 21, "0.0") & "ヶ月）の結果です。" & _
+              "良し悪しを判断できる長さではありません。"
+    End If
+
+    ' エクイティカーブ
+    gStep = "結果の出力: 資産推移"
+    Dim c0 As Long
+    c0 = 6
+    ws.Cells(2, c0).Value = "日付"
+    ws.Cells(2, c0 + 1).Value = "資産"
+    ws.Cells(2, c0 + 2).Value = "ドローダウン%"
+    S2_HeadStyle ws, ws.Range(ws.Cells(2, c0), ws.Cells(2, c0 + 2)).Address
+    pk = btEq(1)
+    For j = 1 To eN
+        If btEq(j) > pk Then pk = btEq(j)
+        ws.Cells(j + 2, c0).Value = CDate(btDate(j))
+        ws.Cells(j + 2, c0 + 1).Value = Round(btEq(j), 0)
+        ws.Cells(j + 2, c0 + 2).Value = Round((btEq(j) / pk - 1) * 100, 2)
+    Next j
+    ws.Range(ws.Cells(3, c0), ws.Cells(eN + 2, c0)).NumberFormatLocal = "yyyy/mm/dd"
+
+    On Error Resume Next
+    Dim ch As ChartObject
+    Set ch = ws.ChartObjects.Add(10, 330, 620, 260)
+    ch.Chart.SetSourceData ws.Range(ws.Cells(2, c0), ws.Cells(eN + 2, c0 + 1))
+    ch.Chart.ChartType = xlLine
+    ch.Chart.HasTitle = True
+    ch.Chart.ChartTitle.Text = "資産の推移"
+    ch.Chart.HasLegend = False
+    On Error GoTo 0
+
+    ' 取引明細
+    gStep = "結果の出力: 取引明細"
+    Dim rr As Long
+    rr = eN + 5
+    If rr < 26 Then rr = 26
+    ws.Cells(rr, c0).Value = "■ 取引明細"
+    ws.Cells(rr, c0).Font.Bold = True
+    rr = rr + 1
+    ws.Range(ws.Cells(rr, c0), ws.Cells(rr, c0 + 8)).Value = _
+        Array("入り日", "出た日", "コード", "銘柄名", "取得", "決済", "株数", "損益(円)", "理由")
+    S2_HeadStyle ws, ws.Range(ws.Cells(rr, c0), ws.Cells(rr, c0 + 8)).Address
+    For j = 1 To nTr
+        rr = rr + 1
+        ws.Cells(rr, c0).Value = bkTr(j).EDate
+        ws.Cells(rr, c0 + 1).Value = bkTr(j).XDate
+        ws.Cells(rr, c0 + 2).Value = "'" & bkTr(j).Code
+        ws.Cells(rr, c0 + 3).Value = bkTr(j).nm
+        ws.Cells(rr, c0 + 4).Value = Round(bkTr(j).Entry, 1)
+        ws.Cells(rr, c0 + 5).Value = Round(bkTr(j).Exit_, 1)
+        ws.Cells(rr, c0 + 6).Value = bkTr(j).Shares
+        ws.Cells(rr, c0 + 7).Value = Round(bkTr(j).Pnl, 0)
+        ws.Cells(rr, c0 + 8).Value = bkTr(j).Reason
+    Next j
+    gStep = "結果の出力: 仕上げ"
+    On Error Resume Next
+    S2_FitSheet ws, "A:C"
+    ws.Columns("F:N").AutoFit
+    ws.Activate
+    ws.Range("A1").Select
+    On Error GoTo 0
+End Sub
+
+Public Function S2_UB(ByRef a() As Double) As Long
+    On Error Resume Next
+    S2_UB = UBound(a)
+    If Err.Number <> 0 Then Err.Clear: S2_UB = 0
+    On Error GoTo 0
+End Function
+-------------------------------------------------------------------------------
+VBA MACRO Mod_S2_Data.bas 
+in file: xl/vbaProject.bin - OLE stream: 'VBA/Mod_S2_Data'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Option Explicit
+
+'==============================================================================
+' 3. 元ブックを開いてデータを読む
+'==============================================================================
+
+
+' 終値シートを軸に全部を読み込む。成功で True
+
+' 補助シートを終値と同じ形の配列に読む（コードで突き合わせる）
+
+
+
+'==============================================================================
+' 4. 指標エンジン（1日ずつ前に進める。バックテストと本番で同じコードを使う）
+'==============================================================================
+Public sCurT As Long
+Public sSum200() As Double
+Public sRsiG() As Double, sRsiL() As Double
+Public sAtr() As Double
+Public sTurn() As Double
+Public sSmaRing() As Double
+Public sRingK As Long
+
+
+
+
+' 1日進める
+
+' 現在日の指標を取り出す
+
+' 直近 cfQualN 日の最大ドローダウン（0.10 = -10%）
+
+' 日次リターンの相関
+
+Public Function S2_OpenSrc(ByRef wasOpen As Boolean) As Workbook
+    Dim wb As Workbook, p As String, nm As String
+    p = cfSrc
+    If p = "" Then p = S2_FindSrc()
+    If p = "" Then
+        S2_Msg "データ元ブックが見つかりません。" & vbCrLf & vbCrLf & _
+               "このブックと同じフォルダに " & DEF_SRC & " がありません。" & vbCrLf & _
+               "「設定」シートの データ元ブック（フルパス） に入れてください。", vbCritical, "S2"
+        Exit Function
+    End If
+    gSrcPath = p
+    nm = Mid$(p, InStrRev(p, "\") + 1)
+
+    On Error Resume Next
+    Set wb = Application.Workbooks(nm)
+    On Error GoTo 0
+    If Not wb Is Nothing Then
+        wasOpen = True
+        Set S2_OpenSrc = wb
+        Exit Function
+    End If
+
+    If Dir$(p) = "" Then
+        S2_Msg "データ元ブックが見つかりません。" & vbCrLf & vbCrLf & p & vbCrLf & vbCrLf & _
+               "「設定」シートに正しいフルパスを入れてください。", vbCritical, "S2"
+        Exit Function
+    End If
+
+    Application.EnableEvents = False
+    Application.DisplayAlerts = False
+    On Error Resume Next
+    Set wb = Application.Workbooks.Open(Filename:=p, UpdateLinks:=0, ReadOnly:=True)
+    On Error GoTo 0
+    Application.DisplayAlerts = True
+    Application.EnableEvents = True
+
+    If wb Is Nothing Then
+        S2_Msg "データ元ブックを開けませんでした。" & vbCrLf & p & vbCrLf & vbCrLf & _
+               "他のソフトで開いていないか確認してください。", vbCritical, "S2"
+        Exit Function
+    End If
+    wasOpen = False
+    Set S2_OpenSrc = wb
+End Function
+
+Public Function S2_FindSrc() As String
+    Dim cand As String, best As String
+    cand = Dir$(S2_Dir() & DEF_SRC)
+    Do While cand <> ""
+        If Left$(cand, 2) <> "~$" Then
+            If best = "" Then best = cand
+            If InStr(cand, "V1.xlsm") > 0 Then best = cand
+        End If
+        cand = Dir$()
+    Loop
+    If best <> "" Then S2_FindSrc = S2_Dir() & best
+End Function
+
+Public Function S2_Build(src As Workbook, ByVal histWant As Long) As Boolean
+    Dim ws As Worksheet, lr As Long, lc As Long, i As Long, t As Long
+    Dim hv As Variant, nv As Variant, dv As Variant
+    Dim nRows As Long, Ok As Boolean, x As Double
+    Dim cd As String
+
+    gWarn.n = 0
+    Set ws = S2_SrcSheet(src, cfShClose)
+    If ws Is Nothing Then
+        S2_Msg "データ元ブックに「" & cfShClose & "」シートがありません。", vbCritical, "S2"
+        Exit Function
+    End If
+
+    lr = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+    lc = ws.Cells(SRC_HDR_ROW, ws.Columns.Count).End(xlToLeft).Column
+    If lr < SRC_DATA_ROW + 1 Or lc < SRC_FIRST_COL Then
+        S2_Msg "「" & cfShClose & "」にデータがありません。" & vbCrLf & _
+               "（最終行 " & lr & " / 最終列 " & lc & "）", vbCritical, "S2"
+        Exit Function
+    End If
+
+    gT = lc - SRC_FIRST_COL + 1
+    If gT > histWant Then gT = histWant
+    If gT < 30 Then
+        S2_Msg "履歴が短すぎます（" & gT & "日分）。", vbCritical, "S2"
+        Exit Function
+    End If
+    nRows = lr - SRC_DATA_ROW + 1
+
+    ' 日付（列は 新しい -> 古い。配列は 古い -> 新しい に直す）
+    dv = ws.Range(ws.Cells(SRC_HDR_ROW, SRC_FIRST_COL), _
+                  ws.Cells(SRC_HDR_ROW, SRC_FIRST_COL + gT - 1)).Value
+    ReDim gDate(1 To gT)
+    For t = 1 To gT
+        If IsDate(dv(1, t)) Then
+            gDate(gT - t + 1) = CDate(dv(1, t))
+        Else
+            gDate(gT - t + 1) = 0
+        End If
+    Next t
+    For t = gT To 1 Step -1
+        If gDate(t) = 0 Then
+            If t < gT Then gDate(t) = gDate(t + 1) - 1 Else gDate(t) = Date
+        End If
+    Next t
+
+    ' コードと銘柄名
+    nv = ws.Range(ws.Cells(SRC_DATA_ROW, 1), ws.Cells(lr, 2)).Value
+    ReDim gCode(1 To nRows)
+    ReDim gName(1 To nRows)
+    Set gIdx = CreateObject("Scripting.Dictionary")
+
+    ' 終値
+    hv = ws.Range(ws.Cells(SRC_DATA_ROW, SRC_FIRST_COL), _
+                  ws.Cells(lr, SRC_FIRST_COL + gT - 1)).Value
+    ReDim gC(1 To nRows, 1 To gT)
+
+    Dim first() As Long, stale() As Long, gaps() As Long
+    ReDim first(1 To nRows)
+    ReDim stale(1 To nRows)
+    ReDim gaps(1 To nRows)
+
+    gN = 0
+    For i = 1 To nRows
+        cd = S2_Txt(nv(i, 1))
+        If cd = "" Then GoTo NextRow
+        If gIdx.Exists(cd) Then GoTo NextRow          ' 重複コードは先勝ち
+        Dim fv As Long, gp As Long, prev As Double, tr As Long
+        fv = 0: gp = 0: prev = 0
+        gN = gN + 1
+        gCode(gN) = cd
+        gName(gN) = S2_Txt(nv(i, 2))
+        gIdx(cd) = gN
+        For t = 1 To gT
+            x = S2_Val(hv(i, gT - t + 1), Ok)        ' 列は新しい順なので反転
+            If Ok Then
+                If x > 0 Then
+                    If fv = 0 Then fv = t
+                    prev = x
+                Else
+                    Ok = False
+                End If
+            End If
+            If Ok Then
+                gC(gN, t) = x
+            Else
+                gC(gN, t) = prev                      ' 前値で埋める（暦のズレを作らない）
+                If fv > 0 Then gp = gp + 1
+            End If
+        Next t
+        first(gN) = fv
+        gaps(gN) = gp
+        tr = 0
+        For t = gT To 1 Step -1
+            If S2_Val(hv(i, gT - t + 1), Ok) > 0 And Ok Then Exit For
+            tr = tr + 1
+        Next t
+        stale(gN) = tr
+NextRow:
+    Next i
+
+    If gN = 0 Then
+        S2_Msg "銘柄が1件も読めませんでした。元ブックの形が想定と違う可能性があります。", vbCritical, "S2"
+        Exit Function
+    End If
+    ReDim Preserve gCode(1 To gN)
+    ReDim Preserve gName(1 To gN)
+    gFirst = first
+    gStale = stale
+    gGaps = gaps
+    ReDim Preserve gFirst(1 To gN)
+    ReDim Preserve gStale(1 To gN)
+    ReDim Preserve gGaps(1 To gN)
+
+    ' 補助シート（無ければ代用）
+    gHasO = S2_LoadAux(src, cfShOpen, lr, gO)
+    gHasH = S2_LoadAux(src, cfShHigh, lr, gH)
+    gHasL = S2_LoadAux(src, cfShLow, lr, gL)
+    gHasV = S2_LoadAux(src, cfShVol, lr, gV)
+    If Not gHasH Then
+        gH = gC
+        S2_Warn "「" & cfShHigh & "」シートが無いため、高値は終値で代用します（トレールが甘くなります）"
+    End If
+    If Not gHasL Then
+        gL = gC
+        S2_Warn "「" & cfShLow & "」シートが無いため、安値は終値で代用します（ATRが小さめに出ます）"
+    End If
+    If Not gHasO Then
+        S2_Warn "「" & cfShOpen & "」シートが無いため、約定は「翌日終値」で行います"
+    End If
+    If gT < 205 Then
+        S2_Warn "履歴が " & gT & "日分しかありません。200日移動平均が計算できず候補は0件になります。"
+    End If
+    If Not gHasV Then
+        ReDim gV(1 To gN, 1 To gT)
+        S2_Warn "「" & cfShVol & "」シートが無いため、売買代金フィルタは効きません"
+    End If
+    S2_Build = True
+End Function
+
+Public Function S2_LoadAux(src As Workbook, ByVal shName As String, ByVal lrClose As Long, ByRef dest() As Double) As Boolean
+    Dim ws As Worksheet, lr As Long, lc As Long, i As Long, t As Long, r As Long
+    Dim nv As Variant, hv As Variant, cd As String, x As Double, Ok As Boolean, prev As Double
+    Set ws = S2_SrcSheet(src, shName)
+    If ws Is Nothing Then Exit Function
+    lr = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+    lc = ws.Cells(SRC_HDR_ROW, ws.Columns.Count).End(xlToLeft).Column
+    If lr < SRC_DATA_ROW + 1 Or lc < SRC_FIRST_COL + gT - 1 Then Exit Function
+
+    nv = ws.Range(ws.Cells(SRC_DATA_ROW, 1), ws.Cells(lr, 1)).Value
+    hv = ws.Range(ws.Cells(SRC_DATA_ROW, SRC_FIRST_COL), _
+                  ws.Cells(lr, SRC_FIRST_COL + gT - 1)).Value
+    ReDim dest(1 To gN, 1 To gT)
+    Dim hit As Long
+    hit = 0
+    For i = 1 To UBound(nv, 1)
+        cd = S2_Txt(nv(i, 1))
+        If cd = "" Then GoTo NextA
+        If Not gIdx.Exists(cd) Then GoTo NextA
+        r = gIdx(cd)
+        hit = hit + 1
+        prev = 0
+        For t = 1 To gT
+            x = S2_Val(hv(i, gT - t + 1), Ok)
+            If Ok And x > 0 Then
+                prev = x
+                dest(r, t) = x
+            Else
+                dest(r, t) = prev
+            End If
+        Next t
+NextA:
+    Next i
+    ' 一度も出てこなかった銘柄は終値で埋める
+    For r = 1 To gN
+        If dest(r, gT) = 0 Then
+            For t = 1 To gT
+                dest(r, t) = gC(r, t)
+            Next t
+        End If
+    Next r
+    S2_LoadAux = (hit > 0)
+End Function
+
+Public Function S2_SrcSheet(src As Workbook, ByVal nm As String) As Worksheet
+    Dim ws As Worksheet
+    If nm = "" Then Exit Function
+    On Error Resume Next
+    Set ws = src.Worksheets(nm)
+    On Error GoTo 0
+    Set S2_SrcSheet = ws
+End Function
+
+Public Sub S2_Warn(ByVal s As String)
+    BufAdd gWarn, s
+End Sub
+
+Public Sub S2_IndWarm(ByVal t0 As Long)
+    Dim i As Long, t As Long, s As Double, d As Double, g As Double, l As Double
+    Dim tr As Double, cnt As Long, st As Long
+
+    sRingK = cfRegSlope
+    If sRingK < 1 Then sRingK = 1
+    ReDim sSum200(1 To gN)
+    ReDim sRsiG(1 To gN)
+    ReDim sRsiL(1 To gN)
+    ReDim sAtr(1 To gN)
+    ReDim sTurn(1 To gN)
+    ReDim sSmaRing(1 To gN, 0 To sRingK)
+    sCurT = t0
+
+    For i = 1 To gN
+        ' 200日合計
+        s = 0
+        For t = t0 - 199 To t0
+            If t >= 1 Then s = s + gC(i, t)
+        Next t
+        sSum200(i) = s
+
+        ' RSI（Wilder）
+        st = gFirst(i)
+        If st < 1 Then st = 1
+        If t0 - st > 250 Then st = t0 - 250
+        g = 0: l = 0: cnt = 0
+        For t = st + 1 To st + cfRsiPer()
+            If t > t0 Then Exit For
+            d = gC(i, t) - gC(i, t - 1)
+            If d > 0 Then g = g + d Else l = l - d
+            cnt = cnt + 1
+        Next t
+        If cnt < 1 Then cnt = 1
+        g = g / cnt: l = l / cnt
+        For t = st + cfRsiPer() + 1 To t0
+            d = gC(i, t) - gC(i, t - 1)
+            If d > 0 Then
+                g = (g * (cfRsiPer() - 1) + d) / cfRsiPer()
+                l = l * (cfRsiPer() - 1) / cfRsiPer()
+            Else
+                g = g * (cfRsiPer() - 1) / cfRsiPer()
+                l = (l * (cfRsiPer() - 1) - d) / cfRsiPer()
+            End If
+        Next t
+        sRsiG(i) = g: sRsiL(i) = l
+
+        ' ATR（Wilder）
+        st = gFirst(i)
+        If st < 2 Then st = 2
+        If t0 - st > 250 Then st = t0 - 250
+        tr = 0: cnt = 0
+        For t = st To st + cfAtrN - 1
+            If t > t0 Then Exit For
+            tr = tr + S2_TR(i, t)
+            cnt = cnt + 1
+        Next t
+        If cnt < 1 Then cnt = 1
+        tr = tr / cnt
+        For t = st + cfAtrN To t0
+            tr = (tr * (cfAtrN - 1) + S2_TR(i, t)) / cfAtrN
+        Next t
+        sAtr(i) = tr
+
+        ' 売買代金 合計
+        s = 0
+        For t = t0 - cfLiqN + 1 To t0
+            If t >= 1 Then s = s + gC(i, t) * gV(i, t)
+        Next t
+        sTurn(i) = s
+
+        ' 200日線リング（傾き用）
+        For t = 0 To sRingK
+            sSmaRing(i, t) = sSum200(i) / 200
+        Next t
+        For t = t0 - sRingK To t0
+            If t >= 201 Then
+                s = 0
+                Dim u As Long
+                For u = t - 199 To t
+                    s = s + gC(i, u)
+                Next u
+                sSmaRing(i, t Mod (sRingK + 1)) = s / 200
+            End If
+        Next t
+    Next i
+End Sub
+
+Public Function cfRsiPer() As Long
+    cfRsiPer = 14
+End Function
+
+Public Function S2_TR(ByVal i As Long, ByVal t As Long) As Double
+    Dim h As Double, l As Double, pc As Double, a As Double, b As Double, c As Double
+    If t < 2 Then t = 2
+    h = gH(i, t): l = gL(i, t): pc = gC(i, t - 1)
+    If h < l Then h = gC(i, t): l = gC(i, t)
+    a = h - l
+    b = Abs(h - pc)
+    c = Abs(l - pc)
+    If b > a Then a = b
+    If c > a Then a = c
+    S2_TR = a
+End Function
+
+Public Sub S2_IndNext()
+    Dim i As Long, t As Long, d As Double, p As Long
+    t = sCurT + 1
+    If t > gT Then Exit Sub
+    p = cfRsiPer()
+    For i = 1 To gN
+        sSum200(i) = sSum200(i) + gC(i, t)
+        If t - 200 >= 1 Then sSum200(i) = sSum200(i) - gC(i, t - 200)
+        d = gC(i, t) - gC(i, t - 1)
+        If d > 0 Then
+            sRsiG(i) = (sRsiG(i) * (p - 1) + d) / p
+            sRsiL(i) = sRsiL(i) * (p - 1) / p
+        Else
+            sRsiG(i) = sRsiG(i) * (p - 1) / p
+            sRsiL(i) = (sRsiL(i) * (p - 1) - d) / p
+        End If
+        sAtr(i) = (sAtr(i) * (cfAtrN - 1) + S2_TR(i, t)) / cfAtrN
+        sTurn(i) = sTurn(i) + gC(i, t) * gV(i, t)
+        If t - cfLiqN >= 1 Then sTurn(i) = sTurn(i) - gC(i, t - cfLiqN) * gV(i, t - cfLiqN)
+        sSmaRing(i, t Mod (sRingK + 1)) = sSum200(i) / 200
+    Next i
+    sCurT = t
+End Sub
+
+Public Function S2_Ind(ByVal i As Long) As TInd
+    Dim r As TInd, t As Long, Sma As Double
+    t = sCurT
+    r.Ok = False
+    If gFirst(i) < 1 Then S2_Ind = r: Exit Function
+    If t - gFirst(i) + 1 < 201 Then S2_Ind = r: Exit Function
+    If t - cfMom < gFirst(i) Then S2_Ind = r: Exit Function
+    If t < 201 Then S2_Ind = r: Exit Function
+    Sma = sSum200(i) / 200
+    If Sma <= 0 Then S2_Ind = r: Exit Function
+    r.px = gC(i, t)
+    If r.px <= 0 Then S2_Ind = r: Exit Function
+    r.Sma = Sma
+    r.dev = r.px / Sma - 1
+    r.Slope = Sma / sSmaRing(i, (t - sRingK + (sRingK + 1) * 100) Mod (sRingK + 1)) - 1
+    If sRsiL(i) <= 0 Then
+        r.Rsi = 100
+    Else
+        r.Rsi = 100 - 100 / (1 + sRsiG(i) / sRsiL(i))
+    End If
+    r.Atr = sAtr(i)
+    If r.px > 0 Then r.AtrP = r.Atr / r.px
+    r.Mom = r.px / gC(i, t - cfMom) - 1
+    r.Turn = sTurn(i) / cfLiqN
+    r.Ok = True
+    S2_Ind = r
+End Function
+
+Public Function S2_MaxDD(ByVal i As Long, ByVal t As Long) As Double
+    Dim u As Long, pk As Double, dd As Double, w As Double, st As Long
+    st = t - cfQualN + 1
+    If st < gFirst(i) Then st = gFirst(i)
+    If st < 1 Then st = 1
+    pk = 0: dd = 0
+    For u = st To t
+        If gC(i, u) > pk Then pk = gC(i, u)
+        If pk > 0 Then
+            w = 1 - gC(i, u) / pk
+            If w > dd Then dd = w
+        End If
+    Next u
+    S2_MaxDD = dd
+End Function
+
+Public Function S2_Corr(ByVal i As Long, ByVal j As Long, ByVal t As Long) As Double
+    Dim u As Long, n As Long, st As Long
+    Dim x As Double, y As Double
+    Dim sx As Double, sy As Double, sxx As Double, syy As Double, sxy As Double
+    st = t - cfCorrN + 1
+    If st < 2 Then st = 2
+    If st < gFirst(i) + 1 Then st = gFirst(i) + 1
+    If st < gFirst(j) + 1 Then st = gFirst(j) + 1
+    For u = st To t
+        If gC(i, u - 1) > 0 And gC(j, u - 1) > 0 Then
+            x = gC(i, u) / gC(i, u - 1) - 1
+            y = gC(j, u) / gC(j, u - 1) - 1
+            sx = sx + x: sy = sy + y
+            sxx = sxx + x * x: syy = syy + y * y: sxy = sxy + x * y
+            n = n + 1
+        End If
+    Next u
+    If n < 10 Then S2_Corr = 0: Exit Function
+    Dim vx As Double, vy As Double
+    vx = sxx - sx * sx / n
+    vy = syy - sy * sy / n
+    If vx <= 0 Or vy <= 0 Then S2_Corr = 0: Exit Function
+    S2_Corr = (sxy - sx * sy / n) / Sqr(vx * vy)
+End Function
+-------------------------------------------------------------------------------
+VBA MACRO Mod_S2_View.bas 
+in file: xl/vbaProject.bin - OLE stream: 'VBA/Mod_S2_View'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Option Explicit
+
+'==============================================================================
+' 8b. シート出力
+'==============================================================================
+
+
+
+
+
+
+
+
+
+'==============================================================================
+' 10. 診断（元データの品質をみる）
+'==============================================================================
+
+'==============================================================================
+' 11. 取扱説明書
+'==============================================================================
+
+Public Sub S2_OutRank(ByRef idx() As Long, ByRef ind() As TInd, ByVal c As Long)
+    Dim ws As Worksheet, dmy As Boolean, j As Long, i As Long, r As Long
+    Set ws = S2_Sheet(SH_RANK, dmy)
+    ws.Cells.Clear
+    ws.Range("A1").Value = "スクリーニング上位" & cfTopN & "　基準日 " & Format(gDate(gT), "yyyy/mm/dd") & _
+                           "　候補 " & c & "件"
+    ws.Range("A1").Font.Bold = True
+    ws.Range("A2:M2").Value = Array("順位", "コード", "銘柄名", "終値", "200日線", "乖離%", "RSI14", _
+                                    "モメンタム%", "ATR%", "最大DD%", "売買代金(百万)", "スコア", "1単元(円)")
+    For j = 1 To c
+        If j > cfTopN Then Exit For
+        i = idx(j)
+        r = j + 2
+        ws.Cells(r, 1).Value = j
+        ws.Cells(r, 2).Value = "'" & gCode(i)
+        ws.Cells(r, 3).Value = gName(i)
+        ws.Cells(r, 4).Value = ind(j).px
+        ws.Cells(r, 5).Value = Round(ind(j).Sma, 1)
+        ws.Cells(r, 6).Value = Round(ind(j).dev * 100, 1)
+        ws.Cells(r, 7).Value = Round(ind(j).Rsi, 1)
+        ws.Cells(r, 8).Value = Round(ind(j).Mom * 100, 1)
+        ws.Cells(r, 9).Value = Round(ind(j).AtrP * 100, 2)
+        ws.Cells(r, 10).Value = Round(ind(j).Qual * 100, 1)
+        ws.Cells(r, 11).Value = Round(ind(j).Turn / 1000000#, 0)
+        ws.Cells(r, 12).Value = Round(ind(j).Score, 1)
+        ws.Cells(r, 13).Value = Round(ind(j).px * cfLot, 0)
+    Next j
+    S2_HeadStyle ws, "A2:M2"
+    S2_FitSheet ws, "A:M"
+End Sub
+
+Public Sub S2_OutSignal()
+    Dim ws As Worksheet, dmy As Boolean, j As Long, r As Long
+    Set ws = S2_Sheet(SH_SIG, dmy)
+    ws.Cells.Clear
+    ws.Range("A1").Value = "翌営業日の注文　" & Format(gDate(gT), "yyyy/mm/dd") & "の終値で判定　" & _
+                           "約定 : " & cfFill
+    ws.Range("A1").Font.Bold = True
+    ws.Range("A2:H2").Value = Array("区分", "コード", "銘柄名", "株数", "参考価格", "概算金額", "理由", "シグナル日")
+    r = 2
+    For j = 1 To bkOrdN
+        r = r + 1
+        ws.Cells(r, 1).Value = IIf(bkOrd(j).Side = "BUY", "買い", "売り")
+        ws.Cells(r, 2).Value = "'" & bkOrd(j).Code
+        ws.Cells(r, 3).Value = bkOrd(j).nm
+        ws.Cells(r, 4).Value = bkOrd(j).Shares
+        ws.Cells(r, 5).Value = Round(bkOrd(j).RefPx, 1)
+        ws.Cells(r, 6).Value = Round(bkOrd(j).RefPx * bkOrd(j).Shares, 0)
+        ws.Cells(r, 7).Value = bkOrd(j).Reason
+        ws.Cells(r, 8).Value = bkOrd(j).SDate
+        If bkOrd(j).Side = "BUY" Then
+            ws.Range(ws.Cells(r, 1), ws.Cells(r, 8)).Interior.Color = RGB(226, 239, 218)
+        Else
+            ws.Range(ws.Cells(r, 1), ws.Cells(r, 8)).Interior.Color = RGB(252, 228, 214)
+        End If
+    Next j
+    If bkOrdN = 0 Then ws.Cells(3, 1).Value = "注文はありません"
+
+    r = r + 2
+    ws.Cells(r, 1).Value = "現在の保有"
+    ws.Cells(r, 1).Font.Bold = True
+    r = r + 1
+    ws.Range(ws.Cells(r, 1), ws.Cells(r, 8)).Value = _
+        Array("コード", "銘柄名", "取得単価", "株数", "現在値", "評価損益", "損切り", "トレール")
+    S2_HeadStyle ws, ws.Range(ws.Cells(r, 1), ws.Cells(r, 8)).Address
+    Dim k As Long, i As Long, px As Double
+    For k = 1 To bkPosN
+        r = r + 1
+        px = bkPos(k).Entry
+        If gIdx.Exists(bkPos(k).Code) Then
+            i = gIdx(bkPos(k).Code)
+            px = gC(i, gT)
+        End If
+        ws.Cells(r, 1).Value = "'" & bkPos(k).Code
+        ws.Cells(r, 2).Value = bkPos(k).nm
+        ws.Cells(r, 3).Value = Round(bkPos(k).Entry, 1)
+        ws.Cells(r, 4).Value = bkPos(k).Shares
+        ws.Cells(r, 5).Value = px
+        ws.Cells(r, 6).Value = Round((px - bkPos(k).Entry) * bkPos(k).Shares, 0)
+        ws.Cells(r, 7).Value = Round(bkPos(k).StopPx, 0)
+        ws.Cells(r, 8).Value = IIf(bkPos(k).Armed, Round(bkPos(k).Peak * (1 - cfTrail), 0), _
+                                   "起動 " & Format(bkPos(k).ArmPx, "#,##0"))
+    Next k
+    S2_HeadStyle ws, "A2:H2"
+    S2_FitSheet ws, "A:H"
+End Sub
+
+Public Sub S2_OutTrades()
+    Dim ws As Worksheet, dmy As Boolean, tr() As TTrade, n As Long, j As Long, r As Long
+    Set ws = S2_Sheet(SH_HIST, dmy)
+    ws.Cells.Clear
+    n = S2_ReadTrades(tr)
+    ws.Range("A1").Value = "取引履歴（決済済み " & n & "件）"
+    ws.Range("A1").Font.Bold = True
+    ws.Range("A2:K2").Value = Array("入り日", "出た日", "コード", "銘柄名", "取得", "決済", "株数", _
+                                    "損益(円)", "損益%", "保有日数", "理由")
+    S2_HeadStyle ws, "A2:K2"
+    If n = 0 Then
+        ws.Cells(3, 1).Value = "まだ決済した取引はありません"
+        S2_FitSheet ws, "A:K"
+        Exit Sub
+    End If
+
+    Dim tot As Double, win As Long, sw As Double, sl As Double
+    Dim eq As Double, pk As Double, dd As Double, mdd As Double
+    Dim bw As Double, bl As Double, days As Double
+    eq = cfCap: pk = cfCap
+    For j = 1 To n
+        r = j + 2
+        ws.Cells(r, 1).Value = tr(j).EDate
+        ws.Cells(r, 2).Value = tr(j).XDate
+        ws.Cells(r, 3).Value = "'" & tr(j).Code
+        ws.Cells(r, 4).Value = tr(j).nm
+        ws.Cells(r, 5).Value = Round(tr(j).Entry, 1)
+        ws.Cells(r, 6).Value = Round(tr(j).Exit_, 1)
+        ws.Cells(r, 7).Value = tr(j).Shares
+        ws.Cells(r, 8).Value = Round(tr(j).Pnl, 0)
+        ws.Cells(r, 9).Value = Round(tr(j).PnlPct * 100, 2)
+        ws.Cells(r, 10).Value = tr(j).Bars
+        ws.Cells(r, 11).Value = tr(j).Reason
+        If tr(j).Pnl > 0 Then
+            ws.Cells(r, 8).Font.Color = RGB(0, 130, 0)
+        ElseIf tr(j).Pnl < 0 Then
+            ws.Cells(r, 8).Font.Color = RGB(200, 0, 0)
+        End If
+        tot = tot + tr(j).Pnl
+        days = days + tr(j).Bars
+        If tr(j).Pnl > 0 Then
+            win = win + 1: sw = sw + tr(j).Pnl
+            If tr(j).Pnl > bw Then bw = tr(j).Pnl
+        Else
+            sl = sl - tr(j).Pnl
+            If tr(j).Pnl < bl Then bl = tr(j).Pnl
+        End If
+        eq = eq + tr(j).Pnl
+        If eq > pk Then pk = eq
+        If pk > 0 Then
+            dd = 1 - eq / pk
+            If dd > mdd Then mdd = dd
+        End If
+    Next j
+
+    r = n + 4
+    ws.Cells(r, 1).Value = "■ 成績（決済ベース）"
+    ws.Cells(r, 1).Font.Bold = True
+    S2_KV ws, r, "取引数", n & " 件"
+    S2_KV ws, r, "実現損益", Format(tot, "+#,##0;-#,##0") & " 円 （元手比 " & Format(tot / cfCap * 100, "+0.0;-0.0") & "%）"
+    S2_KV ws, r, "勝率", Format(win / n * 100, "0.0") & "%  (" & win & "勝 " & (n - win) & "敗)"
+    ' IIf は両方の枝を評価するので、割り算は先に済ませておく
+    Dim sPf As String, sAvgW As String, sAvgL As String, sPayoff As String
+    Dim lose As Long
+    lose = n - win
+    If sl > 0 Then sPf = Format(sw / sl, "0.00") Else sPf = "-"
+    If win > 0 Then sAvgW = Format(sw / win, "#,##0") & " 円" Else sAvgW = "-"
+    If lose > 0 Then sAvgL = Format(-sl / lose, "#,##0") & " 円" Else sAvgL = "-"
+    sPayoff = "-"
+    If win > 0 And lose > 0 Then
+        If sl > 0 Then sPayoff = Format((sw / win) / (sl / lose), "0.00")
+    End If
+    S2_KV ws, r, "プロフィットファクター", sPf
+    S2_KV ws, r, "平均利益", sAvgW
+    S2_KV ws, r, "平均損失", sAvgL
+    S2_KV ws, r, "ペイオフレシオ", sPayoff
+    S2_KV ws, r, "最大の勝ち / 負け", Format(bw, "+#,##0") & " / " & Format(bl, "#,##0") & " 円"
+    S2_KV ws, r, "実現損益ベース最大DD", Format(mdd * 100, "0.0") & "%"
+    S2_KV ws, r, "平均保有日数", Format(days / n, "0.0") & " 営業日"
+    S2_KV ws, r, "期待値（1取引あたり）", Format(tot / n, "+#,##0;-#,##0") & " 円"
+    S2_FitSheet ws, "A:K"
+End Sub
+
+Public Sub S2_KV(ws As Worksheet, ByRef r As Long, ByVal k As String, ByVal v As String)
+    r = r + 1
+    ws.Cells(r, 1).Value = "  " & k
+    ws.Cells(r, 3).Value = v
+End Sub
+
+Public Sub S2_OutDash(ByVal msg As String, ByVal regime As String)
+    Dim ws As Worksheet, dmy As Boolean, ln As Variant, j As Long
+    Const TOP_ROW As Long = 5
+    Set ws = S2_Sheet(SH_DASH, dmy)
+    On Error Resume Next
+    ws.Cells.Clear
+    On Error GoTo 0
+    ws.Columns("A").NumberFormatLocal = "@"
+    ln = Split(msg, vbLf)
+    For j = 0 To UBound(ln)
+        ws.Cells(j + TOP_ROW, 1).Value2 = ln(j)
+    Next j
+    With ws.Range(ws.Cells(TOP_ROW, 1), ws.Cells(UBound(ln) + TOP_ROW, 1))
+        .Font.Name = S2_FontName()
+        .Font.Size = S2_FontSize()
+        .HorizontalAlignment = xlLeft
+    End With
+    For j = 0 To UBound(ln)
+        If Left$(ln(j), 1) = "■" Then
+            ws.Cells(j + TOP_ROW, 1).Font.Bold = True
+            ws.Cells(j + TOP_ROW, 1).Interior.Color = RGB(220, 230, 241)
+        ElseIf Left$(ln(j), 3) = "  日" Then
+            ws.Cells(j + TOP_ROW, 1).Font.Bold = True
+            ws.Cells(j + TOP_ROW, 1).Font.Size = S2_FS(3)
+        End If
+    Next j
+    ws.Columns("A").ColumnWidth = S2_W(96)
+    ws.Rows(1).RowHeight = 8 * S2_K()
+    ws.Rows(2).RowHeight = 34 * S2_K() + 6
+    ws.Rows(3).RowHeight = 8 * S2_K()
+    ws.Rows(4).RowHeight = 8 * S2_K()
+    S2_AddButtons ws
+    On Error Resume Next
+    ws.Activate
+    ws.Range("A1").Select
+    On Error GoTo 0
+End Sub
+
+Public Sub S2_HeadStyle(ws As Worksheet, ByVal addr As String)
+    With ws.Range(addr)
+        .Font.Bold = True
+        .Interior.Color = RGB(220, 230, 241)
+    End With
+End Sub
+
+Public Sub S2_AddButtons(ws As Worksheet)
+    On Error Resume Next
+    ' ボタンも文字の大きさに合わせて広げる（重ならないように位置も計算する）
+    Dim k As Double, x As Single, y As Single, h As Single, g As Single
+    k = S2_K()
+    y = 6 * k: h = 34 * k: g = 6 * k: x = 6 * k
+    S2_Btn ws, "S2_btnRun", "更新", "S2_更新", x, y, 120 * k, h, RGB(0, 112, 192)
+    x = x + 120 * k + g
+    S2_Btn ws, "S2_btnBt", "バックテスト", "S2_バックテスト", x, y, 150 * k, h, RGB(0, 140, 100)
+    x = x + 150 * k + g
+    S2_Btn ws, "S2_btnDiag", "診断", "S2_診断", x, y, 90 * k, h, RGB(120, 90, 170)
+    x = x + 90 * k + g
+    S2_Btn ws, "S2_btnHelp", "説明書", "S2_説明書作成", x, y, 100 * k, h, RGB(150, 150, 150)
+    x = x + 100 * k + g
+    S2_Btn ws, "S2_btnReset", "保有リセット", "S2_保有リセット", x, y, 140 * k, h, RGB(190, 90, 90)
+    On Error GoTo 0
+End Sub
+
+Public Sub S2_Btn(ws As Worksheet, ByVal nm As String, ByVal cap As String, ByVal act As String, ByVal x As Single, ByVal y As Single, ByVal w As Single, ByVal h As Single, ByVal col As Long)
+    Dim shp As Shape
+    On Error Resume Next
+    Set shp = ws.Shapes(nm)
+    On Error GoTo 0
+    If Not shp Is Nothing Then
+        ' 既にあるボタンは作り直さず、位置と役目だけ更新する
+        ' （押した本人を消すとExcelが不安定になるため）
+        On Error Resume Next
+        shp.Left = x: shp.Top = y: shp.Width = w: shp.Height = h
+        shp.fill.ForeColor.RGB = col
+        shp.TextFrame.Characters.Text = cap
+        shp.TextFrame.Characters.Font.Size = S2_FS(1)
+        shp.TextFrame.Characters.Font.Bold = True
+        shp.TextFrame.Characters.Font.Color = RGB(255, 255, 255)
+        shp.OnAction = act
+        On Error GoTo 0
+        Exit Sub
+    End If
+    Set shp = ws.Shapes.AddShape(msoShapeRoundedRectangle, x, y, w, h)
+    shp.Name = nm
+    shp.fill.ForeColor.RGB = col
+    shp.fill.Solid
+    shp.Line.Visible = msoFalse
+    With shp.TextFrame
+        .Characters.Text = cap
+        .Characters.Font.Size = S2_FS(1)
+        .Characters.Font.Bold = True
+        .Characters.Font.Color = RGB(255, 255, 255)
+        .HorizontalAlignment = xlHAlignCenter
+        .VerticalAlignment = xlVAlignCenter
+    End With
+    shp.OnAction = act
+End Sub
+
+Public Function S2_Sheet(ByVal nm As String, ByRef made As Boolean) As Worksheet
+    Dim ws As Worksheet
+    made = False
+    On Error Resume Next
+    Set ws = ThisWorkbook.Worksheets(nm)
+    On Error GoTo 0
+    If ws Is Nothing Then
+        Set ws = ThisWorkbook.Worksheets.Add( _
+                 After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.Count))
+        ws.Name = nm
+        made = True
+    End If
+    Set S2_Sheet = ws
+End Function
+
+Public Sub S2_診断()
+    Dim src As Workbook, wasOpen As Boolean, ws As Worksheet, dmy As Boolean
+    Dim i As Long, r As Long, why As String, ind As TInd
+    Dim nDigit As Long, nFund As Long, nShort As Long, nStale As Long, nGap As Long
+    Dim d As Object, k As Variant
+
+    If Not S2_LoadSettings() Then Exit Sub
+    On Error GoTo EH
+    Application.ScreenUpdating = False
+    gStep = "データ元ブックを開く"
+    Set src = S2_OpenSrc(wasOpen)
+    If src Is Nothing Then GoTo EX
+    gStep = "株価読込"
+    If Not S2_Build(src, cfHistMax) Then GoTo EX
+    If Not wasOpen Then src.Close SaveChanges:=False
+    Set src = Nothing
+    gStep = "指標計算"
+    S2_IndWarm gT
+
+    Set d = CreateObject("Scripting.Dictionary")
+    For i = 1 To gN
+        If Len(gCode(i)) = 4 And IsNumeric(gCode(i)) Then nDigit = nDigit + 1
+        If S2_HasFundWord(gName(i)) Then nFund = nFund + 1
+        If gFirst(i) < 1 Or gT - gFirst(i) + 1 < 201 Then nShort = nShort + 1
+        If gStale(i) > 3 Then nStale = nStale + 1
+        If gGaps(i) > 0 Then nGap = nGap + 1
+        If S2_Tradable(i) Then
+            ind = S2_Ind(i)
+            If Not S2_Pass(i, ind, why) Then
+                If why = "" Then why = "(不明)"
+                d(why) = d(why) + 1
+            Else
+                d("★候補になった") = d("★候補になった") + 1
+            End If
+        End If
+    Next i
+
+    Set ws = S2_Sheet(SH_DIAG, dmy)
+    ws.Cells.Clear
+    ws.Range("A1").Value = "データ診断　" & Format(Now, "yyyy/mm/dd hh:nn")
+    ws.Range("A1").Font.Bold = True
+    ws.Range("A1").Font.Size = S2_FS(3)
+    r = 2
+    S2_KV ws, r, "データ元ブック", gSrcPath
+    S2_KV ws, r, "基準日（最新）", Format(gDate(gT), "yyyy/mm/dd")
+    S2_KV ws, r, "読み込んだ日数", gT & " 営業日 （" & Format(gDate(1), "yyyy/mm/dd") & " ～）"
+    S2_KV ws, r, "読み込んだ銘柄数", gN & " 件"
+    S2_KV ws, r, "うち 4桁コード", nDigit & " 件"
+    S2_KV ws, r, "ETF/REIT らしい名前", nFund & " 件" & IIf(cfExETF, "（除外しています）", "（除外していません）")
+    S2_KV ws, r, "履歴が200日に満たない", nShort & " 件"
+    S2_KV ws, r, "株価が4日以上更新なし", nStale & " 件"
+    S2_KV ws, r, "途中に欠測あり", nGap & " 件（前の値で埋めました）"
+    r = r + 1
+    S2_KV ws, r, "始値シート", IIf(gHasO, "あり（" & cfShOpen & "）", "なし → 約定は終値で代用")
+    S2_KV ws, r, "高値シート", IIf(gHasH, "あり（" & cfShHigh & "）", "なし → 終値で代用（トレールが甘くなる）")
+    S2_KV ws, r, "安値シート", IIf(gHasL, "あり（" & cfShLow & "）", "なし → 終値で代用（ATRが小さく出る）")
+    S2_KV ws, r, "出来高シート", IIf(gHasV, "あり（" & cfShVol & "）", "なし → 売買代金フィルタは効かない")
+
+    r = r + 2
+    ws.Cells(r, 1).Value = "■ フィルタで落ちた内訳（母集団 " & gN & "件）"
+    ws.Cells(r, 1).Font.Bold = True
+    r = r + 1
+    ws.Cells(r, 1).Value = "理由"
+    ws.Cells(r, 3).Value = "件数"
+    S2_HeadStyle ws, ws.Range(ws.Cells(r, 1), ws.Cells(r, 3)).Address
+    For Each k In d.Keys
+        r = r + 1
+        ws.Cells(r, 1).Value = "  " & k
+        ws.Cells(r, 3).Value = d(k)
+    Next k
+
+    r = r + 2
+    ws.Cells(r, 1).Value = "■ 株価が止まっている銘柄（上位30件）"
+    ws.Cells(r, 1).Font.Bold = True
+    r = r + 1
+    Dim shown As Long
+    For i = 1 To gN
+        If gStale(i) > 3 And shown < 30 Then
+            shown = shown + 1
+            r = r + 1
+            ws.Cells(r, 1).Value = "'" & gCode(i)
+            ws.Cells(r, 2).Value = gName(i)
+            ws.Cells(r, 3).Value = gStale(i) & " 日前から更新なし"
+        End If
+    Next i
+    If shown = 0 Then r = r + 1: ws.Cells(r, 1).Value = "  なし"
+
+    If gWarn.n > 0 Then
+        r = r + 2
+        ws.Cells(r, 1).Value = "■ 注意"
+        ws.Cells(r, 1).Font.Bold = True
+        For i = 1 To gWarn.n
+            r = r + 1
+            ws.Cells(r, 1).Value = "  " & gWarn.a(i)
+        Next i
+    End If
+
+    S2_FitSheet ws, "A:C"
+    ws.Activate
+    ws.Range("A1").Select
+EX:
+    On Error Resume Next
+    If Not src Is Nothing Then
+        If Not wasOpen Then src.Close SaveChanges:=False
+    End If
+    Application.ScreenUpdating = True
+    Exit Sub
+EH:
+    Application.ScreenUpdating = True
+    S2_Msg "診断中にエラー " & Err.Number & vbCrLf & Err.Description & vbCrLf & "場所 : " & gStep, _
+           vbCritical, "S2"
+End Sub
+
+Public Sub S2_説明書作成()
+    Dim ws As Worksheet, made As Boolean, r As Long, i As Long, last As Long
+    Set ws = S2_Sheet(SH_HELP, made)
+    ws.Cells.Clear
+    ws.Columns("A").NumberFormatLocal = "@"
+    r = 0
+    S2_H ws, r, "株スクリーニング　取扱説明書"
+    S2_H ws, r, "Ver 4.0　" & Format(Date, "yyyy/mm/dd")
+    S2_H ws, r, ""
+    S2_H ws, r, "■ このブックは何をするもの？"
+    S2_H ws, r, "   「総合売買抽出　V1.xlsm」の株価から、買える日本株を探して表に出します。"
+    S2_H ws, r, "   このブックは株価を「読むだけ」です。元のブックは一切変更しません。"
+    S2_H ws, r, "   売買の記録をつけ、勝率や最大の落ち込みまで出します。"
+    S2_H ws, r, ""
+    S2_H ws, r, "■ 使い方（これだけ）"
+    S2_H ws, r, "   ダッシュボードの【更新】ボタンを押す。以上です。"
+    S2_H ws, r, "   出てきた「明日の買い注文 / 売り注文」を、翌営業日の寄付で出します。"
+    S2_H ws, r, ""
+    S2_H ws, r, "■ ボタン"
+    S2_H ws, r, "   【更新】　　　　最新の株価で計算し直します"
+    S2_H ws, r, "   【バックテスト】いまの設定で過去をシミュレーションします"
+    S2_H ws, r, "   【診断】　　　　元データの品質と、何件がどの条件で落ちたかを出します"
+    S2_H ws, r, "   【説明書】　　　この紙を作り直します"
+    S2_H ws, r, "   【保有リセット】保有と取引履歴を全部消して、最初からやり直します"
+    S2_H ws, r, ""
+    S2_H ws, r, "■ シートの説明"
+    S2_H ws, r, "   ダッシュボード … 結果のまとめ（ボタンもここ）"
+    S2_H ws, r, "   ランキング　　 … 上位銘柄の表（スコアの中身つき）"
+    S2_H ws, r, "   シグナル　　　 … 翌営業日に出す注文と、いまの保有"
+    S2_H ws, r, "   取引履歴　　　 … 決済した取引と成績"
+    S2_H ws, r, "   バックテスト　 … 過去のシミュレーション結果"
+    S2_H ws, r, "   診断　　　　　 … 元データの品質チェック"
+    S2_H ws, r, "   設定　　　　　 … 数字を変えるところ"
+    S2_H ws, r, "   取扱説明書　　 … この紙"
+    S2_H ws, r, ""
+    S2_H ws, r, "■ 大事なこと：注文は「翌営業日」に出す前提です"
+    S2_H ws, r, "   判定は当日の終値で行います。終値の時点ではもう買えません。"
+    S2_H ws, r, "   そこでこのブックは、シグナルを「保留注文」として持ち、"
+    S2_H ws, r, "   次に【更新】した時の翌営業日の始値で約定したことにします。"
+    S2_H ws, r, "   手数料とスリッページ（設定の 片道コスト）も引いています。"
+    S2_H ws, r, ""
+    S2_H ws, r, "   このブックは証券会社とつながっていません。注文はご自分で出します。"
+    S2_H ws, r, "   次に【更新】を押したとき、その注文が約定したかを1件ずつ聞きます。"
+    S2_H ws, r, "   出し忘れ・ストップ高で寄らなかった等は「いいえ」で取り消せます。"
+    S2_H ws, r, "   毎回聞かれたくない時は、設定の「約定を確認する」を しない に。"
+    S2_H ws, r, "   ※Ver 3 までは当日の終値で約定したことにしていたため、"
+    S2_H ws, r, "     実際には取れない値段で成績が出ていました。"
+    S2_H ws, r, ""
+    S2_H ws, r, "■ 銘柄の選び方"
+    S2_H ws, r, "   1. 終値が200日移動平均より上　　　（上昇トレンド）"
+    S2_H ws, r, "   2. 200日移動平均そのものが上向き　（トレンドが本物）"
+    S2_H ws, r, "   3. RSI(14)が 50～75　　　　　　　（強いが買われすぎではない）"
+    S2_H ws, r, "   4. 3ヶ月前より株価が上　　　　　　（勢いがある）"
+    S2_H ws, r, "   5. 株価が下限～上限の間　　　　　　（少額で買える／低位株は避ける）"
+    S2_H ws, r, "   6. 売買代金が一定以上　　　　　　　（薄い株は避ける）"
+    S2_H ws, r, "   7. 200日線から離れ過ぎていない　　（上がり過ぎは避ける）"
+    S2_H ws, r, "   8. ETF・REIT は除外　　　　　　　（個別株だけを対象にする）"
+    S2_H ws, r, "   9. いま持っている銘柄と値動きが似すぎていない（分散）"
+    S2_H ws, r, "  10. 直前に損切りした銘柄ではない　（クールダウン）"
+    S2_H ws, r, ""
+    S2_H ws, r, "■ 順位のつけ方（100点満点・設定で配点を変えられます）"
+    S2_H ws, r, "   200日線からの乖離　30点 … ベスト（既定+15%）で満点の山型"
+    S2_H ws, r, "   RSIの強さ　　　　　20点 … 下限で0点、上限で満点"
+    S2_H ws, r, "   モメンタム　　　　 35点 … 3ヶ月+40%で満点"
+    S2_H ws, r, "   値動きの質　　　　 15点 … 直近の下げが浅いほど高得点"
+    S2_H ws, r, "   ※Ver 4 からは「その日の候補の中での順位」ではなく絶対評価です。"
+    S2_H ws, r, "     だから昨日のスコア80と今日のスコア80が同じ意味を持ちます。"
+    S2_H ws, r, ""
+    S2_H ws, r, "■ 売買ルール"
+    S2_H ws, r, "   買う　　　 … スコア上位から、最大N銘柄（設定 MAX_POS）"
+    S2_H ws, r, "   1銘柄の額 … 「リスク均等」なら、損切りまでの距離で株数を決めます"
+    S2_H ws, r, "   　　　　　　 （総資産の3%を失う株数。値動きの荒い株は少なく買う）"
+    S2_H ws, r, "   　　　　　　 「定率」なら総資産の決まった％です"
+    S2_H ws, r, "   損切り　　 … 取得から -10%、またはATRの2.5倍。広いほうを使います"
+    S2_H ws, r, "   利確　　　 … +15%まで上がったら見張り開始"
+    S2_H ws, r, "   　　　　　　 そこから高値より -8% 下がったら売る（トレーリング）"
+    S2_H ws, r, "   止める時　 … 1321(NF日経225)が200日線を割る、または200日線が下向き"
+    S2_H ws, r, ""
+    S2_H ws, r, "■ 毎日自動で更新したい"
+    S2_H ws, r, "   Alt + F8 → S2_予約登録 → 実行"
+    S2_H ws, r, "     毎日 設定した時刻（既定16:00）に自動で更新します"
+    S2_H ws, r, "     このブックを開いたままにしてください"
+    S2_H ws, r, "   やめる時は Alt + F8 → S2_予約解除"
+    S2_H ws, r, ""
+    S2_H ws, r, "   Excelを開いていなくても動かしたい場合は、同じフォルダの"
+    S2_H ws, r, "   S2_自動更新.vbs を Windows のタスクスケジューラに登録します。"
+    S2_H ws, r, "   結果は auto_log.txt に残ります。"
+    S2_H ws, r, "   ※自動更新では約定の確認ができません。翌朝ダッシュボードの"
+    S2_H ws, r, "   　「お知らせ」を必ず見てください。"
+    S2_H ws, r, ""
+    S2_H ws, r, "■ できるファイル（このブックと同じフォルダ）"
+    S2_H ws, r, "   positions.json … いまの保有と、明日出す注文"
+    S2_H ws, r, "   trades.json　　… 決済した取引の記録（消すと成績が消えます）"
+    S2_H ws, r, "   log.txt　　　　… 実行の記録とエラー"
+    S2_H ws, r, "   ＊.bak　　　　 … 直前の世代の控え"
+    S2_H ws, r, ""
+    S2_H ws, r, "■ 困ったとき"
+    S2_H ws, r, "   「データ元ブックが見つかりません」"
+    S2_H ws, r, "     → 設定シートの データ元ブック（フルパス） に入れる"
+    S2_H ws, r, "   「株価が更新されていません」と出る"
+    S2_H ws, r, "     → 元ブックを先に更新してください。同じ日で2回動かしても"
+    S2_H ws, r, "       保有と注文は二重にならないようになっています"
+    S2_H ws, r, "   候補が0件になる"
+    S2_H ws, r, "     → 【診断】を押すと、どの条件で何件落ちたかが出ます"
+    S2_H ws, r, "   「エラー ○○」が出た"
+    S2_H ws, r, "     → 画面に「場所 : ○○」が出ます。log.txt にも残ります"
+    S2_H ws, r, "   ボタンが消えた"
+    S2_H ws, r, "     → Alt + F8 → S2_更新 を実行すると作り直されます"
+    S2_H ws, r, "   バックテストでメモリ不足になる"
+    S2_H ws, r, "     → 設定の BT_DAYS（検証する日数）を小さくしてください"
+    S2_H ws, r, ""
+    S2_H ws, r, "■ 注意（必ずお読みください）"
+    S2_H ws, r, "   ・元ブックは読み取り専用で開き、変更しません"
+    S2_H ws, r, "   ・元ブックが閉じている時は、最後に保存された株価を読みます"
+    S2_H ws, r, "   ・バックテストは「過去の値段で買えた」という仮定の計算です。"
+    S2_H ws, r, "     板の厚み、ストップ高・安、貸借規制、上場廃止は考えていません。"
+    S2_H ws, r, "   ・元ブックに載っている銘柄しか見ません。すでに上場廃止になった"
+    S2_H ws, r, "     銘柄が抜けていると、過去の成績は実際より良く出ます（生存者バイアス）。"
+    S2_H ws, r, "   ・条件をいじって過去の成績が良くなっても、それは過去に合わせただけ"
+    S2_H ws, r, "     かもしれません（カーブフィッティング）。"
+    S2_H ws, r, "   ・このブックは判断の補助です。売買の最終判断はご自身で。"
+    last = r
+    With ws.Range(ws.Cells(1, 1), ws.Cells(last, 1))
+        .Font.Name = S2_FontName()
+        .Font.Size = S2_FontSize()
+        .HorizontalAlignment = xlLeft
+    End With
+    ws.Cells(1, 1).Font.Size = S2_FS(5)
+    ws.Cells(1, 1).Font.Bold = True
+    For i = 1 To last
+        If Left$(ws.Cells(i, 1).Value2 & "", 1) = "■" Then
+            ws.Cells(i, 1).Font.Bold = True
+            ws.Cells(i, 1).Font.Size = S2_FS(1)
+            ws.Cells(i, 1).Interior.Color = RGB(220, 230, 241)
+        End If
+    Next i
+    ws.Columns("A").ColumnWidth = S2_W(82)
+    ws.Activate
+    ws.Range("A1").Select
+End Sub
+
+Public Function S2_HelpIsV4() As Boolean
+    Dim ws As Worksheet
+    On Error Resume Next
+    Set ws = ThisWorkbook.Worksheets(SH_HELP)
+    On Error GoTo 0
+    If ws Is Nothing Then Exit Function
+    S2_HelpIsV4 = (InStr(S2_Txt(ws.Range("A2").Value), "Ver 4.0") > 0)
+End Function
+
+Public Sub S2_H(ws As Worksheet, ByRef r As Long, ByVal t As String)
+    r = r + 1
+    ws.Cells(r, 1).Value2 = t
+End Sub
+-------------------------------------------------------------------------------
+VBA MACRO Mod_S2_Store.bas 
+in file: xl/vbaProject.bin - OLE stream: 'VBA/Mod_S2_Store'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Option Explicit
+
+'==============================================================================
+' 7. 状態の保存と読込（JSON）
+'==============================================================================
+
+
+' 戻り値 = 前回の基準日（無ければ 0）
+
+' 取引履歴（追記式）
+
+
+' key の配列から { } 単位で取り出す（文字列中の括弧を誤読しない）
+
+
+
+
+' 一時ファイルに書いてから差し替える（途中で落ちても壊れない）
+
+
+'==============================================================================
+' 12. 小物
+'==============================================================================
+' 画面の大きさは設定の「文字の大きさ」から決める。
+' 決め打ちにすると、大きくして見ていても更新のたびに元に戻ってしまう。
+' 設定を読む前に呼ばれることがある（S2_設定シート作成 など）。
+' そのとき cfFont は 0 で、Font.Size = 0 は Excel が受け付けない（実行時エラー1004）。
+' 必ずこの関数を通して取り出す。
+
+
+
+
+' 列幅・行の高さも文字に合わせて広げる
+
+' 表のシートを、設定の文字サイズにしてから列幅を合わせる
+
+' 設定シートも文字の大きさに合わせる（中身は変えない）
+
+Public Function S2_Dir() As String
+    Dim p As String
+    p = ThisWorkbook.Path
+    If p = "" Then p = Environ$("USERPROFILE") & "\Documents"
+    If Right$(p, 1) <> "\" Then p = p & "\"
+    S2_Dir = p
+End Function
+
+Public Sub S2_SaveState(ByVal regime As String, ByVal lastDate As Date)
+    Dim s As String, i As Long
+    s = "{" & vbLf
+    s = s & "  ""version"": 4," & vbLf
+    s = s & "  ""updated"": """ & Format(Now, "yyyy-mm-dd hh:nn:ss") & """," & vbLf
+    s = s & "  ""last_date"": """ & Format(lastDate, "yyyy-mm-dd") & """," & vbLf
+    s = s & "  ""regime"": """ & regime & """," & vbLf
+    s = s & "  ""capital"": " & S2_N(cfCap) & "," & vbLf
+    s = s & "  ""cash"": " & S2_N(bkCash) & "," & vbLf
+    s = s & "  ""positions"": [" & vbLf
+    For i = 1 To bkPosN
+        s = s & "    {""code"": """ & bkPos(i).Code & """, ""name"": """ & S2_EscQ(bkPos(i).nm) & _
+            """, ""entry"": " & S2_N(bkPos(i).Entry) & ", ""shares"": " & bkPos(i).Shares & _
+            ", ""entry_date"": """ & bkPos(i).EDate & """, ""peak"": " & S2_N(bkPos(i).Peak) & _
+            ", ""stop"": " & S2_N(bkPos(i).StopPx) & ", ""arm"": " & S2_N(bkPos(i).ArmPx) & _
+            ", ""armed"": " & IIf(bkPos(i).Armed, "1", "0") & ", ""bars"": " & bkPos(i).Bars & "}"
+        If i < bkPosN Then s = s & ","
+        s = s & vbLf
+    Next i
+    s = s & "  ]," & vbLf
+    s = s & "  ""orders"": [" & vbLf
+    For i = 1 To bkOrdN
+        s = s & "    {""side"": """ & bkOrd(i).Side & """, ""code"": """ & bkOrd(i).Code & _
+            """, ""name"": """ & S2_EscQ(bkOrd(i).nm) & """, ""shares"": " & bkOrd(i).Shares & _
+            ", ""reason"": """ & S2_EscQ(bkOrd(i).Reason) & """, ""signal_date"": """ & bkOrd(i).SDate & _
+            """, ""ref"": " & S2_N(bkOrd(i).RefPx) & "}"
+        If i < bkOrdN Then s = s & ","
+        s = s & vbLf
+    Next i
+    s = s & "  ]," & vbLf
+    s = s & "  ""cooldown"": [" & vbLf
+    For i = 1 To bkCoolN
+        s = s & "    {""code"": """ & bkCool(i).Code & """, ""until"": """ & bkCool(i).UntilD & """}"
+        If i < bkCoolN Then s = s & ","
+        s = s & vbLf
+    Next i
+    s = s & "  ]" & vbLf & "}"
+    S2_WriteUtf8 S2_Dir() & JSON_POS, s
+End Sub
+
+Public Function S2_LoadState(ByRef regime As String) As Date
+    Dim s As String, objs As TBufS, i As Long, o As String
+    s = S2_ReadUtf8(S2_Dir() & JSON_POS)
+    If Len(s) = 0 Then Exit Function
+    regime = S2_JV(s, "regime")
+    Dim cash As String, hasCash As Boolean
+    cash = S2_JV(s, "cash")
+    hasCash = (cash <> "")
+    If hasCash Then bkCash = Val(cash)
+
+    objs = S2_JArr(s, "positions")
+    For i = 1 To objs.n
+        o = objs.a(i)
+        Dim p As TPos
+        p.Code = S2_JV(o, "code")
+        p.nm = S2_JV(o, "name")
+        p.Entry = Val(S2_JV(o, "entry"))
+        p.Shares = CLng(Val(S2_JV(o, "shares")))
+        p.EDate = S2_JV(o, "entry_date")
+        p.Peak = Val(S2_JV(o, "peak"))
+        p.StopPx = Val(S2_JV(o, "stop"))
+        p.ArmPx = Val(S2_JV(o, "arm"))
+        p.Armed = (S2_JV(o, "armed") = "1")
+        p.Bars = CLng(Val(S2_JV(o, "bars")))
+        If p.Code <> "" And p.Shares > 0 Then
+            If p.StopPx <= 0 Then p.StopPx = p.Entry * (1 - cfStopPct)
+            If p.ArmPx <= 0 Then p.ArmPx = p.Entry * (1 + cfArm)
+            If p.Peak <= 0 Then p.Peak = p.Entry
+            PosAdd p
+        End If
+    Next i
+
+    objs = S2_JArr(s, "orders")
+    For i = 1 To objs.n
+        o = objs.a(i)
+        If S2_JV(o, "code") <> "" Then
+            OrdAdd S2_JV(o, "side"), S2_JV(o, "code"), S2_JV(o, "name"), _
+                   CLng(Val(S2_JV(o, "shares"))), S2_JV(o, "reason"), _
+                   S2_JV(o, "signal_date"), Val(S2_JV(o, "ref"))
+        End If
+    Next i
+
+    objs = S2_JArr(s, "cooldown")
+    For i = 1 To objs.n
+        o = objs.a(i)
+        If S2_JV(o, "code") <> "" Then
+            If bkCoolN >= UBound(bkCool) Then ReDim Preserve bkCool(1 To bkCoolN * 2)
+            bkCoolN = bkCoolN + 1
+            bkCool(bkCoolN).Code = S2_JV(o, "code")
+            bkCool(bkCoolN).UntilD = S2_JV(o, "until")
+        End If
+    Next i
+
+    ' Ver 3 の positions.json には現金の記録が無い。建玉ぶんを差し引かないと
+    ' 現金と評価額を二重に数えてしまうので、ここで復元する。
+    If Not hasCash Then
+        Dim k As Long, used As Double
+        For k = 1 To bkPosN
+            used = used + bkPos(k).Entry * bkPos(k).Shares
+        Next k
+        bkCash = cfCap - used
+        If bkCash < 0 Then bkCash = 0
+    End If
+
+    Dim d As String
+    d = S2_JV(s, "last_date")
+    If d <> "" And IsDate(d) Then S2_LoadState = CDate(d)
+End Function
+
+Public Sub S2_AppendTrades(ByRef newTr() As TTrade, ByVal n As Long)
+    Dim s As String, i As Long, sep As String
+    If n <= 0 Then Exit Sub
+    s = S2_ReadUtf8(S2_Dir() & JSON_TRADE)
+    Dim body As String
+    If Len(s) > 0 Then
+        Dim a As Long, b As Long
+        a = InStr(1, s, "[")
+        b = InStrRev(s, "]")
+        If a > 0 And b > a Then body = Trim$(Mid$(s, a + 1, b - a - 1))
+    End If
+    If Len(body) > 0 Then sep = "," & vbLf Else sep = ""
+    For i = 1 To n
+        body = body & sep & "    {""code"": """ & newTr(i).Code & """, ""name"": """ & S2_EscQ(newTr(i).nm) & _
+               """, ""entry_date"": """ & newTr(i).EDate & """, ""exit_date"": """ & newTr(i).XDate & _
+               """, ""entry"": " & S2_N(newTr(i).Entry) & ", ""exit"": " & S2_N(newTr(i).Exit_) & _
+               ", ""shares"": " & newTr(i).Shares & ", ""pnl"": " & S2_N(newTr(i).Pnl) & _
+               ", ""pnl_pct"": " & S2_N(newTr(i).PnlPct) & ", ""bars"": " & newTr(i).Bars & _
+               ", ""reason"": """ & S2_EscQ(newTr(i).Reason) & """}"
+        sep = "," & vbLf
+    Next i
+    S2_WriteUtf8 S2_Dir() & JSON_TRADE, "{" & vbLf & "  ""trades"": [" & vbLf & body & vbLf & "  ]" & vbLf & "}"
+End Sub
+
+Public Function S2_ReadTrades(ByRef tr() As TTrade) As Long
+    Dim s As String, objs As TBufS, i As Long, o As String, n As Long
+    s = S2_ReadUtf8(S2_Dir() & JSON_TRADE)
+    If Len(s) = 0 Then Exit Function
+    objs = S2_JArr(s, "trades")
+    If objs.n = 0 Then Exit Function
+    ReDim tr(1 To objs.n)
+    For i = 1 To objs.n
+        o = objs.a(i)
+        If S2_JV(o, "code") <> "" Then
+            n = n + 1
+            tr(n).Code = S2_JV(o, "code")
+            tr(n).nm = S2_JV(o, "name")
+            tr(n).EDate = S2_JV(o, "entry_date")
+            tr(n).XDate = S2_JV(o, "exit_date")
+            tr(n).Entry = Val(S2_JV(o, "entry"))
+            tr(n).Exit_ = Val(S2_JV(o, "exit"))
+            tr(n).Shares = CLng(Val(S2_JV(o, "shares")))
+            tr(n).Pnl = Val(S2_JV(o, "pnl"))
+            tr(n).PnlPct = Val(S2_JV(o, "pnl_pct"))
+            tr(n).Bars = CLng(Val(S2_JV(o, "bars")))
+            tr(n).Reason = S2_JV(o, "reason")
+        End If
+    Next i
+    S2_ReadTrades = n
+End Function
+
+Public Function S2_JArr(ByVal s As String, ByVal key As String) As TBufS
+    Dim res As TBufS, p As Long, depth As Long, i As Long
+    Dim inQ As Boolean, st As Long, ch As String, prev As String
+    p = InStr(1, s, """" & key & """")
+    If p = 0 Then S2_JArr = res: Exit Function
+    p = InStr(p, s, "[")
+    If p = 0 Then S2_JArr = res: Exit Function
+    For i = p + 1 To Len(s)
+        ch = Mid$(s, i, 1)
+        If inQ Then
+            If ch = """" And prev <> "\" Then inQ = False
+        Else
+            If ch = """" Then
+                inQ = True
+            ElseIf ch = "{" Then
+                If depth = 0 Then st = i
+                depth = depth + 1
+            ElseIf ch = "}" Then
+                depth = depth - 1
+                If depth = 0 And st > 0 Then BufAdd res, Mid$(s, st, i - st + 1)
+            ElseIf ch = "]" And depth = 0 Then
+                Exit For
+            End If
+        End If
+        prev = ch
+    Next i
+    S2_JArr = res
+End Function
+
+Public Function S2_JV(ByVal s As String, ByVal key As String) As String
+    Dim p As Long, q As Long, ch As String
+    p = InStr(1, s, """" & key & """")
+    If p = 0 Then Exit Function
+    p = InStr(p + Len(key) + 2, s, ":")
+    If p = 0 Then Exit Function
+    p = p + 1
+    Do While p <= Len(s)
+        ch = Mid$(s, p, 1)
+        If ch <> " " And ch <> vbTab And ch <> vbCr And ch <> vbLf Then Exit Do
+        p = p + 1
+    Loop
+    If Mid$(s, p, 1) = """" Then
+        p = p + 1
+        q = p
+        Do While q <= Len(s)
+            If Mid$(s, q, 1) = """" And Mid$(s, q - 1, 1) <> "\" Then Exit Do
+            q = q + 1
+        Loop
+        S2_JV = Replace(Replace(Mid$(s, p, q - p), "\""", """"), "\\", "\")
+    Else
+        q = p
+        Do While q <= Len(s)
+            ch = Mid$(s, q, 1)
+            If ch = "," Or ch = "}" Or ch = "]" Or ch = vbCr Or ch = vbLf Then Exit Do
+            q = q + 1
+        Loop
+        S2_JV = Trim$(Mid$(s, p, q - p))
+    End If
+End Function
+
+Public Function S2_N(ByVal x As Double) As String
+    S2_N = Trim$(Str$(Round(x, 4)))
+End Function
+
+Public Function S2_EscQ(ByVal s As String) As String
+    s = Replace(s, "\", "\\")
+    s = Replace(s, """", "\""")
+    s = Replace(s, vbCrLf, " ")
+    s = Replace(s, vbLf, " ")
+    S2_EscQ = s
+End Function
+
+Public Sub S2_WriteUtf8(ByVal fpath As String, ByVal txt As String)
+    Dim st As Object, bs As Object, tmp As String, bak As String
+    tmp = fpath & ".tmp"
+    bak = fpath & ".bak"
+    Set st = CreateObject("ADODB.Stream")
+    st.Type = 2: st.Charset = "utf-8": st.Open
+    st.WriteText txt
+    st.Position = 0: st.Type = 1: st.Position = 3          ' BOM を捨てる
+    Set bs = CreateObject("ADODB.Stream")
+    bs.Type = 1: bs.Open
+    st.CopyTo bs
+    bs.SaveToFile tmp, 2
+    bs.Close: st.Close
+    On Error Resume Next
+    If Dir$(bak) <> "" Then Kill bak
+    If Dir$(fpath) <> "" Then Name fpath As bak
+    On Error GoTo 0
+    Name tmp As fpath
+End Sub
+
+Public Function S2_ReadUtf8(ByVal fpath As String) As String
+    Dim st As Object
+    If Dir$(fpath) = "" Then Exit Function
+    On Error Resume Next
+    Set st = CreateObject("ADODB.Stream")
+    st.Type = 2: st.Charset = "utf-8": st.Open
+    st.LoadFromFile fpath
+    S2_ReadUtf8 = st.ReadText
+    st.Close
+    On Error GoTo 0
+End Function
+
+Public Function S2_FontSize() As Double
+    S2_FontSize = cfFont
+    If S2_FontSize < 8 Then S2_FontSize = 11
+    If S2_FontSize > 48 Then S2_FontSize = 48
+End Function
+
+Public Function S2_FontName() As String
+    S2_FontName = cfFontNm
+    If Trim$(S2_FontName) = "" Then S2_FontName = "ＭＳ ゴシック"
+End Function
+
+Public Function S2_FS(ByVal delta As Double) As Double
+    S2_FS = S2_FontSize() + delta
+    If S2_FS < 6 Then S2_FS = 6
+    If S2_FS > 72 Then S2_FS = 72
+End Function
+
+Public Function S2_K() As Double
+    S2_K = S2_FontSize() / 11
+    If S2_K < 0.5 Then S2_K = 0.5
+End Function
+
+Public Function S2_W(ByVal baseW As Double) As Double
+    S2_W = baseW * S2_K()
+    If S2_W > 255 Then S2_W = 255
+    If S2_W < 1 Then S2_W = 1
+End Function
+
+Public Sub S2_FitSheet(ws As Worksheet, ByVal cols As String)
+    On Error Resume Next
+    ws.UsedRange.Font.Size = S2_FontSize()
+    ws.Range("A1").Font.Size = S2_FS(3)
+    ws.Columns(cols).AutoFit
+    On Error GoTo 0
+End Sub
+
+Public Sub S2_ReSizeSettings()
+    Dim ws As Worksheet
+    On Error Resume Next
+    Set ws = ThisWorkbook.Worksheets(SH_SET)
+    If ws Is Nothing Then Exit Sub
+    ws.UsedRange.Font.Size = S2_FontSize()
+    ws.Range("A1").Font.Size = S2_FS(3)
+    ws.Columns("A").ColumnWidth = S2_W(30)
+    ws.Columns("B").ColumnWidth = S2_W(16)
+    ws.Columns("C").ColumnWidth = S2_W(62)
+    On Error GoTo 0
+End Sub
+
+Public Sub BufAdd(ByRef b As TBufS, ByVal s As String)
+    If b.n = 0 Then ReDim b.a(1 To 16)
+    If b.n >= UBound(b.a) Then ReDim Preserve b.a(1 To b.n * 2)
+    b.n = b.n + 1
+    b.a(b.n) = s
+End Sub
+
+Public Function S2_Txt(ByVal x As Variant) As String
+    If IsError(x) Then Exit Function
+    If IsEmpty(x) Then Exit Function
+    If IsNull(x) Then Exit Function
+    S2_Txt = Trim$(CStr(x))
+End Function
+
+Public Function S2_Val(ByVal x As Variant, ByRef Ok As Boolean) As Double
+    Ok = False
+    If IsError(x) Then Exit Function
+    If IsEmpty(x) Then Exit Function
+    If IsNull(x) Then Exit Function
+    If VarType(x) = vbBoolean Then Exit Function
+    If Not IsNumeric(x) Then Exit Function
+    S2_Val = CDbl(x)
+    Ok = True
+End Function
+
+Public Sub S2_Msg(ByVal txt As String, ByVal ico As Long, ByVal ttl As String)
+    If gQuiet Then
+        S2_Log Replace(Replace(txt, vbCrLf, " "), vbLf, " ")
+    Else
+        MsgBox txt, ico, ttl
+    End If
+End Sub
+
+Public Sub S2_Log(ByVal txt As String)
+    Dim f As Integer, p As String
+    On Error Resume Next
+    p = S2_Dir() & "log.txt"
+    ' 肥大化したら1回だけ切り詰める
+    If Dir$(p) <> "" Then
+        If FileLen(p) > 2000000 Then
+            If Dir$(p & ".old") <> "" Then Kill p & ".old"
+            Name p As p & ".old"
+        End If
+    End If
+    f = FreeFile
+    Open p For Append As #f
+    Print #f, Format(Now, "yyyy/mm/dd hh:nn:ss") & "  " & txt
+    Close #f
+    On Error GoTo 0
+End Sub
+-------------------------------------------------------------------------------
+VBA MACRO Mod_S2_Screen.bas 
+in file: xl/vbaProject.bin - OLE stream: 'VBA/Mod_S2_Screen'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Option Explicit
+'==============================================================================
+' 日本株 スクリーニング + 売買シグナル + 検証エンジン
+'   Ver 4.0  2026/08/26
+'
+'  Ver 3.0 からの主な変更
+'    ・配列あふれによる実行時エラーを全廃（可変長バッファ化）
+'    ・約定モデルを導入（シグナルは翌営業日に約定。当日終値での即時約定をやめた）
+'    ・取引履歴と成績（勝率 / PF / 最大DD / エクイティ）を記録・表示
+'    ・バックテスト（同じルールで過去を歩かせる）を搭載
+'    ・ETF / REIT を母集団から除外
+'    ・ATR による損切り幅とリスク均等サイジング
+'    ・損切り直後の同一銘柄の買い戻しを禁止（クールダウン）
+'    ・保有銘柄との相関が高い候補を除外（分散）
+'    ・スコアを絶対評価に変更（日をまたいで比較できる）
+'    ・レジーム判定に 200日線の傾きとヒステリシスを追加
+'    ・データ品質診断シートを追加
+'    ・設定をキー方式に変更（行の挿入・削除で壊れない）
+'    ・メール送信機能とアプリパスワード欄を完全に削除
+'
+'  Alt+F8 から呼べるもの
+'    S2_更新           … 最新データで再計算（ダッシュボードの【更新】と同じ）
+'    S2_バックテスト   … 過去データで同じルールを検証
+'    S2_診断           … 元データの品質をチェック
+'    S2_保有リセット   … 保有と履歴を消して最初からやり直す
+'    S2_設定シート作成 … 設定シートを作る / 既定値に戻す
+'    S2_説明書作成     … 取扱説明書を作り直す
+'    S2_予約登録       … 毎日 決めた時刻に自動で更新
+'    S2_予約解除       … 予約をやめる
+'==============================================================================
+
+'------------------------------ シート名 --------------------------------------
+Public Const SH_SET   As String = "設定"
+Public Const SH_HELP  As String = "取扱説明書"
+Public Const SH_DASH  As String = "ダッシュボード"
+Public Const SH_RANK  As String = "ランキング"
+Public Const SH_SIG   As String = "シグナル"
+Public Const SH_HIST  As String = "取引履歴"
+Public Const SH_BT    As String = "バックテスト"
+Public Const SH_DIAG  As String = "診断"
+
+'------------------------------ 元ブックの形 ----------------------------------
+' 行3 = 日付ヘッダ / 行5以降 = 銘柄 / 列1 = コード / 列2 = 銘柄名 / 列5以降 = 新しい日→古い日
+Public Const SRC_HDR_ROW   As Long = 3
+Public Const SRC_DATA_ROW  As Long = 5
+Public Const SRC_FIRST_COL As Long = 5
+
+Public Const JSON_POS   As String = "positions.json"
+Public Const JSON_TRADE As String = "trades.json"
+Public Const DEF_SRC    As String = "総合売買抽出*.xlsm"
+
+'------------------------------ 型 --------------------------------------------
+Public Type TBufS                 ' 可変長 文字列バッファ（配列あふれ対策）
+    n As Long
+    a() As String
+End Type
+
+Public Type TPos                  ' 保有
+    Code   As String
+    nm     As String
+    Entry  As Double               ' 約定単価（コスト込み）
+    Shares As Long
+    EDate  As String               ' 約定日 yyyy-mm-dd
+    Peak   As Double               ' 取得後の最高値
+    StopPx As Double               ' 損切り価格（建玉ごとに固定）
+    ArmPx  As Double               ' トレール起動価格
+    Armed  As Boolean              ' トレール起動済み
+    Bars   As Long                 ' 保有営業日数
+End Type
+
+Public Type TOrd                  ' 保留注文（翌営業日に約定させる）
+    Side   As String               ' BUY / SELL
+    Code   As String
+    nm     As String
+    Shares As Long
+    Reason As String
+    SDate  As String               ' シグナル日
+    RefPx  As Double               ' シグナル時の参照価格
+End Type
+
+Public Type TCool                 ' 再エントリー禁止
+    Code  As String
+    UntilD As String               ' yyyy-mm-dd
+End Type
+
+Public Type TTrade                ' 実現トレード
+    Code   As String
+    nm     As String
+    EDate  As String
+    XDate  As String
+    Entry  As Double
+    Exit_  As Double
+    Shares As Long
+    Pnl    As Double               ' 円
+    PnlPct As Double               ' 率
+    Reason As String
+    Bars   As Long
+End Type
+
+Public Type TInd                  ' ある日 t の指標
+    Ok    As Boolean
+    px    As Double
+    Sma   As Double
+    Slope As Double                ' 200日線の傾き（比率）
+    Rsi   As Double
+    Atr   As Double                ' 円
+    AtrP  As Double                ' 率
+    Mom   As Double
+    dev   As Double
+    Turn  As Double                ' 平均売買代金（円）
+    Qual  As Double                ' 直近の最大DD（正の比率。小さいほど良い）
+    Score As Double
+End Type
+
+'------------------------------ 設定値 ----------------------------------------
+Public cfSrc As String, cfTime As String
+Public cfRegime As String, cfSizing As String, cfFill As String
+Public cfShClose As String, cfShOpen As String, cfShHigh As String
+Public cfShLow As String, cfShVol As String
+Public cfCap As Double, cfPct As Double, cfCashBuf As Double
+Public cfRiskPct As Double
+Public cfPriceMax As Double, cfPriceMin As Double
+Public cfRsiLo As Double, cfRsiHi As Double
+Public cfStopPct As Double, cfStopAtr As Double
+Public cfArm As Double, cfTrail As Double
+Public cfDBest As Double, cfDMax As Double
+Public cfMomFull As Double, cfQualDD As Double
+Public cfWDev As Double, cfWRsi As Double, cfWMom As Double, cfWQual As Double
+Public cfCorrMax As Double, cfLiqMin As Double, cfCostPct As Double
+Public cfRegBand As Double
+Public cfMaxPos As Long, cfMom As Long, cfTopN As Long
+Public cfAtrN As Long, cfCorrN As Long, cfCool As Long, cfTimeStop As Long
+Public cfLot As Long, cfRegSlope As Long, cfQualN As Long, cfLiqN As Long
+Public cfBtDays As Long, cfHistMax As Long
+Public cfExETF As Boolean, cfAbsScore As Boolean, cfRegimeExit As Boolean
+Public cfConfirm As Boolean
+Public cfFont As Double
+Public cfFontNm As String
+Public cfDict As Object
+
+'------------------------------ 相場データ ------------------------------------
+Public gN As Long                 ' 銘柄数
+Public gT As Long                 ' 日数（1 = 最古, gT = 最新）
+Public gCode() As String
+Public gName() As String
+Public gDate() As Date
+Public gC() As Double             ' 終値 (1..gN, 1..gT)
+Public gH() As Double             ' 高値
+Public gL() As Double             ' 安値
+Public gO() As Double             ' 始値
+Public gV() As Double             ' 出来高
+Public gHasH As Boolean, gHasL As Boolean, gHasO As Boolean, gHasV As Boolean
+Public gFirst() As Long          ' 実データが始まる日 index
+Public gStale() As Long          ' 末尾の前値埋め日数
+Public gGaps() As Long           ' 途中の欠測日数
+Public gIdx As Object             ' コード -> 行番号
+Public gSrcPath As String
+Public gQuiet As Boolean
+Public gStep As String
+Public gNext As Date
+Public gWarn As TBufS
+
+'==============================================================================
+' 1. 入口
+'==============================================================================
+
+
+' Windows のタスクスケジューラ（S2_自動更新.vbs）から呼ぶ入口。
+' 誰も画面を見ていないので、確認もエラーもダイアログを出さず log.txt に書く。
+
+
+
+
+
+'==============================================================================
+' 2. 設定（キー方式：行を足しても消してもズレない）
+'    A列 = 項目 / B列 = 値 / C列 = 説明 / F列 = キー（内部用・隠し列）
+'==============================================================================
+
+
+
+' 設定シートを読んで辞書にする
+
+
+
+
+' 旧バージョンの設定シート（キー列なし）から拾うための保険
+
+
+'==============================================================================
+' 8. 本体
+'==============================================================================
+
+
+'==============================================================================
+'  以上
+'==============================================================================
+
+Public Sub S2_更新()
+    S2_Core
+End Sub
+
+Public Sub S2_RunNow()
+    S2_Core
+End Sub
+
+Public Sub S2_バッチ更新()
+    gQuiet = True
+    On Error Resume Next
+    S2_Core
+    If Err.Number <> 0 Then S2_Log "バッチ更新で処理できないエラー " & Err.Number & " : " & Err.Description
+    On Error GoTo 0
+    gQuiet = False
+End Sub
+
+Public Sub S2_DailyRun()
+    On Error Resume Next
+    gQuiet = True
+    S2_Core
+    gQuiet = False
+    On Error GoTo 0
+    S2_予約登録 True
+End Sub
+
+Public Sub S2_保有リセット()
+    Dim f1 As String, f2 As String
+    If Not S2_LoadSettings() Then Exit Sub
+    f1 = S2_Dir() & JSON_POS
+    f2 = S2_Dir() & JSON_TRADE
+    If MsgBox("保有ポジションと取引履歴を全部消して、最初からやり直しますか？" & vbCrLf & vbCrLf & _
+              f1 & vbCrLf & f2, vbYesNo + vbQuestion, "S2 保有リセット") = vbNo Then Exit Sub
+    On Error Resume Next
+    If Dir$(f1) <> "" Then Kill f1
+    If Dir$(f2) <> "" Then Kill f2
+    On Error GoTo 0
+    S2_Core
+End Sub
+
+Public Sub S2_予約登録(Optional ByVal quiet As Boolean = False)
+    Dim t As Date
+    gStep = "設定読込"
+    If Not S2_LoadSettings() Then Exit Sub
+    On Error Resume Next
+    t = Int(Now) + TimeValue(cfTime)
+    If Err.Number <> 0 Then Err.Clear: t = Int(Now) + TimeValue("16:00:00")
+    On Error GoTo 0
+    If t <= Now Then t = t + 1
+    On Error Resume Next
+    Application.OnTime gNext, "S2_DailyRun", , False
+    On Error GoTo 0
+    gNext = t
+    Application.OnTime gNext, "S2_DailyRun", , True
+    If Not quiet Then
+        S2_Msg "毎日 " & cfTime & " に自動で更新します。" & vbCrLf & _
+               "次回: " & Format(gNext, "yyyy/mm/dd hh:nn") & vbCrLf & vbCrLf & _
+               "※このブックを開いたままにしてください。" & vbCrLf & _
+               "※Excelを閉じると予約は消えます。開き直したら登録し直してください。", _
+               vbInformation, "S2 予約登録"
+    End If
+End Sub
+
+Public Sub S2_予約解除()
+    On Error Resume Next
+    Application.OnTime gNext, "S2_DailyRun", , False
+    On Error GoTo 0
+    S2_Msg "予約を解除しました。", vbInformation, "S2"
+End Sub
+
+Public Sub S2_設定シート作成()
+    Dim ws As Worksheet, made As Boolean, r As Long
+    Set ws = S2_Sheet(SH_SET, made)
+    If Not made Then
+        If MsgBox("「設定」シートは既にあります。既定値に戻しますか？" & vbCrLf & _
+                  "（入力済みの総資産なども消えます）", vbYesNo + vbQuestion, "S2") = vbNo Then Exit Sub
+    End If
+    ws.Cells.Clear
+    ws.Range("A1").Value = "S2 スクリーニング 設定  Ver 4.0"
+    ws.Range("A1").Font.Bold = True
+    ws.Range("A1").Font.Size = S2_FS(3)
+    ws.Range("A2").Value = "項目"
+    ws.Range("B2").Value = "値"
+    ws.Range("C2").Value = "説明"
+    ws.Range("A2:C2").Font.Bold = True
+    ws.Range("A2:C2").Interior.Color = RGB(220, 230, 241)
+    ws.Columns("B").NumberFormatLocal = "@"
+
+    r = 2
+    S2_Grp ws, r, "【1】基本"
+    S2_Row ws, r, "SRC_PATH", "データ元ブック（フルパス）", "", "空欄ならこのブックと同じフォルダの " & DEF_SRC
+    S2_Row ws, r, "CAPITAL", "総資産（円）", "1000000", "★必ず自分の額に。1銘柄の金額の元になります"
+    S2_Row ws, r, "MAX_POS", "最大保有銘柄数", "2", ""
+    S2_Row ws, r, "LOT", "単元株数", "100", "通常100。S株で買うなら1"
+    S2_Row ws, r, "TOPN", "表示件数", "10", "ランキングに出す件数"
+    S2_Row ws, r, "FONT_SIZE", "文字の大きさ", "11", "★大きくすると全部のシートの文字が大きくなります。列の幅とボタンも一緒に大きくなります"
+    S2_Row ws, r, "FONT_NAME", "書体", "ＭＳ ゴシック", "ダッシュボードと説明書で使います。等幅の書体（ＭＳ ゴシック）だと桁が揃います"
+    S2_Row ws, r, "RUN_TIME", "自動更新の時刻", "16:00", "S2_予約登録 で使います。元ブックが更新された後の時刻に"
+
+    S2_Grp ws, r, "【2】資金の使い方"
+    S2_Row ws, r, "SIZING", "サイジング方式", "リスク均等", "定率 … 総資産の決まった％／リスク均等 … 損切りまでの距離で調整"
+    S2_Row ws, r, "POS_PCT", "1銘柄の資金比率（％）", "47", "「定率」の時に使う。リスク均等の時は上限として働く"
+    S2_Row ws, r, "RISK_PCT", "1トレードの許容損失（％）", "3.0", "「リスク均等」の時に使う。総資産に対する％"
+    S2_Row ws, r, "CASH_BUF", "現金バッファ（％）", "5", "この分は常に現金で残す"
+    S2_Row ws, r, "COST_PCT", "片道コスト（％）", "0.10", "手数料＋スリッページの見込み。往復でこの2倍"
+
+    S2_Grp ws, r, "【3】買う銘柄の条件"
+    S2_Row ws, r, "PRICE_MAX", "株価上限（円）", "6000", "これより高い株は対象外"
+    S2_Row ws, r, "PRICE_MIN", "株価下限（円）", "300", "これより安い株は対象外（低位株よけ）"
+    S2_Row ws, r, "RSI_LO", "RSI下限", "50", ""
+    S2_Row ws, r, "RSI_HI", "RSI上限", "75", ""
+    S2_Row ws, r, "MOM_DAYS", "モメンタム日数（営業日）", "63", "63営業日＝約3ヶ月"
+    S2_Row ws, r, "DEV_MAX", "200日乖離 上限（％）", "50", "これを超える銘柄は対象外（上がり過ぎ）"
+    S2_Row ws, r, "LIQ_MIN", "最低売買代金（百万円/日）", "100", "薄い株よけ。20日平均。出来高データが無い時は無視"
+    S2_Row ws, r, "LIQ_DAYS", "売買代金の平均日数", "20", ""
+    S2_Row ws, r, "EXCLUDE_ETF", "ETF・REITを除外", "する", "する / しない"
+    S2_Row ws, r, "CORR_MAX", "保有との相関の上限", "0.80", "これより似た値動きの銘柄は買わない（1.00で無効）"
+    S2_Row ws, r, "CORR_DAYS", "相関の計算日数", "60", ""
+    S2_Row ws, r, "COOLDOWN", "再エントリー禁止（営業日）", "10", "損切り・トレール決済のあと、同じ銘柄をこの日数は買わない"
+
+    S2_Grp ws, r, "【4】順位のつけ方（合計が100になるよう自動調整）"
+    S2_Row ws, r, "SCORE_MODE", "スコア方式", "絶対", "絶対 … 日をまたいで比較できる／相対 … 従来（その日の候補内の順位）"
+    S2_Row ws, r, "W_DEV", "配点 200日乖離", "30", ""
+    S2_Row ws, r, "W_RSI", "配点 RSIの強さ", "20", ""
+    S2_Row ws, r, "W_MOM", "配点 モメンタム", "35", ""
+    S2_Row ws, r, "W_QUAL", "配点 値動きの質", "15", "直近の下落の浅さ。ジグザグな銘柄の点を下げる"
+    S2_Row ws, r, "DEV_BEST", "200日乖離 ベスト（％）", "15", "この乖離が満点"
+    S2_Row ws, r, "MOM_FULL", "モメンタム 満点（％）", "40", "この上昇率で満点"
+    S2_Row ws, r, "QUAL_DD", "質 0点となる下落（％）", "25", "直近126日の最大下落がこれなら0点"
+    S2_Row ws, r, "QUAL_DAYS", "質の計算日数", "126", ""
+
+    S2_Grp ws, r, "【5】売り方"
+    S2_Row ws, r, "STOP_PCT", "損切り（％）", "10", "取得価格からこの％下がったら売り"
+    S2_Row ws, r, "STOP_ATR", "損切り ATR倍率", "2.5", "0で無効。定率とATRの広いほうを損切り幅にします"
+    S2_Row ws, r, "ATR_DAYS", "ATR日数", "14", ""
+    S2_Row ws, r, "ARM_PCT", "トレール起動（％）", "15", "この％まで上がったらトレール開始"
+    S2_Row ws, r, "TRAIL_PCT", "トレール幅（％）", "8", "高値からこの％下がったら売り"
+    S2_Row ws, r, "TIME_STOP", "保有日数の上限（営業日）", "0", "0で無制限。例:120で約半年で手仕舞い"
+    S2_Row ws, r, "REGIME_EXIT", "RISK_OFFで全部売る", "しない", "する / しない"
+
+    S2_Grp ws, r, "【6】相場環境（レジーム）"
+    S2_Row ws, r, "REGIME_CODE", "レジーム判定コード", "1321", "この銘柄が200日線を割ったら新規エントリー停止"
+    S2_Row ws, r, "REGIME_SLOPE", "200日線の傾き日数", "20", "0で無効。200日線がN日前より下なら RISK_OFF"
+    S2_Row ws, r, "REGIME_BAND", "切替のゆとり（％）", "1.0", "パタパタ切り替わるのを防ぐ幅"
+
+    S2_Grp ws, r, "【7】約定のしかた"
+    S2_Row ws, r, "FILL_MODE", "約定モデル", "翌日始値", "翌日始値 / 翌日終値 / 当日終値（当日終値は検証用。実際には約定できません）"
+    S2_Row ws, r, "CONFIRM_FILL", "約定を確認する", "する", "する … 更新のとき、前回の注文が約定したか1件ずつ聞きます／しない … 聞かずに約定したものとして進みます"
+
+    S2_Grp ws, r, "【8】バックテスト"
+    S2_Row ws, r, "BT_DAYS", "検証する日数（営業日）", "250", "250＝約1年。増やすほど時間とメモリを使います"
+    S2_Row ws, r, "HIST_MAX", "読み込む履歴日数", "260", "指標に使う日数。260以上を推奨"
+
+    S2_Grp ws, r, "【9】元ブックのシート名"
+    S2_Row ws, r, "SH_CLOSE", "終値シート名", "終値", ""
+    S2_Row ws, r, "SH_OPEN", "始値シート名", "始値", "無ければ自動で終値に切り替えます"
+    S2_Row ws, r, "SH_HIGH", "高値シート名", "高値", ""
+    S2_Row ws, r, "SH_LOW", "安値シート名", "安値", ""
+    S2_Row ws, r, "SH_VOL", "出来高シート名", "出来高", ""
+
+    ws.UsedRange.Font.Size = S2_FontSize()
+    ws.Range("A1").Font.Size = S2_FS(3)
+    ws.Columns("A").ColumnWidth = S2_W(30)
+    ws.Columns("B").ColumnWidth = S2_W(16)
+    ws.Columns("C").ColumnWidth = S2_W(62)
+    ws.Columns("F").ColumnWidth = 0.1
+    ws.Columns("F").Hidden = True
+    ws.Cells(r + 2, 1).Value = "【使い方】ダッシュボードの【更新】ボタンを押すだけ。"
+    ws.Cells(r + 3, 1).Value = "行の挿入・削除・並べ替えをしても壊れません（F列のキーで読んでいます）。"
+    ws.Cells(r + 4, 1).Value = "値を空欄にすると、その項目は既定値で動きます。"
+    S2_説明書作成                       ' 取扱説明書も一緒に作る
+    ws.Activate
+    ws.Range("B4").Select
+    S2_Msg "「設定」シートと「取扱説明書」シートを作りました。" & vbCrLf & _
+           "B列の「総資産（円）」をご自分の額にしてください。", vbInformation, "S2"
+End Sub
+
+Public Sub S2_Grp(ws As Worksheet, ByRef r As Long, ByVal title As String)
+    r = r + 2
+    ws.Cells(r, 1).Value = title
+    ws.Range(ws.Cells(r, 1), ws.Cells(r, 3)).Interior.Color = RGB(235, 241, 222)
+    ws.Cells(r, 1).Font.Bold = True
+End Sub
+
+Public Sub S2_Row(ws As Worksheet, ByRef r As Long, ByVal key As String, ByVal nm As String, ByVal v As String, ByVal memo As String)
+    r = r + 1
+    ws.Cells(r, 1).Value = nm
+    ws.Cells(r, 2).Value = v
+    ws.Cells(r, 3).Value = memo
+    ws.Cells(r, 6).Value = key
+    ws.Cells(r, 3).Font.Color = RGB(120, 120, 120)
+    ws.Cells(r, 2).HorizontalAlignment = xlLeft
+End Sub
+
+Public Function S2_LoadSettings() As Boolean
+    Dim ws As Worksheet, lr As Long, i As Long, k As String, v As Variant
+    On Error Resume Next
+    Set ws = ThisWorkbook.Worksheets(SH_SET)
+    On Error GoTo 0
+    If ws Is Nothing Then
+        S2_Msg "「設定」シートがありません。" & vbCrLf & _
+               "Alt+F8 → S2_設定シート作成 を実行してください。", vbExclamation, "S2"
+        Exit Function
+    End If
+
+    Set cfDict = CreateObject("Scripting.Dictionary")
+    cfDict.CompareMode = 1
+    lr = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+    If lr < 3 Then lr = 3
+    For i = 3 To lr
+        k = S2_Txt(ws.Cells(i, 6).Value)
+        If k = "" Then k = S2_KeyOfLabel(S2_Txt(ws.Cells(i, 1).Value))
+        If k <> "" Then
+            v = ws.Cells(i, 2).Value
+            If Not IsError(v) Then cfDict(k) = S2_Txt(v)
+        End If
+    Next i
+
+    cfSrc = CfS("SRC_PATH", "")
+    cfCap = CfN("CAPITAL", 1000000)
+    cfMaxPos = CLng(CfN("MAX_POS", 2))
+    cfLot = CLng(CfN("LOT", 100))
+    cfTopN = CLng(CfN("TOPN", 10))
+    cfFont = CfN("FONT_SIZE", 11)
+    cfFontNm = CfS("FONT_NAME", "ＭＳ ゴシック")
+    cfTime = S2_NormTime(CfS("RUN_TIME", "16:00"))
+
+    cfSizing = CfS("SIZING", "リスク均等")
+    cfPct = CfN("POS_PCT", 47) / 100
+    cfRiskPct = CfN("RISK_PCT", 3) / 100
+    cfCashBuf = CfN("CASH_BUF", 5) / 100
+    cfCostPct = CfN("COST_PCT", 0.1) / 100
+
+    cfPriceMax = CfN("PRICE_MAX", 6000)
+    cfPriceMin = CfN("PRICE_MIN", 300)
+    cfRsiLo = CfN("RSI_LO", 50)
+    cfRsiHi = CfN("RSI_HI", 75)
+    cfMom = CLng(CfN("MOM_DAYS", 63))
+    cfDMax = CfN("DEV_MAX", 50) / 100
+    cfLiqMin = CfN("LIQ_MIN", 100) * 1000000#
+    cfLiqN = CLng(CfN("LIQ_DAYS", 20))
+    cfExETF = S2_YesNo(CfS("EXCLUDE_ETF", "する"), True)
+    cfCorrMax = CfN("CORR_MAX", 0.8)
+    cfCorrN = CLng(CfN("CORR_DAYS", 60))
+
+    cfAbsScore = (InStr(CfS("SCORE_MODE", "絶対"), "絶対") > 0)
+    cfWDev = CfN("W_DEV", 30)
+    cfWRsi = CfN("W_RSI", 20)
+    cfWMom = CfN("W_MOM", 35)
+    cfWQual = CfN("W_QUAL", 15)
+    cfDBest = CfN("DEV_BEST", 15) / 100
+    cfMomFull = CfN("MOM_FULL", 40) / 100
+    cfQualDD = CfN("QUAL_DD", 25) / 100
+    cfQualN = CLng(CfN("QUAL_DAYS", 126))
+
+    cfStopPct = CfN("STOP_PCT", 10) / 100
+    cfStopAtr = CfN("STOP_ATR", 2.5)
+    cfAtrN = CLng(CfN("ATR_DAYS", 14))
+    cfArm = CfN("ARM_PCT", 15) / 100
+    cfTrail = CfN("TRAIL_PCT", 8) / 100
+    cfTimeStop = CLng(CfN("TIME_STOP", 0))
+    cfRegimeExit = S2_YesNo(CfS("REGIME_EXIT", "しない"), False)
+
+    cfRegime = CfS("REGIME_CODE", "1321")
+    cfRegSlope = CLng(CfN("REGIME_SLOPE", 20))
+    cfRegBand = CfN("REGIME_BAND", 1) / 100
+
+    cfFill = CfS("FILL_MODE", "翌日始値")
+    cfConfirm = S2_YesNo(CfS("CONFIRM_FILL", "する"), True)
+    cfBtDays = CLng(CfN("BT_DAYS", 250))
+    cfHistMax = CLng(CfN("HIST_MAX", 260))
+
+    cfShClose = CfS("SH_CLOSE", "終値")
+    cfShOpen = CfS("SH_OPEN", "始値")
+    cfShHigh = CfS("SH_HIGH", "高値")
+    cfShLow = CfS("SH_LOW", "安値")
+    cfShVol = CfS("SH_VOL", "出来高")
+
+    ' --- 値の検証（おかしな値で黙って走らない） ---
+    If cfCap <= 0 Then cfCap = 1000000
+    If cfMaxPos < 1 Then cfMaxPos = 1
+    If cfMaxPos > 200 Then cfMaxPos = 200
+    If cfLot < 1 Then cfLot = 100
+    If cfTopN < 1 Then cfTopN = 10
+    If cfFont < 8 Then cfFont = 8
+    If cfFont > 48 Then cfFont = 48
+    If cfMom < 5 Then cfMom = 63
+    If cfAtrN < 2 Then cfAtrN = 14
+    If cfCorrN < 10 Then cfCorrN = 60
+    If cfQualN < 20 Then cfQualN = 126
+    If cfLiqN < 1 Then cfLiqN = 20
+    If cfRsiHi <= cfRsiLo Then cfRsiLo = 50: cfRsiHi = 75
+    If cfDMax <= cfDBest Then cfDMax = cfDBest + 0.01
+    If cfPriceMax <= cfPriceMin Then cfPriceMin = 0
+    If cfPct <= 0 Or cfPct > 1 Then cfPct = 0.47
+    If cfRiskPct <= 0 Or cfRiskPct > 0.5 Then cfRiskPct = 0.03
+    If cfCashBuf < 0 Or cfCashBuf >= 1 Then cfCashBuf = 0
+    If cfCostPct < 0 Or cfCostPct > 0.05 Then cfCostPct = 0.001
+    If cfStopPct <= 0 Or cfStopPct >= 1 Then cfStopPct = 0.1
+    If cfTrail <= 0 Or cfTrail >= 1 Then cfTrail = 0.08
+    If cfArm < 0 Then cfArm = 0.15
+    If cfCorrMax <= 0 Or cfCorrMax > 1 Then cfCorrMax = 1
+    If cfWDev + cfWRsi + cfWMom + cfWQual <= 0 Then
+        cfWDev = 30: cfWRsi = 20: cfWMom = 35: cfWQual = 15
+    End If
+    If cfMomFull <= 0 Then cfMomFull = 0.4
+    If cfQualDD <= 0 Then cfQualDD = 0.25
+    If cfBtDays < 20 Then cfBtDays = 250
+    If cfBtDays > 3000 Then cfBtDays = 3000
+    cfCool = CLng(CfN("COOLDOWN", 10))
+    If cfCool < 0 Then cfCool = 0
+    Dim need As Long
+    need = 201
+    If cfMom + 1 > need Then need = cfMom + 1
+    If cfQualN + 1 > need Then need = cfQualN + 1
+    If cfCorrN + 1 > need Then need = cfCorrN + 1
+    If cfRegSlope + 200 > need Then need = cfRegSlope + 200
+    If cfHistMax < need + 5 Then cfHistMax = need + 5
+    If cfHistMax > 5000 Then cfHistMax = 5000
+    S2_LoadSettings = True
+End Function
+
+Public Function CfS(ByVal key As String, ByVal dflt As String) As String
+    If cfDict Is Nothing Then CfS = dflt: Exit Function
+    If Not cfDict.Exists(key) Then CfS = dflt: Exit Function
+    If Trim$(cfDict(key)) = "" Then CfS = dflt Else CfS = Trim$(cfDict(key))
+End Function
+
+Public Function CfN(ByVal key As String, ByVal dflt As Double) As Double
+    Dim s As String
+    s = CfS(key, "")
+    s = Replace(Replace(s, "%", ""), ",", "")
+    s = Replace(s, "　", "")
+    If s = "" Or Not IsNumeric(s) Then CfN = dflt Else CfN = CDbl(s)
+End Function
+
+Public Function S2_YesNo(ByVal s As String, ByVal dflt As Boolean) As Boolean
+    s = Replace(Trim$(s), "　", "")
+    If s = "" Then S2_YesNo = dflt: Exit Function
+    If s = "する" Or s = "はい" Or UCase$(s) = "YES" Or UCase$(s) = "TRUE" Or s = "1" Or s = "○" Then
+        S2_YesNo = True
+    ElseIf s = "しない" Or s = "いいえ" Or UCase$(s) = "NO" Or UCase$(s) = "FALSE" Or s = "0" Or s = "×" Then
+        S2_YesNo = False
+    Else
+        S2_YesNo = dflt
+    End If
+End Function
+
+Public Function S2_KeyOfLabel(ByVal lbl As String) As String
+    Select Case Replace(lbl, "　", "")
+        Case "データ元ブック（フルパス）": S2_KeyOfLabel = "SRC_PATH"
+        Case "総資産（円）": S2_KeyOfLabel = "CAPITAL"
+        Case "最大保有銘柄数": S2_KeyOfLabel = "MAX_POS"
+        Case "1銘柄の資金比率（％）": S2_KeyOfLabel = "POS_PCT"
+        Case "株価上限（円）": S2_KeyOfLabel = "PRICE_MAX"
+        Case "RSI下限": S2_KeyOfLabel = "RSI_LO"
+        Case "RSI上限": S2_KeyOfLabel = "RSI_HI"
+        Case "モメンタム日数（営業日）": S2_KeyOfLabel = "MOM_DAYS"
+        Case "損切り（％）": S2_KeyOfLabel = "STOP_PCT"
+        Case "トレール起動（％）": S2_KeyOfLabel = "ARM_PCT"
+        Case "トレール幅（％）": S2_KeyOfLabel = "TRAIL_PCT"
+        Case "200日乖離ベスト（％）", "200日乖離 ベスト（％）": S2_KeyOfLabel = "DEV_BEST"
+        Case "200日乖離上限（％）", "200日乖離 上限（％）": S2_KeyOfLabel = "DEV_MAX"
+        Case "表示件数": S2_KeyOfLabel = "TOPN"
+        Case "自動更新の時刻", "自動実行時刻": S2_KeyOfLabel = "RUN_TIME"
+        Case "レジーム判定コード": S2_KeyOfLabel = "REGIME_CODE"
+    End Select
+End Function
+
+Public Function S2_NormTime(ByVal s As String) As String
+    Dim x As Variant
+    x = s
+    If IsDate(x) Then
+        S2_NormTime = Format(CDate(x), "hh:nn:ss")
+    ElseIf IsNumeric(x) Then
+        If CDbl(x) >= 0 And CDbl(x) < 1 Then
+            S2_NormTime = Format(CDbl(x), "hh:nn:ss")
+        Else
+            S2_NormTime = "16:00:00"
+        End If
+    Else
+        s = Trim$(s)
+        If s = "" Then s = "16:00"
+        If Len(s) = 5 Then s = s & ":00"
+        S2_NormTime = s
+    End If
+End Function
+
+Private Sub S2_Core()
+    Dim src As Workbook, wasOpen As Boolean
+    Dim oldCalc As Long, oldEv As Boolean, oldScr As Boolean
+    Dim regime As String, regTxt As String, prevReg As String
+    Dim prevDate As Date, fresh As Boolean
+    Dim idx() As Long, ind() As TInd, c As Long
+    Dim msg As String, i As Long
+
+    If Not S2_LoadSettings() Then Exit Sub
+
+    oldCalc = Application.Calculation
+    oldEv = Application.EnableEvents
+    oldScr = Application.ScreenUpdating
+    On Error GoTo EH
+    Application.ScreenUpdating = False
+    Application.StatusBar = "S2: データ元ブックを読み込み中..."
+
+    gStep = "データ元ブックを開く"
+    Set src = S2_OpenSrc(wasOpen)
+    If src Is Nothing Then GoTo EX
+
+    gStep = "株価読込"
+    If Not S2_Build(src, cfHistMax) Then GoTo EX
+
+    If Not wasOpen Then
+        Application.EnableEvents = False
+        src.Close SaveChanges:=False
+        Application.EnableEvents = True
+    End If
+    Set src = Nothing
+
+    gStep = "指標計算"
+    Application.StatusBar = "S2: 指標を計算中... (" & gN & "銘柄)"
+    S2_IndWarm gT
+
+    gStep = "保有状態の読込"
+    bkFill.n = 0: bkSell.n = 0: bkBuy.n = 0: bkHold.n = 0: bkNote.n = 0
+    S2_BookInit cfCap
+    prevDate = S2_LoadState(prevReg)
+    If prevDate = 0 Then bkCash = cfCap
+    fresh = (gDate(gT) > prevDate)
+
+    gStep = "レジーム判定"
+    regime = S2_Regime(prevReg, regTxt)
+
+    If fresh Then
+        gStep = "スクリーニング"
+        Application.StatusBar = "S2: 銘柄を選定中..."
+        c = S2_Rank(idx, ind)
+
+        gStep = "約定の確認"
+        S2_ConfirmFills
+        gStep = "約定処理"
+        If InStr(cfFill, "当日") = 0 Then S2_FillOrders gT
+        gStep = "保有の見直し"
+        S2_ExitScan gT, regime
+        gStep = "新規エントリー"
+        S2_EntryScan gT, regime, idx, ind, c
+        If InStr(cfFill, "当日") > 0 Then S2_FillOrders gT
+
+        gStep = "保存"
+        S2_SaveState regime, gDate(gT)
+        S2_AppendTrades bkTr, bkTrN
+    Else
+        gStep = "スクリーニング"
+        c = S2_Rank(idx, ind)
+        S2_Warn "元ブックの株価が前回から更新されていません（基準日 " & _
+                Format(gDate(gT), "yyyy/mm/dd") & "）。保有と注文は変更していません。"
+        For i = 1 To bkPosN
+            BufAdd bkHold, "・" & bkPos(i).Code & " " & bkPos(i).nm & "  取得 " & _
+                   Format(bkPos(i).Entry, "#,##0") & " / 損切り " & Format(bkPos(i).StopPx, "#,##0")
+        Next i
+        ' 前回作った保留注文をそのまま見せる（作り直さないだけで、注文は生きている）
+        For i = 1 To bkOrdN
+            If bkOrd(i).Side = "BUY" Then
+                BufAdd bkBuy, "・" & bkOrd(i).Code & " " & bkOrd(i).nm & vbLf & _
+                       "   " & Format(bkOrd(i).RefPx, "#,##0") & "円 x " & bkOrd(i).Shares & "株 = " & _
+                       Format(bkOrd(i).RefPx * bkOrd(i).Shares, "#,##0") & "円" & vbLf & _
+                       "   " & bkOrd(i).SDate & " のシグナル／まだ約定していません" & vbLf & _
+                       "   → 翌営業日の" & S2_FillWord() & "で買い"
+            Else
+                BufAdd bkSell, "・" & bkOrd(i).Code & " " & bkOrd(i).nm & "  【" & bkOrd(i).Reason & "】" & vbLf & _
+                       "   " & bkOrd(i).Shares & "株 / " & bkOrd(i).SDate & " のシグナル／まだ約定していません" & vbLf & _
+                       "   → 翌営業日の" & S2_FillWord() & "で売り"
+            End If
+        Next i
+    End If
+
+    gStep = "取扱説明書"
+    If Not S2_HelpIsV4() Then S2_説明書作成
+
+    gStep = "出力"
+    Application.StatusBar = "S2: 表を作成中..."
+    msg = S2_BuildMsg(regime, regTxt, idx, ind, c)
+    S2_OutRank idx, ind, c
+    S2_OutSignal
+    S2_OutTrades
+    S2_ReSizeSettings
+    S2_OutDash msg, regime
+
+    S2_Log "実行 " & Format(gDate(gT), "yyyy/mm/dd") & " " & regime & _
+           " 買" & bkBuy.n & " 売" & bkSell.n & " 保有" & bkPosN & " 候補" & c & _
+           " 資産" & Format(S2_Equity(gT), "0") & " 元:" & gSrcPath
+    Application.StatusBar = "S2: 完了  " & Format(Now, "hh:nn:ss")
+
+EX:
+    On Error Resume Next
+    If Not src Is Nothing Then
+        If Not wasOpen Then src.Close SaveChanges:=False
+    End If
+    Application.EnableEvents = oldEv
+    Application.Calculation = oldCalc
+    Application.StatusBar = False
+    Application.ScreenUpdating = True
+    Exit Sub
+EH:
+    Dim eN As Long, eD As String
+    eN = Err.Number: eD = Err.Description
+    On Error Resume Next
+    If Not src Is Nothing Then
+        If Not wasOpen Then src.Close SaveChanges:=False
+    End If
+    Application.EnableEvents = oldEv
+    Application.Calculation = oldCalc
+    Application.StatusBar = False
+    Application.ScreenUpdating = True
+    S2_Log "エラー " & eN & " : " & eD & "  [" & gStep & "]"
+    S2_Msg "エラー " & eN & vbCrLf & eD & vbCrLf & vbCrLf & _
+           "場所 : " & gStep & vbCrLf & _
+           "データ元 : " & gSrcPath & vbCrLf & vbCrLf & _
+           "（同じ内容を log.txt にも書きました）", vbCritical, "S2"
+End Sub
+
+Public Function S2_BuildMsg(ByVal regime As String, ByVal regTxt As String, ByRef idx() As Long, ByRef ind() As TInd, ByVal c As Long) As String
+    Dim s As String, j As Long, eq As Double, i As Long
+    eq = S2_Equity(gT)
+    s = "────────────────────" & vbLf
+    s = s & "  日本株スクリーニング Ver 4.0　基準日 " & Format(gDate(gT), "yyyy/mm/dd") & vbLf
+    s = s & "  更新 " & Format(Now, "yyyy/mm/dd hh:nn:ss") & vbLf
+    s = s & "────────────────────" & vbLf
+
+    If gWarn.n > 0 Then
+        s = s & "■ お知らせ" & vbLf
+        For j = 1 To gWarn.n
+            s = s & "・" & gWarn.a(j) & vbLf
+        Next j
+        s = s & vbLf
+    End If
+
+    s = s & "■ 資産" & vbLf
+    s = s & "   評価額 " & Format(eq, "#,##0") & "円 （元手 " & Format(cfCap, "#,##0") & "円 / " & _
+            Format(eq / cfCap * 100 - 100, "+0.0;-0.0") & "%）" & vbLf
+    s = s & "   現金 " & Format(bkCash, "#,##0") & "円 / 建玉 " & Format(eq - bkCash, "#,##0") & "円" & vbLf & vbLf
+
+    s = s & "■ レジーム : " & regime & vbLf & "   " & regTxt & vbLf
+    If regime <> "RISK_ON" Then s = s & "   → 新規エントリー停止中" & vbLf
+    s = s & vbLf
+
+    If bkFill.n > 0 Then
+        s = s & "■ 今回の約定（前回のシグナルが成立しました）" & vbLf
+        For j = 1 To bkFill.n
+            s = s & "・" & bkFill.a(j) & vbLf
+        Next j
+        s = s & vbLf
+    End If
+
+    s = s & "■ 明日の売り注文" & vbLf
+    If bkSell.n = 0 Then s = s & "・なし" & vbLf
+    For j = 1 To bkSell.n
+        s = s & bkSell.a(j) & vbLf
+    Next j
+    s = s & vbLf
+
+    s = s & "■ 明日の買い注文" & vbLf
+    If bkBuy.n = 0 Then
+        s = s & "・なし" & IIf(regime <> "RISK_ON", "（RISK_OFF）", _
+                IIf(bkPosN >= cfMaxPos, "（満玉 " & bkPosN & "/" & cfMaxPos & "）", "")) & vbLf
+    End If
+    For j = 1 To bkBuy.n
+        s = s & bkBuy.a(j) & vbLf
+    Next j
+    If bkNote.n > 0 Then
+        For j = 1 To bkNote.n
+            s = s & bkNote.a(j) & vbLf
+        Next j
+    End If
+    s = s & vbLf
+
+    s = s & "■ 保有中 (" & bkPosN & "/" & cfMaxPos & ")" & vbLf
+    If bkHold.n = 0 Then s = s & "・なし" & vbLf
+    For j = 1 To bkHold.n
+        s = s & bkHold.a(j) & vbLf
+    Next j
+    s = s & vbLf
+
+    ' 成績
+    Dim tr() As TTrade, n As Long
+    n = S2_ReadTrades(tr)
+    If n > 0 Then
+        Dim win As Long, sw As Double, sl As Double, tot As Double
+        For j = 1 To n
+            tot = tot + tr(j).Pnl
+            If tr(j).Pnl > 0 Then win = win + 1: sw = sw + tr(j).Pnl Else sl = sl - tr(j).Pnl
+        Next j
+        s = s & "■ これまでの成績（決済 " & n & "件）" & vbLf
+        Dim sPf As String
+        If sl > 0 Then sPf = Format(sw / sl, "0.00") Else sPf = "-"
+        s = s & "   実現損益 " & Format(tot, "+#,##0;-#,##0") & "円 / 勝率 " & _
+                Format(win / n * 100, "0.0") & "% / PF " & sPf & vbLf & vbLf
+    End If
+
+    s = s & "■ 上位" & cfTopN & "銘柄（候補 " & c & "件 / 母集団 " & gN & "件）" & vbLf
+    For j = 1 To c
+        If j > cfTopN Then Exit For
+        i = idx(j)
+        s = s & Format(j, "00") & ". " & gCode(i) & " " & gName(i) & _
+            "  " & Format(ind(j).px, "#,##0") & "円 / SC" & Format(ind(j).Score, "0.0") & _
+            " / RSI" & Format(ind(j).Rsi, "0") & " / 乖離" & Format(ind(j).dev * 100, "+0") & "%" & _
+            " / " & Format(cfMom / 21, "0") & "ヶ月" & Format(ind(j).Mom * 100, "+0") & "%" & vbLf
+    Next j
+    If c = 0 Then s = s & "・条件に合う銘柄がありません" & vbLf
+    s = s & vbLf
+    s = s & "設定 : 最大" & cfMaxPos & "銘柄 / " & cfSizing & " / 損切り" & Format(cfStopPct * 100, "0") & "%" & _
+            IIf(cfStopAtr > 0, "またはATR" & Format(cfStopAtr, "0.0") & "倍", "") & _
+            " / トレール" & Format(cfArm * 100, "0") & "%起動-" & Format(cfTrail * 100, "0") & "%" & vbLf
+    s = s & "約定 : " & cfFill & " / 片道コスト " & Format(cfCostPct * 100, "0.00") & "%" & vbLf
+    s = s & "データ元 : " & gSrcPath & vbLf
+    S2_BuildMsg = s
+End Function
+

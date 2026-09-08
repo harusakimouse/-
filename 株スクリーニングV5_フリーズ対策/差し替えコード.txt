@@ -1,0 +1,354 @@
+==============================================================================
+ S2 フリーズ対策  差し替えコード  Ver 1.0
+==============================================================================
+
+ 先に Mod_S2_Speed.bas を取り込んでください。
+   VBE(Alt+F11) → ファイル → ファイルのインポート → Mod_S2_Speed.bas
+
+ そのうえで、下の【1】～【4】を「Sub～End Sub」ごと丸ごと入れ替えます。
+ （元の同じ名前の Sub / Function を消して、これを貼るだけ）
+
+
+==============================================================================
+【1】Mod_S2_Data の S2_OpenSrc を差し替え   ★これがフリーズの本命
+     元ブックを「手動計算」にしてから開く。今は自動計算のまま開いているので、
+     元ブック（OHLCV 明日売買 ボリンジャー送信.xlsm）の数式が全部再計算され、
+     ここで何分も固まります。
+==============================================================================
+
+Public Function S2_OpenSrc(ByRef wasOpen As Boolean) As Workbook
+    Dim wb As Workbook, p As String, nm As String
+    p = cfSrc
+    If p = "" Then p = S2_FindSrc()
+    If p = "" Then
+        S2_Msg "データ元ブックが見つかりません。" & vbCrLf & vbCrLf & _
+               "このブックと同じフォルダに " & DEF_SRC & " がありません。" & vbCrLf & _
+               "「設定」シートの データ元ブック（フルパス） に入れてください。", vbCritical, "S2"
+        Exit Function
+    End If
+    gSrcPath = p
+    nm = Mid$(p, InStrRev(p, "\") + 1)
+
+    On Error Resume Next
+    Set wb = Application.Workbooks(nm)
+    On Error GoTo 0
+    If Not wb Is Nothing Then
+        wasOpen = True
+        Set S2_OpenSrc = wb
+        Exit Function
+    End If
+
+    If Dir$(p) = "" Then
+        S2_Msg "データ元ブックが見つかりません。" & vbCrLf & vbCrLf & p & vbCrLf & vbCrLf & _
+               "「設定」シートに正しいフルパスを入れてください。", vbCritical, "S2"
+        Exit Function
+    End If
+
+    '★手動計算にしてから開く。ここを外すと必ずフリーズする。
+    S2_FastOn
+    S2_Beat "S2: 元ブックを開いています... " & nm
+    On Error Resume Next
+    Set wb = Application.Workbooks.Open( _
+                Filename:=p, UpdateLinks:=0, ReadOnly:=True, _
+                IgnoreReadOnlyRecommended:=True, AddToMru:=False)
+    On Error GoTo 0
+    S2_FastOff
+
+    If wb Is Nothing Then
+        S2_Msg "データ元ブックを開けませんでした。" & vbCrLf & p & vbCrLf & vbCrLf & _
+               "他のソフトで開いていないか確認してください。", vbCritical, "S2"
+        Exit Function
+    End If
+    wasOpen = False
+    Set S2_OpenSrc = wb
+End Function
+
+
+==============================================================================
+【2】Mod_S2_Screen の S2_Core を差し替え
+     ・全体を手動計算にする
+     ・要所で DoEvents（Windows の「応答なし」を防ぐ）
+==============================================================================
+
+Private Sub S2_Core()
+    Dim src As Workbook, wasOpen As Boolean
+    Dim regime As String, regTxt As String, prevReg As String
+    Dim prevDate As Date, fresh As Boolean
+    Dim idx() As Long, ind() As TInd, c As Long
+    Dim msg As String, i As Long
+
+    If Not S2_LoadSettings() Then Exit Sub
+
+    On Error GoTo EH
+    S2_FastOn
+    S2_Beat "S2: データ元ブックを読み込み中..."
+
+    gStep = "データ元ブックを開く"
+    Set src = S2_OpenSrc(wasOpen)
+    If src Is Nothing Then GoTo EX
+
+    gStep = "株価読込"
+    S2_Beat "S2: 株価を読み込み中..."
+    If Not S2_Build(src, cfHistMax) Then GoTo EX
+
+    If Not wasOpen Then src.Close SaveChanges:=False
+    Set src = Nothing
+
+    gStep = "指標計算"
+    S2_Beat "S2: 指標を計算中... (" & gN & "銘柄)"
+    S2_IndWarm gT
+
+    gStep = "保有状態の読込"
+    bkFill.n = 0: bkSell.n = 0: bkBuy.n = 0: bkHold.n = 0: bkNote.n = 0
+    S2_BookInit cfCap
+    prevDate = S2_LoadState(prevReg)
+    If prevDate = 0 Then bkCash = cfCap
+    fresh = (gDate(gT) > prevDate)
+
+    gStep = "レジーム判定"
+    regime = S2_Regime(prevReg, regTxt)
+
+    If fresh Then
+        gStep = "スクリーニング"
+        S2_Beat "S2: 銘柄を選定中..."
+        c = S2_Rank(idx, ind)
+
+        gStep = "約定の確認"
+        S2_ConfirmFills
+        gStep = "約定処理"
+        If InStr(cfFill, "当日") = 0 Then S2_FillOrders gT
+        gStep = "保有の見直し"
+        S2_ExitScan gT, regime
+        gStep = "新規エントリー"
+        S2_EntryScan gT, regime, idx, ind, c
+        If InStr(cfFill, "当日") > 0 Then S2_FillOrders gT
+
+        gStep = "保存"
+        S2_SaveState regime, gDate(gT)
+        S2_AppendTrades bkTr, bkTrN
+    Else
+        gStep = "スクリーニング"
+        c = S2_Rank(idx, ind)
+        S2_Warn "元ブックの株価が前回から更新されていません（基準日 " & _
+                Format(gDate(gT), "yyyy/mm/dd") & "）。保有と注文は変更していません。"
+        For i = 1 To bkPosN
+            BufAdd bkHold, "・" & bkPos(i).Code & " " & bkPos(i).nm & "  取得 " & _
+                   Format(bkPos(i).Entry, "#,##0") & " / 損切り " & Format(bkPos(i).StopPx, "#,##0")
+        Next i
+        For i = 1 To bkOrdN
+            If bkOrd(i).Side = "BUY" Then
+                BufAdd bkBuy, "・" & bkOrd(i).Code & " " & bkOrd(i).nm & vbLf & _
+                       "   " & Format(bkOrd(i).RefPx, "#,##0") & "円 x " & bkOrd(i).Shares & "株 = " & _
+                       Format(bkOrd(i).RefPx * bkOrd(i).Shares, "#,##0") & "円" & vbLf & _
+                       "   " & bkOrd(i).SDate & " のシグナル／まだ約定していません" & vbLf & _
+                       "   → 翌営業日の" & S2_FillWord() & "で買い"
+            Else
+                BufAdd bkSell, "・" & bkOrd(i).Code & " " & bkOrd(i).nm & "  【" & bkOrd(i).Reason & "】" & vbLf & _
+                       "   " & bkOrd(i).Shares & "株 / " & bkOrd(i).SDate & " のシグナル／まだ約定していません" & vbLf & _
+                       "   → 翌営業日の" & S2_FillWord() & "で売り"
+            End If
+        Next i
+    End If
+
+    gStep = "取扱説明書"
+    If Not S2_HelpIsV4() Then S2_説明書作成
+
+    gStep = "出力"
+    S2_Beat "S2: 表を作成中..."
+    msg = S2_BuildMsg(regime, regTxt, idx, ind, c)
+    S2_OutRank idx, ind, c
+    S2_OutSignal
+    S2_OutTrades
+    S2_ReSizeSettings
+    S2_OutDash msg, regime
+
+    S2_Log "実行 " & Format(gDate(gT), "yyyy/mm/dd") & " " & regime & _
+           " 買" & bkBuy.n & " 売" & bkSell.n & " 保有" & bkPosN & " 候補" & c & _
+           " 資産" & Format(S2_Equity(gT), "0") & " 元:" & gSrcPath
+
+EX:
+    On Error Resume Next
+    If Not src Is Nothing Then
+        If Not wasOpen Then src.Close SaveChanges:=False
+    End If
+    S2_FastOff
+    Application.StatusBar = "S2: 完了  " & Format(Now, "hh:nn:ss")
+    Exit Sub
+EH:
+    Dim eN As Long, eD As String
+    eN = Err.Number: eD = Err.Description
+    On Error Resume Next
+    If Not src Is Nothing Then
+        If Not wasOpen Then src.Close SaveChanges:=False
+    End If
+    S2_FastOff
+    S2_Log "エラー " & eN & " : " & eD & "  [" & gStep & "]"
+    S2_Msg "エラー " & eN & vbCrLf & eD & vbCrLf & vbCrLf & _
+           "場所 : " & gStep & vbCrLf & _
+           "データ元 : " & gSrcPath & vbCrLf & vbCrLf & _
+           "（同じ内容を log.txt にも書きました）", vbCritical, "S2"
+End Sub
+
+
+==============================================================================
+【3】Mod_S2_Rules の S2_ConfirmFills を差し替え
+     約定確認のダイアログが「画面停止中」に裏側で出て、押せずに固まって
+     見えるのを直します。必ず一番手前に出します。
+==============================================================================
+
+Public Sub S2_ConfirmFills()
+    Dim i As Long, keepN As Long, ans As Long
+    Dim msg As String, kept() As TOrd
+    If bkOrdN = 0 Then Exit Sub
+    If Not cfConfirm Then Exit Sub
+    If gQuiet Then
+        S2_Warn "★自動更新のため約定の確認をしていません。" & bkOrdN & _
+                "件を約定したものとして記録しました。実際の約定をご確認ください。"
+        S2_Log "自動更新: 未確認のまま " & bkOrdN & "件を約定処理"
+        Exit Sub
+    End If
+
+    ReDim kept(1 To bkOrdN)
+    For i = 1 To bkOrdN
+        msg = "前回の【更新】で出した注文です。" & vbCrLf & vbCrLf & _
+              IIf(bkOrd(i).Side = "BUY", "【買い】", "【売り】") & "  " & _
+              bkOrd(i).Code & "  " & bkOrd(i).nm & vbCrLf & _
+              "    " & bkOrd(i).Shares & "株 / 参考 " & Format(bkOrd(i).RefPx, "#,##0") & "円" & vbCrLf & _
+              "    " & bkOrd(i).SDate & " のシグナル" & vbCrLf & vbCrLf & _
+              "この注文は約定しましたか？" & vbCrLf & vbCrLf & _
+              "　はい　 … 約定したものとして記録します" & vbCrLf & _
+              "　いいえ … 取り消します（記録しません）"
+        ans = S2_Ask(msg, vbYesNo + vbQuestion, "S2 約定の確認  " & i & " / " & bkOrdN)
+        If ans = vbYes Then
+            keepN = keepN + 1
+            kept(keepN) = bkOrd(i)
+        Else
+            S2_Warn IIf(bkOrd(i).Side = "BUY", "買い", "売り") & " " & bkOrd(i).Code & " " & _
+                    bkOrd(i).nm & " は約定しなかったため取り消しました"
+            S2_Log "注文取消 " & bkOrd(i).Side & " " & bkOrd(i).Code & " " & bkOrd(i).nm & _
+                   " " & bkOrd(i).Shares & "株"
+        End If
+    Next i
+    For i = 1 To keepN
+        bkOrd(i) = kept(i)
+    Next i
+    bkOrdN = keepN
+End Sub
+
+
+==============================================================================
+【4】Mod_S2_Rules の S2_バックテスト を差し替え
+     こちらは Calculation の退避すらしていませんでした。手動計算にします。
+==============================================================================
+
+Public Sub S2_バックテスト()
+    Dim src As Workbook, wasOpen As Boolean
+    Dim t0 As Long, t As Long, i As Long
+    Dim regime As String, regTxt As String, prevReg As String
+    Dim idx() As Long, ind() As TInd, c As Long
+
+    If Not S2_LoadSettings() Then Exit Sub
+    If MsgBox("過去 " & cfBtDays & " 営業日を、いまの設定でシミュレーションします。" & vbCrLf & _
+              "銘柄数によっては数分かかります。実行しますか？" & vbCrLf & vbCrLf & _
+              "※このシミュレーションは「翌営業日に約定できた」前提です。" & vbCrLf & _
+              "　実際の成績を保証するものではありません。", _
+              vbYesNo + vbQuestion + vbSystemModal, "S2 バックテスト") = vbNo Then Exit Sub
+
+    On Error GoTo EH
+    S2_FastOn
+    S2_Beat "S2: データを読み込み中..."
+    gStep = "データ元ブックを開く"
+    Set src = S2_OpenSrc(wasOpen)
+    If src Is Nothing Then GoTo EX
+    gStep = "株価読込"
+    If Not S2_Build(src, cfHistMax + cfBtDays) Then GoTo EX
+    If Not wasOpen Then src.Close SaveChanges:=False
+    Set src = Nothing
+
+    t0 = gT - cfBtDays + 1
+    If t0 < 205 Then t0 = 205
+    If t0 > gT Then
+        S2_Msg "履歴が足りません。BT_DAYS を減らすか、元ブックの日数を増やしてください。" & vbCrLf & _
+               "（読めた日数 " & gT & "日）", vbExclamation, "S2"
+        GoTo EX
+    End If
+
+    gStep = "指標の助走"
+    S2_Beat "S2: 指標を助走中... (" & gN & "銘柄)"
+    S2_IndWarm t0
+    bkFill.n = 0: bkSell.n = 0: bkBuy.n = 0: bkHold.n = 0: bkNote.n = 0
+    S2_BookInit cfCap
+    prevReg = "RISK_OFF"
+
+    ReDim btEq(1 To gT - t0 + 1)
+    ReDim btDate(1 To gT - t0 + 1)
+    ReDim btExpo(1 To gT - t0 + 1)
+    btN = 0
+    btT0 = t0
+
+    gStep = "シミュレーション"
+    For t = t0 To gT
+        If t > t0 Then S2_IndNext
+        If (t - t0) Mod 5 = 0 Then
+            S2_Beat "S2: バックテスト " & (t - t0 + 1) & " / " & (gT - t0 + 1) & _
+                    " 日目　資産 " & Format(S2_Equity(t), "#,##0") & "円"
+        End If
+        regime = S2_Regime(prevReg, regTxt)
+        prevReg = regime
+        bkSell.n = 0: bkBuy.n = 0: bkHold.n = 0: bkNote.n = 0
+        If InStr(cfFill, "当日") = 0 Then S2_FillOrders t
+        S2_ExitScan t, regime
+        c = S2_Rank(idx, ind)
+        S2_EntryScan t, regime, idx, ind, c
+        If InStr(cfFill, "当日") > 0 Then S2_FillOrders t
+        btN = btN + 1
+        btDate(btN) = CDbl(gDate(t))
+        btEq(btN) = S2_Equity(t)
+        btExpo(btN) = 1 - bkCash / btEq(btN)
+    Next t
+
+    gStep = "結果の出力"
+    S2_Beat "S2: 結果を書き出し中..."
+    S2_OutBacktest
+    S2_FastOff
+
+    Dim note As String
+    If btN < cfBtDays * 0.9 Then
+        note = note & vbCrLf & vbCrLf & "※指定 " & cfBtDays & "営業日に対し " & btN & _
+               "営業日しか回せていません（200日移動平均の助走に使うため）。"
+    End If
+    If bkTrN = 0 Then
+        note = note & vbCrLf & "※決済が0回です。買って持ち続けただけの結果で、" & vbCrLf & _
+               "　損切りやトレーリングは検証できていません。"
+    End If
+    S2_Msg "バックテストが終わりました。「" & SH_BT & "」シートをご覧ください。" & vbCrLf & vbCrLf & _
+           "期間 " & Format(gDate(t0), "yyyy/mm/dd") & " ～ " & Format(gDate(gT), "yyyy/mm/dd") & _
+           "（" & btN & "営業日）" & vbCrLf & _
+           "最終資産 " & Format(btEq(btN), "#,##0") & "円 （" & _
+           Format(btEq(btN) / cfCap * 100 - 100, "+0.0;-0.0") & "%）" & _
+           "　決済 " & bkTrN & "回" & note, vbInformation, "S2 バックテスト"
+    Exit Sub
+
+EX:
+    On Error Resume Next
+    If Not src Is Nothing Then
+        If Not wasOpen Then src.Close SaveChanges:=False
+    End If
+    S2_FastOff
+    Exit Sub
+EH:
+    Dim eN2 As Long, eD As String
+    eN2 = Err.Number: eD = Err.Description
+    On Error Resume Next
+    If Not src Is Nothing Then
+        If Not wasOpen Then src.Close SaveChanges:=False
+    End If
+    S2_FastOff
+    S2_Log "バックテストエラー " & eN2 & " : " & eD & "  [" & gStep & "]"
+    S2_Msg "エラー " & eN2 & vbCrLf & eD & vbCrLf & vbCrLf & "場所 : " & gStep & vbCrLf & vbCrLf & _
+           "メモリ不足の場合は、設定の BT_DAYS を小さくしてください。", vbCritical, "S2"
+End Sub
+
+==============================================================================
+ 以上（差し替えは4か所だけです）
+==============================================================================

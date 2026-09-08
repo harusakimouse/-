@@ -2,10 +2,18 @@ Attribute VB_Name = "Mod_RSS_MS2"
 Option Explicit
 
 '==================================================================
-' MarketSpeed2 RSS 自動接続モジュール
-'   MS2 の起動・ログインは人がやる（パスキーが必要なため）
-'   このブックは「RSSがつながったのを見つけて自動で再計算する」係
+' MarketSpeed2 RSS 補助モジュール
+'   ・RSSアドイン(xll)を読み込む
+'   ・ブックを1本ずつ間隔をあけて開く（少し待つ）
+'   ・つなぎ直しは「RSS今すぐ再接続」を押す
+'  ※タイマー監視は入れない（RTDサーバーが不安定になるため）
 '==================================================================
+
+#If VBA7 Then
+    Private Declare PtrSafe Sub Sleep Lib "kernel32" (ByVal dwMilliseconds As Long)
+#Else
+    Private Declare Sub Sleep Lib "kernel32" (ByVal dwMilliseconds As Long)
+#End If
 
 #If Win64 Then
     Private Const XLL_NAME As String = "MarketSpeed2_RSS_64bit.xll"
@@ -13,93 +21,41 @@ Option Explicit
     Private Const XLL_NAME As String = "MarketSpeed2_RSS_32bit.xll"
 #End If
 
-Private Const CHECK_SEC  As Long = 10    '何秒ごとに見に行くか
-Private Const MAX_TRY    As Long = 90    '10秒×90回＝約15分であきらめる
-Private Const TEST_CODE  As String = "7203.T"
-
-Private g_NextTime As Date
-Private g_Tries    As Long
-
 '------------------------------------------------------------------
-' ブックを開いたときに自動で呼ばれる（ThisWorkbookから）
+' ブックを開いたときに呼ばれる（ThisWorkbookから）
 '------------------------------------------------------------------
 Public Sub 自動RSS準備()
-    g_Tries = 0
+    On Error Resume Next
     RSSアドイン読込
-    RSS再チェック
-End Sub
-
-'------------------------------------------------------------------
-' RSSがつながるまで10秒ごとに見に行く（つながったら再計算して終了）
-'------------------------------------------------------------------
-Public Sub RSS再チェック()
-    If RSS応答あり() Then
-        g_NextTime = 0
-        Application.CalculateFullRebuild
-        Exit Sub
-    End If
-
-    g_Tries = g_Tries + 1
-    If g_Tries > MAX_TRY Then
-        g_NextTime = 0
-        Exit Sub
-    End If
-
-    g_NextTime = Now + TimeSerial(0, 0, CHECK_SEC)
-    On Error Resume Next
-    Application.OnTime g_NextTime, "'" & ThisWorkbook.Name & "'!RSS再チェック"
-    On Error GoTo 0
-End Sub
-
-'------------------------------------------------------------------
-' 監視をやめる（ブックを閉じるときに呼ぶ）
-'------------------------------------------------------------------
-Public Sub 監視停止()
-    On Error Resume Next
-    If g_NextTime > 0 Then
-        Application.OnTime g_NextTime, "'" & ThisWorkbook.Name & "'!RSS再チェック", , False
-    End If
-    g_NextTime = 0
-    On Error GoTo 0
-End Sub
-
-'------------------------------------------------------------------
-' ★ボタン用：RSSを確かめてから、起動リストのブックを開く
-'------------------------------------------------------------------
-Public Sub 一発起動()
-    RSSアドイン読込
-
-    If Not RSS応答あり() Then
-        MsgBox "MarketSpeed2 を起動してログインしてください。" & vbCrLf & _
-               "ログインが終わったら [OK] を押します。", vbInformation, "RSS"
-        If Not RSS接続待ち(60) Then
-            MsgBox "RSSが応答しません。MarketSpeed2 のログインを確認してください。", _
-                   vbExclamation, "RSS"
-            Exit Sub
-        End If
-    End If
-
-    On Error Resume Next
-    Application.Run "Mod_Launcher.起動"
-    On Error GoTo 0
+    少し待つ 3
     Application.CalculateFullRebuild
+    On Error GoTo 0
 End Sub
 
 '------------------------------------------------------------------
-' ★今すぐつなぎ直す（手動用・いつ押してもよい）
+' ★手動用：RSSをつなぎ直す（値が入らないときに押す）
 '------------------------------------------------------------------
 Public Sub RSS今すぐ再接続()
+    On Error Resume Next
     RSSアドイン読込
-    If RSS応答あり() Then
-        Application.CalculateFullRebuild
-        MsgBox "RSSにつながりました。", vbInformation, "RSS"
-    Else
-        g_Tries = 0
-        RSS再チェック
-        MsgBox "RSSがまだ応答しません。" & vbCrLf & _
-               "MarketSpeed2 にログインすれば自動でつながります（10秒ごとに確認中）。", _
-               vbExclamation, "RSS"
-    End If
+    少し待つ 1
+    Application.CalculateFullRebuild
+    On Error GoTo 0
+    MsgBox "RSSを読み直しました。" & vbCrLf & _
+           "値が入らない場合は MarketSpeed2 のログインを確認してください。", _
+           vbInformation, "RSS"
+End Sub
+
+'------------------------------------------------------------------
+' ★ボタン用：RSSを読み込んでから、起動リストのブックを開く
+'------------------------------------------------------------------
+Public Sub 一発起動()
+    On Error Resume Next
+    RSSアドイン読込
+    Application.Run "Mod_Launcher.起動"
+    少し待つ 2
+    Application.CalculateFullRebuild
+    On Error GoTo 0
 End Sub
 
 '------------------------------------------------------------------
@@ -123,46 +79,14 @@ Private Sub RSSアドイン読込()
 End Sub
 
 '------------------------------------------------------------------
-' RSSが値を返すまで待つ
-'------------------------------------------------------------------
-Private Function RSS接続待ち(ByVal sec As Long) As Boolean
-    Dim t As Double
-
-    RSS接続待ち = False
-    t = Timer
-    Do
-        If RSS応答あり() Then
-            RSS接続待ち = True
-            Exit Function
-        End If
-        DoEvents
-    Loop While Timer - t < sec
-End Function
-
-'------------------------------------------------------------------
-' RSSが使える状態か（1回だけ試す）
-'------------------------------------------------------------------
-Private Function RSS応答あり() As Boolean
-    Dim v As Variant
-
-    RSS応答あり = False
-    On Error Resume Next
-    v = Application.Evaluate("RssMarket(""" & TEST_CODE & """,""銘柄名"")")
-    If Err.Number = 0 Then
-        If Not IsError(v) Then RSS応答あり = (Len(CStr(v)) > 0)
-    End If
-    Err.Clear
-    On Error GoTo 0
-End Function
-
-'------------------------------------------------------------------
-' 指定秒だけ待つ（Excelを固めない待ち方）
+' 指定秒だけ待つ（CPUを使わない待ち方＝RTDを止めない）
 '   ブックを1本ずつ間隔をあけて開くために使う
 '------------------------------------------------------------------
 Public Sub 少し待つ(ByVal sec As Long)
     Dim t As Double
     t = Timer
     Do While Timer - t < sec
+        Sleep 200
         DoEvents
     Loop
 End Sub

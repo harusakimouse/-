@@ -1,10 +1,6 @@
 【ThisWorkbook に貼るコード（.bas を手で入れる場合だけ）】
 
 Private Sub Workbook_Open()
-    Application.OnTime Now, "'" & ThisWorkbook.Name & "'!" & "自動RSS準備"
-End Sub
-
-Private Sub Workbook_BeforeClose(Cancel As Boolean)
     On Error Resume Next
-    Application.Run "'" & ThisWorkbook.Name & "'!" & "監視停止"
+    自動RSS準備
 End Sub

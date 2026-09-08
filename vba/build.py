@@ -29,13 +29,8 @@ new_src=open('src_new.txt','rb').read().decode('utf-8').replace('\r\n','\n').rep
 tw_old=decompress_stream(bytearray(o.openstream('VBA/ThisWorkbook').read()[0x03F8:]))
 tw_add=('\r\n'
 "Private Sub Workbook_Open()\r\n"
-"    ' ブックが開き切ってからRSSを確かめる\r\n"
-"    Application.OnTime Now, \"'\" & ThisWorkbook.Name & \"'!\" & \"自動RSS準備\"\r\n"
-"End Sub\r\n"
-"\r\n"
-"Private Sub Workbook_BeforeClose(Cancel As Boolean)\r\n"
 "    On Error Resume Next\r\n"
-"    Application.Run \"'\" & ThisWorkbook.Name & \"'!\" & \"監視停止\"\r\n"
+"    自動RSS準備\r\n"
 "End Sub\r\n").encode('cp932')
 tw_new=tw_old+tw_add
 

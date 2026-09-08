@@ -1,6 +1,0 @@
-【ThisWorkbook に貼るコード（.bas を手で入れる場合だけ）】
-
-Private Sub Workbook_Open()
-    On Error Resume Next
-    自動RSS準備
-End Sub

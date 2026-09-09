@@ -1,0 +1,11 @@
+Option Explicit
+
+Private Sub Workbook_Open()
+    On Error Resume Next
+    Application.OnTime Now + TimeSerial(0, 0, 5), "'" & ThisWorkbook.Name & "'!Ž©“®‹N“®"
+End Sub
+
+Private Sub Workbook_BeforeClose(Cancel As Boolean)
+    On Error Resume Next
+    ŠÄŽ‹’âŽ~
+End Sub

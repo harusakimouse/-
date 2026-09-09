@@ -1,7 +1,7 @@
 Attribute VB_Name = "Module1"
 Option Explicit
 '=========================================================
-'  毎日時間別データー取り込み  v3.0 (完成版)
+'  毎日時間別データー取り込み  v3.1 (完成版)
 '
 '  【今回直したところ】
 '  (1) 設定シートの取得時刻(9:00 など)を読めず、予約が1件も
@@ -15,6 +15,9 @@ Option Explicit
 '      取りこぼしても、自動で追いつく。
 '  (4) 日付が変わったら翌日分を自動で予約し直す。
 '  (5) シートが無いスロットは予約せずログに残す。
+'  (6) 記録シートの日次整理は、CSVへ退避してから削除する方式に変更。
+'  (7) 設定!D10 に残す列数(例 250)を入れると、集積シートの古い列を自動で捨てる。
+'      空のままなら何も消さない。
 '
 '  【シートの決まり】
 '  時間シート(0900～1530) 1行目=空 2行目=日付 3行目=見出し 4行目～データ
@@ -233,6 +236,7 @@ Private Sub 時間シート書込(ByVal slot As String, ByVal v As Variant)
             .Interior.Color = RGB(235, 235, 235)
         End With
         ws.Range("C4:C303").NumberFormat = "#,##0"
+        列トリム ws, 2
     End If
 
     codes = ws.Range("A4:A303").Value
@@ -281,6 +285,7 @@ Private Sub 日足1シート(ByVal shName As String, ByVal srcCol As Long, ByVal v As
         End If
         ws.Cells(1, 3).Value = Date
         ws.Cells(2, 3).Value = "本日" & Format$(Now, "hh:nn") & "取得"
+        列トリム ws, 1
     End If
 
     codes = ws.Range("A4:A303").Value
@@ -418,6 +423,19 @@ Public Sub 予約一覧表示()
 End Sub
 
 '================== 小物 ==================
+'履歴が増えすぎたら古い列(右側)を消す
+'  設定!D10 に「残す列数(例 250)」を入れたときだけ働く。空なら何も消さない。
+Private Sub 列トリム(ByVal ws As Worksheet, ByVal dateRow As Long)
+    Dim keep As Long, lastC As Long
+    keep = 数値(SH("設定").Range("D10").Value, 0)
+    If keep < 30 Then Exit Sub
+    lastC = ws.Cells(dateRow, ws.Columns.Count).End(xlToLeft).Column
+    If lastC > 2 + keep Then
+        ws.Range(ws.Columns(2 + keep + 1), ws.Columns(lastC)).Delete
+        ログ書込 "情報", ws.Name & " の古い列 " & (lastC - 2 - keep) & "列を削除(" & keep & "日分に調整)"
+    End If
+End Sub
+
 Private Function SH(ByVal n As String) As Worksheet
     Set SH = ThisWorkbook.Worksheets(n)
 End Function
@@ -595,8 +613,9 @@ EH:
     MsgBox "CSV出力に失敗: " & Err.Description, vbExclamation
 End Sub
 
-'================== 記録シートの日次整理(削除のみ) ==================
-'当日より前の行を削除する(1530取得後に自動実行)
+'================== 記録シートの日次整理 ==================
+'当日より前の行を 日付ごとのCSVへ退避してから削除する(1530取得後に自動実行)
+'  退避先は 設定!D1 のフォルダ。書き出せなかったときは削除しません。
 Public Sub 記録日次整理()
     Dim ws As Worksheet, v As Variant, i As Long, lastR As Long, cut As Long
     Set ws = SH("記録")
@@ -608,17 +627,67 @@ Public Sub 記録日次整理()
         If CDbl(v(i, 1)) >= CDbl(Date) Then Exit For     '当日分は残す
         cut = i + 1                                      'シート上の行番号
     Next i
-    If cut >= 2 Then
+    If cut < 2 Then Exit Sub
+
+    If 記録退避CSV(2, cut) Then
         ws.Rows("2:" & cut).Delete
-        ログ書込 "情報", "記録整理 " & (cut - 1) & "行を削除(残り " _
+        ログ書込 "情報", "記録整理 " & (cut - 1) & "行をCSVへ退避して削除(残り " _
                        & (ws.Cells(ws.Rows.Count, 1).End(xlUp).Row - 1) & "行)"
+    Else
+        ログ書込 "警告", "記録をCSVへ退避できなかったので削除しませんでした(設定!D1 を確認)"
     End If
 End Sub
 
+'指定した行範囲を 日付ごとの 記録_yyyymmdd.csv へ書き出す(成功=True)
+Private Function 記録退避CSV(ByVal r1 As Long, ByVal r2 As Long) As Boolean
+    Dim ws As Worksheet, fso As Object, ts As Object
+    Dim fol As String, fn As String, cur As String, d As String, line As String
+    Dim v As Variant, i As Long, j As Long
+
+    記録退避CSV = False
+    fol = Trim$(CStr(SH("設定").Range("D1").Value))
+    If Len(fol) = 0 Then Exit Function
+    If Right$(fol, 1) <> "\" Then fol = fol & "\"
+
+    Set ws = SH("記録")
+    v = ws.Range("A" & r1 & ":J" & r2).Value
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    If Not fso.FolderExists(Left$(fol, Len(fol) - 1)) Then Exit Function
+
+    On Error GoTo EH
+    For i = 1 To UBound(v, 1)
+        d = Format$(v(i, 1), "yyyymmdd")
+        If d <> cur Then
+            If Not ts Is Nothing Then ts.Close: Set ts = Nothing
+            fn = fol & "記録_" & d & ".csv"
+            If fso.FileExists(fn) Then
+                Set ts = fso.OpenTextFile(fn, 8)          '追記
+            Else
+                Set ts = fso.CreateTextFile(fn, True)
+                ts.WriteLine "日付,時刻区分,取得時刻,コード,銘柄名,始値,高値,安値,現在値,出来高"
+            End If
+            cur = d
+        End If
+        line = Format$(v(i, 1), "yyyy/mm/dd") & "," & Format$(v(i, 2), "hh:mm")
+        For j = 3 To 10
+            line = line & "," & CStr(v(i, j))
+        Next j
+        ts.WriteLine line
+    Next i
+    If Not ts Is Nothing Then ts.Close
+    記録退避CSV = True
+    Exit Function
+EH:
+    On Error Resume Next
+    If Not ts Is Nothing Then ts.Close
+    ログ書込 "エラー", "記録の退避に失敗: " & Err.Description
+End Function
+
 '================== 過去分の一括退避(1回だけ実行) ==================
 Public Sub 記録過去分エクスポート()
-    If MsgBox("記録シートの当日より前の行を削除します。" _
-            & vbLf & "先にブックのバックアップを取りましたか?", vbYesNo + vbQuestion) <> vbYes Then Exit Sub
+    If MsgBox("記録シートの当日より前の行を、日付ごとのCSVに書き出してから削除します。" _
+            & vbLf & "書き出し先: " & CStr(SH("設定").Range("D1").Value) _
+            & vbLf & vbLf & "先にブックのバックアップを取りましたか?", vbYesNo + vbQuestion) <> vbYes Then Exit Sub
     Application.ScreenUpdating = False
     記録日次整理
     Application.ScreenUpdating = True
